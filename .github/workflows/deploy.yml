@@ -13,10 +13,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Copy files to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "."
+          target: "/var/www/bgalin"
+          rm: true
+
       - name: Deploy to server
         uses: appleboy/ssh-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -25,7 +35,6 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           timeout: 300s
           command_timeout: 30m
-          envs: GITHUB_TOKEN
           script: |
             set -e
 
@@ -75,37 +84,10 @@ jobs:
               sudo apt-get install -y nginx
             fi
 
-            # Create project directory if it doesn't exist
-            if [ ! -d "/var/www/bgalin" ]; then
-              echo "📁 Creating project directory..."
-              sudo mkdir -p /var/www/bgalin
-              sudo chown $USER:$USER /var/www/bgalin
-              cd /var/www/bgalin
-
-              echo "📥 Cloning repository..."
-              git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git .
-            else
-              echo "📂 Project directory exists"
-              cd /var/www/bgalin
-
-              # Check if it's a git repository
-              if [ ! -d ".git" ]; then
-                echo "📥 Not a git repository, cloning..."
-                cd /var/www
-                sudo rm -rf bgalin
-                sudo mkdir -p bgalin
-                sudo chown $USER:$USER bgalin
-                cd bgalin
-                git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git .
-              else
-                # Stash any local changes
-                git stash
-
-                # Pull latest changes
-                echo "📥 Pulling latest code..."
-                git pull origin main
-              fi
-            fi
+            # Ensure project directory ownership
+            echo "📁 Setting up project directory..."
+            sudo chown -R $USER:$USER /var/www/bgalin
+            cd /var/www/bgalin
 
             # Create/update .env file with secrets from GitHub
             echo "🔐 Updating environment variables..."
