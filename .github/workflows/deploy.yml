@@ -28,15 +28,26 @@ jobs:
 
             echo "🚀 Starting deployment..."
 
-            # Navigate to project directory
-            cd /var/www/bgalin || exit 1
+            # Create project directory if it doesn't exist
+            if [ ! -d "/var/www/bgalin" ]; then
+              echo "📁 Creating project directory..."
+              sudo mkdir -p /var/www/bgalin
+              sudo chown $USER:$USER /var/www/bgalin
+              cd /var/www/bgalin
 
-            # Stash any local changes
-            git stash
+              echo "📥 Cloning repository..."
+              git clone https://github.com/${{ github.repository }}.git .
+            else
+              echo "📂 Project directory exists"
+              cd /var/www/bgalin
 
-            # Pull latest changes
-            echo "📥 Pulling latest code..."
-            git pull origin main
+              # Stash any local changes
+              git stash
+
+              # Pull latest changes
+              echo "📥 Pulling latest code..."
+              git pull origin main
+            fi
 
             # Create/update .env file with secrets from GitHub
             echo "🔐 Updating environment variables..."
