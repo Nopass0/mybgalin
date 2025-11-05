@@ -128,8 +128,8 @@ jobs:
             echo "🎨 Building frontend..."
             cd ../frontend
 
-            # Install dependencies if package.json changed
-            if git diff HEAD@{1} HEAD --name-only | grep -q "package.json\|package-lock.json\|bun.lock"; then
+            # Install dependencies if node_modules doesn't exist or package.json changed
+            if [ ! -d "node_modules" ] || git diff HEAD@{1} HEAD --name-only 2>/dev/null | grep -q "package.json\|package-lock.json\|bun.lock"; then
               echo "📦 Installing frontend dependencies..."
               if command -v bun &> /dev/null; then
                 bun install
