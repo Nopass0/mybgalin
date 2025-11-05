@@ -85,12 +85,20 @@ jobs:
               echo "📂 Project directory exists"
               cd /var/www/bgalin
 
-              # Stash any local changes
-              git stash
+              # Check if it's a git repository
+              if [ ! -d ".git" ]; then
+                echo "📥 Not a git repository, cloning..."
+                rm -rf /var/www/bgalin/*
+                rm -rf /var/www/bgalin/.*
+                git clone https://github.com/${{ github.repository }}.git .
+              else
+                # Stash any local changes
+                git stash
 
-              # Pull latest changes
-              echo "📥 Pulling latest code..."
-              git pull origin main
+                # Pull latest changes
+                echo "📥 Pulling latest code..."
+                git pull origin main
+              fi
             fi
 
             # Create/update .env file with secrets from GitHub
