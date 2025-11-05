@@ -1,0 +1,68 @@
+name: Update Environment Variables
+
+on:
+  workflow_dispatch: # Manual trigger
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/update-env.yml"
+
+jobs:
+  update-env:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Update .env on server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e
+
+            echo "🔐 Updating environment variables on server..."
+
+            cd /var/www/bgalin/server
+
+            # Backup existing .env
+            if [ -f ".env" ]; then
+              cp .env .env.backup.$(date +%Y%m%d_%H%M%S)
+              echo "✅ Backed up existing .env"
+            fi
+
+            # Create new .env from GitHub secrets
+            cat > .env << 'ENVEOF'
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}
+            STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}
+            STEAM_ID=${{ secrets.STEAM_ID }}
+            FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}
+            GSI_AUTH_TOKEN=${{ secrets.GSI_AUTH_TOKEN }}
+            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+            AI_MODEL=${{ secrets.AI_MODEL }}
+            HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}
+            HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}
+            HH_REDIRECT_URI=${{ secrets.HH_REDIRECT_URI }}
+            JOB_SEARCH_INTERVAL_HOURS=${{ secrets.JOB_SEARCH_INTERVAL_HOURS }}
+            ROCKET_ADDRESS=0.0.0.0
+            ROCKET_PORT=8000
+            ROCKET_ENV=production
+            ENVEOF
+
+            echo "✅ Environment variables updated"
+
+            # Restart backend to apply changes
+            echo "♻️ Restarting backend service..."
+            sudo systemctl restart bgalin-backend.service
+
+            echo "🎉 Environment variables updated and service restarted!"
+
+            # Send notification
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+              -d chat_id="${{ secrets.ADMIN_TELEGRAM_ID }}" \
+              -d text="🔐 Environment variables updated on server" \
+              > /dev/null || true

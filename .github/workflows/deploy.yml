@@ -1,0 +1,124 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e
+
+            echo "🚀 Starting deployment..."
+
+            # Navigate to project directory
+            cd /var/www/bgalin || exit 1
+
+            # Stash any local changes
+            git stash
+
+            # Pull latest changes
+            echo "📥 Pulling latest code..."
+            git pull origin main
+
+            # Create/update .env file with secrets from GitHub
+            echo "🔐 Updating environment variables..."
+            cd server
+            cat > .env << 'ENVEOF'
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}
+            STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}
+            STEAM_ID=${{ secrets.STEAM_ID }}
+            FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}
+            GSI_AUTH_TOKEN=${{ secrets.GSI_AUTH_TOKEN }}
+            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+            AI_MODEL=${{ secrets.AI_MODEL }}
+            HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}
+            HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}
+            HH_REDIRECT_URI=${{ secrets.HH_REDIRECT_URI }}
+            JOB_SEARCH_INTERVAL_HOURS=${{ secrets.JOB_SEARCH_INTERVAL_HOURS }}
+            ROCKET_ADDRESS=0.0.0.0
+            ROCKET_PORT=8000
+            ROCKET_ENV=production
+            ENVEOF
+
+            # Build backend
+            echo "🔨 Building backend..."
+            cargo build --release
+
+            # Check if migrations exist and run them
+            if [ -d "migrations" ]; then
+              echo "🗄️ Running database migrations..."
+              # Add migration command if you're using sqlx or diesel
+              # sqlx migrate run || true
+            fi
+
+            # Build frontend
+            echo "🎨 Building frontend..."
+            cd ../frontend
+
+            # Install dependencies if package.json changed
+            if git diff HEAD@{1} HEAD --name-only | grep -q "package.json\|package-lock.json\|bun.lock"; then
+              echo "📦 Installing frontend dependencies..."
+              if command -v bun &> /dev/null; then
+                bun install
+              else
+                npm install
+              fi
+            fi
+
+            npm run build
+
+            # Restart services
+            echo "♻️ Restarting services..."
+
+            # Restart backend
+            sudo systemctl restart bgalin-backend.service
+
+            # Restart frontend
+            pm2 restart bgalin-frontend
+
+            # Reload nginx
+            sudo nginx -t && sudo systemctl reload nginx
+
+            # Check service status
+            echo "✅ Checking service status..."
+            sudo systemctl is-active bgalin-backend.service
+            pm2 list | grep bgalin-frontend
+
+            echo "🎉 Deployment completed successfully!"
+
+            # Send notification to Telegram
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+              -d chat_id="${{ secrets.ADMIN_TELEGRAM_ID }}" \
+              -d text="✅ Deployment to bgalin.ru completed successfully!%0ACommit: ${{ github.event.head_commit.message }}%0AAuthor: ${{ github.actor }}" \
+              > /dev/null || true
+
+      - name: Notify on failure
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.ADMIN_TELEGRAM_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ❌ Deployment to bgalin.ru failed!
+
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}

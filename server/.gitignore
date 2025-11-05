@@ -1,0 +1,14 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Environment (но не .env.example)
+.env
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
