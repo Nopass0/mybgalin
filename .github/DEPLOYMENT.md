@@ -1,6 +1,35 @@
 # Deployment Guide
 
-## Initial Server Setup
+## 🚀 Quick Initial Server Setup (Recommended)
+
+### Automated Setup with server-init.sh
+
+**The easiest way to set up your server:**
+
+```bash
+# 1. Upload server-init.sh to your server
+scp server-init.sh user@your-server:~/
+
+# 2. Run the initialization script
+ssh user@your-server
+sudo bash server-init.sh
+```
+
+The script will:
+- ✅ Create `/var/www/bgalin` directory
+- ✅ Clone your repository
+- ✅ Install all dependencies (Rust, Node.js, nginx, PM2)
+- ✅ Configure sudo permissions for GitHub Actions
+- ✅ Set up services and SSL
+- ✅ Prepare for automatic deployments
+
+After this, skip to **"Configure GitHub Secrets"** section below.
+
+---
+
+## 📋 Manual Initial Server Setup
+
+If you prefer manual setup or the automated script fails:
 
 ### 1. Prepare the server
 
@@ -15,12 +44,9 @@ sudo apt install -y build-essential pkg-config libssl-dev git nginx
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
-# Install Node.js
+# Install Node.js 20
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
-
-# Install Bun (optional but recommended)
-curl -fsSL https://bun.sh/install | bash
 
 # Install PM2
 sudo npm install -g pm2
@@ -32,7 +58,7 @@ sudo npm install -g pm2
 sudo mkdir -p /var/www/bgalin
 sudo chown $USER:$USER /var/www/bgalin
 cd /var/www
-git clone https://github.com/yourusername/bgalin.git
+git clone https://github.com/yourusername/bgalin.git bgalin
 cd bgalin
 ```
 
