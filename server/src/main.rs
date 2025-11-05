@@ -10,6 +10,7 @@ mod steam;
 mod telegram;
 
 use rocket::{launch, routes};
+use rocket_cors::{AllowedOrigins, CorsOptions};
 use std::env;
 
 #[launch]
@@ -57,7 +58,28 @@ async fn rocket() -> _ {
     println!("💼 Job search system: ready");
     println!("✅ All systems ready");
 
+    // Configure CORS
+    let cors = CorsOptions {
+        allowed_origins: AllowedOrigins::all(),
+        allowed_methods: vec![
+            rocket::http::Method::Get,
+            rocket::http::Method::Post,
+            rocket::http::Method::Put,
+            rocket::http::Method::Delete,
+            rocket::http::Method::Options,
+        ]
+        .into_iter()
+        .map(From::from)
+        .collect(),
+        allowed_headers: rocket_cors::AllowedHeaders::all(),
+        allow_credentials: true,
+        ..Default::default()
+    }
+    .to_cors()
+    .expect("Failed to create CORS fairing");
+
     rocket::build()
+        .attach(cors)
         .manage(pool)
         .manage(telegram_bot)
         .manage(steam_client)

@@ -16,11 +16,11 @@ const getApiUrl = () => {
     ) {
       return "https://bgalin.ru/api";
     }
-    return "http://localhost:8000";
+    return "http://localhost:3001/api";
   }
 
   // Development mode
-  return "http://localhost:8000";
+  return "http://localhost:3001/api";
 };
 
 const api = axios.create({

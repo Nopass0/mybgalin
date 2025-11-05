@@ -73,10 +73,11 @@
 - Как получить: При регистрации приложения на dev.hh.ru
 - Пример: `1234567890abcdefghijklmnopqrstuvwxyz123456`
 
-**HH_REDIRECT_URI**
+**HH_REDIRECT_URI** (больше не используется в workflows)
 - Описание: URL для callback после авторизации на HH.ru
-- Значение для production: `https://bgalin.ru/api/auth/hh/callback`
-- Значение для dev: `http://localhost:8000/auth/hh/callback`
+- Значение для production: `https://bgalin.ru/auth/hh/callback` (хардкоден в workflows)
+- Значение для dev: `http://localhost:3001/auth/hh/callback`
+- Примечание: В production workflows автоматически используется `https://bgalin.ru/auth/hh/callback`, секрет можно не добавлять
 
 **STEAM_API_KEY** (опционально)
 - Описание: API ключ Steam для интеграции с CS2
@@ -124,7 +125,7 @@
 ```
 ✅ SERVER_HOST
 ✅ SERVER_USER
-✅ SERVER_PASSWORD
+✅ SERVER_PASSWORD (или SSH_PRIVATE_KEY)
 ✅ SERVER_PORT
 ✅ DATABASE_URL
 ✅ TELEGRAM_BOT_TOKEN
@@ -134,7 +135,6 @@
 ✅ AI_MODEL
 ✅ HH_CLIENT_ID
 ✅ HH_CLIENT_SECRET
-✅ HH_REDIRECT_URI
 ✅ JOB_SEARCH_INTERVAL_HOURS
 ```
 

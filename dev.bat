@@ -47,8 +47,9 @@ if not exist ".env" (
         echo ADMIN_TELEGRAM_ID=your_telegram_id
         echo HH_CLIENT_ID=your_hh_client_id
         echo HH_CLIENT_SECRET=your_hh_client_secret
-        echo HH_REDIRECT_URI=http://localhost:8000/auth/hh/callback
-        echo OPENAI_API_KEY=your_openai_api_key
+        echo HH_REDIRECT_URI=http://localhost:3001/auth/hh/callback
+        echo OPENROUTER_API_KEY=your_openrouter_api_key
+        echo ROCKET_PORT=3001
     ) > .env
     echo ⚠️ Please edit server/.env with your actual credentials
 )
@@ -79,7 +80,7 @@ start "BGalin Frontend" cmd /k "%PACKAGE_MANAGER% run dev"
 echo.
 echo ✅ Development servers started!
 echo Frontend: http://localhost:3000
-echo Backend: http://localhost:8000
+echo Backend: http://localhost:3001
 echo.
 echo Press any key to stop all servers...
 pause >nul

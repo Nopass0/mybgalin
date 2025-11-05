@@ -53,10 +53,10 @@ jobs:
             AI_MODEL=${{ secrets.AI_MODEL }}
             HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}
             HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}
-            HH_REDIRECT_URI=${{ secrets.HH_REDIRECT_URI }}
+            HH_REDIRECT_URI=https://bgalin.ru/auth/hh/callback
             JOB_SEARCH_INTERVAL_HOURS=${{ secrets.JOB_SEARCH_INTERVAL_HOURS }}
             ROCKET_ADDRESS=0.0.0.0
-            ROCKET_PORT=8000
+            ROCKET_PORT=3001
             ROCKET_ENV=production
             ENVEOF
 
@@ -85,7 +85,7 @@ jobs:
               fi
             fi
 
-            npm run build
+            NODE_ENV=production npm run build
 
             # Restart services
             echo "♻️ Restarting services..."

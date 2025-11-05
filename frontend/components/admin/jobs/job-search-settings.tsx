@@ -1,40 +1,58 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useJobs } from '@/hooks/useJobs';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Loader2, Play, Square, Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { useJobs } from "@/hooks/useJobs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, Play, Square, Save } from "lucide-react";
+import { toast } from "sonner";
 
 export function JobSearchSettings() {
-  const { searchStatus, startSearch, stopSearch, updateSettings, fetchSearchStatus } = useJobs();
-  const [searchText, setSearchText] = useState('');
-  const [experience, setExperience] = useState<string>('');
-  const [schedule, setSchedule] = useState<string>('');
-  const [employment, setEmployment] = useState<string>('');
-  const [salaryFrom, setSalaryFrom] = useState('');
+  const {
+    searchStatus,
+    startSearch,
+    stopSearch,
+    updateSettings,
+    fetchSearchStatus,
+  } = useJobs();
+  const [searchText, setSearchText] = useState("");
+  const [experience, setExperience] = useState<string>("any");
+  const [schedule, setSchedule] = useState<string>("any");
+  const [employment, setEmployment] = useState<string>("any");
+  const [salaryFrom, setSalaryFrom] = useState("");
   const [onlyWithSalary, setOnlyWithSalary] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (searchStatus?.settings) {
-      setSearchText(searchStatus.settings.search_text || '');
-      setExperience(searchStatus.settings.experience || '');
-      setSchedule(searchStatus.settings.schedule || '');
-      setEmployment(searchStatus.settings.employment || '');
-      setSalaryFrom(searchStatus.settings.salary_from?.toString() || '');
+      setSearchText(searchStatus.settings.search_text || "");
+      setExperience(searchStatus.settings.experience || "any");
+      setSchedule(searchStatus.settings.schedule || "any");
+      setEmployment(searchStatus.settings.employment || "any");
+      setSalaryFrom(searchStatus.settings.salary_from?.toString() || "");
       setOnlyWithSalary(searchStatus.settings.only_with_salary || false);
     }
   }, [searchStatus]);
 
   const handleSaveSettings = async () => {
     if (!searchText.trim()) {
-      toast.error('Укажите текст для поиска');
+      toast.error("Укажите текст для поиска");
       return;
     }
 
@@ -42,16 +60,16 @@ export function JobSearchSettings() {
     try {
       await updateSettings({
         search_text: searchText,
-        experience: experience || undefined,
-        schedule: schedule || undefined,
-        employment: employment || undefined,
+        experience: experience === "any" ? undefined : experience,
+        schedule: schedule === "any" ? undefined : schedule,
+        employment: employment === "any" ? undefined : employment,
         salary_from: salaryFrom ? parseInt(salaryFrom) : undefined,
         only_with_salary: onlyWithSalary,
       });
-      toast.success('Настройки сохранены');
+      toast.success("Настройки сохранены");
       await fetchSearchStatus();
     } catch (error) {
-      toast.error('Ошибка сохранения');
+      toast.error("Ошибка сохранения");
     } finally {
       setSaving(false);
     }
@@ -61,17 +79,17 @@ export function JobSearchSettings() {
     try {
       if (searchStatus?.is_active) {
         await stopSearch();
-        toast.success('Поиск остановлен');
+        toast.success("Поиск остановлен");
       } else {
         if (!searchStatus?.is_authorized) {
-          toast.error('Сначала подключите HH.ru');
+          toast.error("Сначала подключите HH.ru");
           return;
         }
         await startSearch();
-        toast.success('Поиск запущен');
+        toast.success("Поиск запущен");
       }
     } catch (error) {
-      toast.error('Ошибка управления поиском');
+      toast.error("Ошибка управления поиском");
     }
   };
 
@@ -81,13 +99,14 @@ export function JobSearchSettings() {
         <CardHeader>
           <CardTitle>Статус поиска</CardTitle>
           <CardDescription>
-            Автоматический поиск {searchStatus?.is_active ? 'активен' : 'остановлен'}
+            Автоматический поиск{" "}
+            {searchStatus?.is_active ? "активен" : "остановлен"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button
             onClick={handleToggleSearch}
-            variant={searchStatus?.is_active ? 'destructive' : 'default'}
+            variant={searchStatus?.is_active ? "destructive" : "default"}
             size="lg"
             disabled={!searchStatus?.is_authorized}
           >
@@ -137,7 +156,7 @@ export function JobSearchSettings() {
                   <SelectValue placeholder="Любой" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Любой</SelectItem>
+                  <SelectItem value="any">Любой</SelectItem>
                   <SelectItem value="noExperience">Без опыта</SelectItem>
                   <SelectItem value="between1And3">От 1 до 3 лет</SelectItem>
                   <SelectItem value="between3And6">От 3 до 6 лет</SelectItem>
@@ -153,7 +172,7 @@ export function JobSearchSettings() {
                   <SelectValue placeholder="Любой" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Любой</SelectItem>
+                  <SelectItem value="any">Любой</SelectItem>
                   <SelectItem value="fullDay">Полный день</SelectItem>
                   <SelectItem value="shift">Сменный график</SelectItem>
                   <SelectItem value="flexible">Гибкий график</SelectItem>
@@ -171,7 +190,7 @@ export function JobSearchSettings() {
                   <SelectValue placeholder="Любой" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Любой</SelectItem>
+                  <SelectItem value="any">Любой</SelectItem>
                   <SelectItem value="full">Полная занятость</SelectItem>
                   <SelectItem value="part">Частичная занятость</SelectItem>
                   <SelectItem value="project">Проектная работа</SelectItem>

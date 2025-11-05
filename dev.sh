@@ -46,8 +46,9 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ADMIN_TELEGRAM_ID=your_telegram_id
 HH_CLIENT_ID=your_hh_client_id
 HH_CLIENT_SECRET=your_hh_client_secret
-HH_REDIRECT_URI=http://localhost:8000/auth/hh/callback
-OPENAI_API_KEY=your_openai_api_key
+HH_REDIRECT_URI=http://localhost:3001/auth/hh/callback
+OPENROUTER_API_KEY=your_openrouter_api_key
+ROCKET_PORT=3001
 EOF
     echo -e "${RED}⚠️  Please edit server/.env with your actual credentials${NC}"
 fi
@@ -76,7 +77,7 @@ FRONTEND_PID=$!
 
 echo -e "${GREEN}✅ Development servers started!${NC}"
 echo -e "${BLUE}Frontend: http://localhost:3000${NC}"
-echo -e "${BLUE}Backend: http://localhost:8000${NC}"
+echo -e "${BLUE}Backend: http://localhost:3001${NC}"
 echo -e ""
 echo -e "${BLUE}Press Ctrl+C to stop all servers${NC}"
 
