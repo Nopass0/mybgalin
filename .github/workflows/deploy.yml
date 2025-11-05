@@ -28,6 +28,50 @@ jobs:
 
             echo "🚀 Starting deployment..."
 
+            # Check and install system dependencies
+            echo "📦 Checking system dependencies..."
+
+            # Install git if not present
+            if ! command -v git &> /dev/null; then
+              echo "Installing git..."
+              sudo apt-get update
+              sudo apt-get install -y git
+            fi
+
+            # Install build essentials if not present
+            if ! dpkg -l | grep -q build-essential; then
+              echo "Installing build-essential..."
+              sudo apt-get update
+              sudo apt-get install -y build-essential pkg-config libssl-dev curl
+            fi
+
+            # Install Rust if not present
+            if ! command -v cargo &> /dev/null; then
+              echo "Installing Rust..."
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source $HOME/.cargo/env
+              export PATH="$HOME/.cargo/bin:$PATH"
+            fi
+
+            # Install Node.js if not present
+            if ! command -v node &> /dev/null; then
+              echo "Installing Node.js..."
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+
+            # Install PM2 if not present
+            if ! command -v pm2 &> /dev/null; then
+              echo "Installing PM2..."
+              sudo npm install -g pm2
+            fi
+
+            # Install nginx if not present
+            if ! command -v nginx &> /dev/null; then
+              echo "Installing nginx..."
+              sudo apt-get install -y nginx
+            fi
+
             # Create project directory if it doesn't exist
             if [ ! -d "/var/www/bgalin" ]; then
               echo "📁 Creating project directory..."
@@ -73,6 +117,8 @@ jobs:
 
             # Build backend
             echo "🔨 Building backend..."
+            source $HOME/.cargo/env 2>/dev/null || true
+            export PATH="$HOME/.cargo/bin:$PATH"
             cargo build --release
 
             # Check if migrations exist and run them
@@ -98,14 +144,139 @@ jobs:
 
             NODE_ENV=production npm run build
 
+            # Setup systemd service if not exists
+            if [ ! -f "/etc/systemd/system/bgalin-backend.service" ]; then
+              echo "⚙️ Creating systemd service..."
+              sudo bash -c "cat > /etc/systemd/system/bgalin-backend.service << 'EOF'
+            [Unit]
+            Description=BGalin Backend Service
+            After=network.target
+
+            [Service]
+            Type=simple
+            User=$USER
+            WorkingDirectory=/var/www/bgalin/server
+            ExecStart=/var/www/bgalin/server/target/release/server
+            Restart=always
+            RestartSec=10
+            Environment=\"RUST_LOG=info\"
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF"
+              sudo systemctl daemon-reload
+              sudo systemctl enable bgalin-backend.service
+            fi
+
+            # Setup nginx config if not exists
+            if [ ! -f "/etc/nginx/sites-available/bgalin" ]; then
+              echo "🌐 Configuring nginx..."
+              sudo bash -c "cat > /etc/nginx/sites-available/bgalin << 'EOF'
+            server {
+                listen 80;
+                server_name bgalin.ru www.bgalin.ru;
+                return 301 https://\$server_name\$request_uri;
+            }
+
+            server {
+                listen 443 ssl http2;
+                server_name bgalin.ru www.bgalin.ru;
+
+                ssl_certificate /var/www/bgalin/bgalin_ru.crt;
+                ssl_certificate_key /var/www/bgalin/private.key;
+
+                ssl_protocols TLSv1.2 TLSv1.3;
+                ssl_ciphers HIGH:!aNULL:!MD5;
+                ssl_prefer_server_ciphers on;
+
+                # Frontend
+                location / {
+                    proxy_pass http://localhost:3000;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade \$http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host \$host;
+                    proxy_cache_bypass \$http_upgrade;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                }
+
+                # Backend API
+                location /api {
+                    rewrite ^/api/(.*) /\$1 break;
+                    proxy_pass http://localhost:3001;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                }
+
+                # Security headers
+                add_header X-Frame-Options \"SAMEORIGIN\" always;
+                add_header X-Content-Type-Options \"nosniff\" always;
+                add_header X-XSS-Protection \"1; mode=block\" always;
+                add_header Referrer-Policy \"no-referrer-when-downgrade\" always;
+
+                # Logging
+                access_log /var/log/nginx/bgalin_access.log;
+                error_log /var/log/nginx/bgalin_error.log;
+            }
+            EOF"
+              sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/
+              sudo rm -f /etc/nginx/sites-enabled/default
+            fi
+
+            # Setup PM2 ecosystem if not exists
+            if [ ! -f "/var/www/bgalin/frontend/ecosystem.config.js" ]; then
+              echo "📦 Creating PM2 config..."
+              cat > /var/www/bgalin/frontend/ecosystem.config.js << 'EOF'
+            module.exports = {
+              apps: [{
+                name: 'bgalin-frontend',
+                script: 'node_modules/next/dist/bin/next',
+                args: 'start',
+                cwd: '/var/www/bgalin/frontend',
+                instances: 1,
+                autorestart: true,
+                watch: false,
+                max_memory_restart: '1G',
+                env: {
+                  NODE_ENV: 'production',
+                  PORT: 3000
+                }
+              }]
+            };
+            EOF
+            fi
+
+            # Configure sudo for deployment user
+            if [ ! -f "/etc/sudoers.d/bgalin-deploy" ]; then
+              echo "🔐 Configuring sudo..."
+              sudo bash -c "cat > /etc/sudoers.d/bgalin-deploy << 'EOF'
+            $USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bgalin-backend.service
+            $USER ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+            $USER ALL=(ALL) NOPASSWD: /bin/systemctl is-active bgalin-backend.service
+            $USER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+            $USER ALL=(ALL) NOPASSWD: /bin/systemctl enable bgalin-backend.service
+            $USER ALL=(ALL) NOPASSWD: /usr/sbin/nginx
+            EOF"
+              sudo chmod 0440 /etc/sudoers.d/bgalin-deploy
+            fi
+
             # Restart services
             echo "♻️ Restarting services..."
 
-            # Restart backend
-            sudo systemctl restart bgalin-backend.service
+            # Start/restart backend
+            sudo systemctl daemon-reload
+            sudo systemctl start bgalin-backend.service || sudo systemctl restart bgalin-backend.service
 
-            # Restart frontend
-            pm2 restart bgalin-frontend
+            # Start/restart frontend
+            cd /var/www/bgalin/frontend
+            pm2 delete bgalin-frontend 2>/dev/null || true
+            pm2 start ecosystem.config.js
+            pm2 save
 
             # Reload nginx
             sudo nginx -t && sudo systemctl reload nginx
