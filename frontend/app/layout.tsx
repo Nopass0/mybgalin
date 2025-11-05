@@ -16,8 +16,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Portfolio & Job Search",
+  title: "BGalin - Portfolio & Job Search",
   description: "Personal portfolio and automated job search system",
+  icons: {
+    icon: "/logo.ico",
+  },
 };
 
 export default function RootLayout({
