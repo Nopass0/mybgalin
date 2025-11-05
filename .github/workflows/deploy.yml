@@ -88,8 +88,11 @@ jobs:
               # Check if it's a git repository
               if [ ! -d ".git" ]; then
                 echo "📥 Not a git repository, cloning..."
-                rm -rf /var/www/bgalin/*
-                rm -rf /var/www/bgalin/.*
+                cd /var/www
+                sudo rm -rf bgalin
+                sudo mkdir -p bgalin
+                sudo chown $USER:$USER bgalin
+                cd bgalin
                 git clone https://github.com/${{ github.repository }}.git .
               else
                 # Stash any local changes
