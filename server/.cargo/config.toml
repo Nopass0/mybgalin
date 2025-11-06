@@ -1,0 +1,23 @@
+# Cargo configuration for faster builds
+
+[build]
+# Use all available CPU cores
+jobs = 0
+
+# Incremental compilation for faster rebuilds
+incremental = true
+
+[profile.release]
+# Optimize for speed
+opt-level = 3
+# Enable Link Time Optimization for smaller binary
+lto = "thin"
+# Reduce number of codegen units for better optimization
+codegen-units = 1
+# Strip debug symbols for smaller binary
+strip = true
+
+[target.aarch64-unknown-linux-gnu]
+# Use mold linker if available (much faster than default ld)
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
