@@ -80,6 +80,12 @@ jobs:
               sudo apt-get install -y nodejs
             fi
 
+            # Install Python for native module building
+            if ! command -v python3 &> /dev/null; then
+              echo "Installing Python..."
+              sudo apt-get install -y python3 python3-pip
+            fi
+
             # Install PM2 if not present
             if ! command -v pm2 &> /dev/null; then
               echo "Installing PM2..."
@@ -150,15 +156,12 @@ jobs:
             echo "🎨 Building frontend..."
             cd ../frontend
 
-            # Install dependencies if node_modules doesn't exist or package.json changed
-            if [ ! -d "node_modules" ] || git diff HEAD@{1} HEAD --name-only 2>/dev/null | grep -q "package.json\|package-lock.json\|bun.lock"; then
-              echo "📦 Installing frontend dependencies..."
-              if command -v bun &> /dev/null; then
-                bun install
-              else
-                npm install
-              fi
-            fi
+            # Clean install to ensure native modules are built for the correct architecture
+            echo "📦 Installing frontend dependencies..."
+            rm -rf node_modules package-lock.json
+
+            # Install dependencies with proper flags for native modules
+            npm install --build-from-source
 
             NODE_ENV=production npm run build
 

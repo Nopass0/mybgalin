@@ -125,8 +125,8 @@ export default function ResumePage() {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="space-y-3"
         >
-          <h2 className="text-2xl font-semibold">О себе</h2>
-          <div className="prose prose-base dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3 prose-p:leading-relaxed prose-p:my-3 prose-strong:font-semibold prose-strong:text-foreground prose-ul:my-3 prose-ul:list-disc prose-ul:pl-6 prose-ol:my-3 prose-ol:list-decimal prose-ol:pl-6 prose-li:my-1">
+          <h2 className="text-3xl font-bold">О себе</h2>
+          <div className="prose prose-base dark:prose-invert text-xl max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3 prose-p:leading-relaxed prose-p:my-3 prose-strong:font-semibold prose-strong:text-foreground prose-ul:my-3 prose-ul:list-disc prose-ul:pl-6 prose-ol:my-3 prose-ol:list-decimal prose-ol:pl-6 prose-li:my-1">
             <ReactMarkdown>{portfolio.about}</ReactMarkdown>
           </div>
         </motion.div>
