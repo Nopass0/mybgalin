@@ -56,14 +56,14 @@ export function ContactsEditor({ contacts }: ContactsEditorProps) {
     try {
       if (editingId) {
         await updateContact(editingId, {
-          type: contactType,
+          contact_type: contactType,
           value,
           label: label || undefined,
         });
         toast.success("Контакт обновлен");
       } else {
         await createContact({
-          type: contactType,
+          contact_type: contactType,
           value,
           label: label || undefined,
         });
