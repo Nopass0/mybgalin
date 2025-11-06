@@ -163,7 +163,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
 
     // Update total count
     sqlx::query(
-        "UPDATE anime_sync_progress SET total = ?, message = ? WHERE id = ?"
+        "UPDATE anime_sync_progress SET total = $1, message = $2 WHERE id = $3"
     )
     .bind(years.len() as i64)
     .bind("Загрузка данных...")
@@ -177,7 +177,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
         println!("📊 Processing year {} ({}/{})", year, idx + 1, years.len());
 
         sqlx::query(
-            "UPDATE anime_sync_progress SET current = ?, message = ? WHERE id = ?"
+            "UPDATE anime_sync_progress SET current = $1, message = $2 WHERE id = $3"
         )
         .bind((idx + 1) as i64)
         .bind(format!("Обработка {} года... ({}/{})", year, idx + 1, years.len()))
@@ -201,7 +201,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
         for row in rows {
             // Check if anime already exists
             let existing: Option<(i64,)> = sqlx::query_as(
-                "SELECT id FROM anime_auction WHERE title = ? AND year = ?"
+                "SELECT id FROM anime_auction WHERE title = $1 AND year = $2"
             )
             .bind(&row.title)
             .bind(year)
@@ -229,11 +229,11 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
                 let result = sqlx::query(
                     r#"
                     UPDATE anime_auction
-                    SET date = ?, watched = ?, season = ?, episodes = ?,
-                        voice_acting = ?, buyer = ?, chat_rating = ?,
-                        sheikh_rating = ?, streamer_rating = ?, vod_link = ?,
-                        sheets_url = ?, updated_at = NOW()
-                    WHERE title = ? AND year = ?
+                    SET date = $1, watched = $2, season = $3, episodes = $4,
+                        voice_acting = $5, buyer = $6, chat_rating = $7,
+                        sheikh_rating = $8, streamer_rating = $9, vod_link = $10,
+                        sheets_url = $11, updated_at = NOW()
+                    WHERE title = $12 AND year = $13
                     "#
                 )
                 .bind(&row.date)
@@ -293,7 +293,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
                      chat_rating, sheikh_rating, streamer_rating, vod_link, sheets_url, year,
                      shikimori_id, shikimori_name, shikimori_description,
                      shikimori_cover, shikimori_score, shikimori_genres)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                     "#
                 )
                 .bind(&row.date)
@@ -334,7 +334,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
     println!("{}", final_message);
 
     sqlx::query(
-        "UPDATE anime_sync_progress SET status = 'completed', current = total, message = ?, finished_at = NOW() WHERE id = ?"
+        "UPDATE anime_sync_progress SET status = 'completed', current = total, message = $1, finished_at = NOW() WHERE id = $2"
     )
     .bind(&final_message)
     .bind(progress_id)

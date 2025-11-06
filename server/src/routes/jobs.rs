@@ -70,7 +70,7 @@ pub async fn update_search_settings(
     // Upsert settings
     sqlx::query(
         "INSERT INTO job_search_settings (id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at)
-         VALUES (1, 0, ?, ?, ?, ?, ?, ?, ?, NOW())
+         VALUES (1, FALSE, $1, $2, $3, $4, $5, $6, $7, NOW())
          ON CONFLICT(id) DO UPDATE SET
          search_text = excluded.search_text,
          area_ids = excluded.area_ids,
@@ -124,7 +124,7 @@ pub async fn get_vacancies(
     for vacancy in vacancies {
         let response: Option<JobResponse> = sqlx::query_as(
             "SELECT id, vacancy_id, hh_negotiation_id, cover_letter, status, created_at, updated_at
-             FROM job_responses WHERE vacancy_id = ? LIMIT 1"
+             FROM job_responses WHERE vacancy_id = $1 LIMIT 1"
         )
         .bind(vacancy.id)
         .fetch_optional(pool.inner())
@@ -145,7 +145,7 @@ pub async fn get_vacancy_details(
 ) -> Json<ApiResponse<VacancyWithResponse>> {
     let vacancy: Option<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
-         FROM job_vacancies WHERE id = ?"
+         FROM job_vacancies WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(pool.inner())
@@ -159,7 +159,7 @@ pub async fn get_vacancy_details(
 
     let response: Option<JobResponse> = sqlx::query_as(
         "SELECT id, vacancy_id, hh_negotiation_id, cover_letter, status, created_at, updated_at
-         FROM job_responses WHERE vacancy_id = ? LIMIT 1"
+         FROM job_responses WHERE vacancy_id = $1 LIMIT 1"
     )
     .bind(id)
     .fetch_optional(pool.inner())
@@ -177,7 +177,7 @@ pub async fn get_vacancies_by_status(
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
-         FROM job_vacancies WHERE status = ? ORDER BY found_at DESC"
+         FROM job_vacancies WHERE status = $1 ORDER BY found_at DESC"
     )
     .bind(status)
     .fetch_all(pool.inner())
@@ -188,7 +188,7 @@ pub async fn get_vacancies_by_status(
     for vacancy in vacancies {
         let response: Option<JobResponse> = sqlx::query_as(
             "SELECT id, vacancy_id, hh_negotiation_id, cover_letter, status, created_at, updated_at
-             FROM job_responses WHERE vacancy_id = ? LIMIT 1"
+             FROM job_responses WHERE vacancy_id = $1 LIMIT 1"
         )
         .bind(vacancy.id)
         .fetch_optional(pool.inner())
@@ -246,7 +246,7 @@ pub async fn ignore_vacancy(
     id: i64,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<String>> {
-    sqlx::query("UPDATE job_vacancies SET status = 'ignored' WHERE id = ?")
+    sqlx::query("UPDATE job_vacancies SET status = 'ignored' WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
         .await

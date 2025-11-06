@@ -23,26 +23,14 @@ pub async fn create_about(
         .execute(pool.inner())
         .await;
 
-    match sqlx::query(
-        "INSERT INTO portfolio_about (description, updated_at) VALUES (?, NOW())",
+    match sqlx::query_as::<_, PortfolioAbout>(
+        "INSERT INTO portfolio_about (description, updated_at) VALUES ($1, NOW()) RETURNING id, description, updated_at",
     )
     .bind(&request.description)
-    .execute(pool.inner())
+    .fetch_one(pool.inner())
     .await
     {
-        Ok(result) => {
-            let about = sqlx::query_as::<_, PortfolioAbout>(
-                "SELECT id, description, updated_at FROM portfolio_about WHERE id = ?",
-            )
-            .bind(result.last_insert_rowid())
-            .fetch_one(pool.inner())
-            .await;
-
-            match about {
-                Ok(about) => Json(ApiResponse::success(about)),
-                Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
-            }
-        }
+        Ok(about) => Json(ApiResponse::success(about)),
         Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
     }
 }
@@ -55,7 +43,7 @@ pub async fn update_about(
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioAbout>> {
     match sqlx::query(
-        "UPDATE portfolio_about SET description = ?, updated_at = NOW() WHERE id = ?",
+        "UPDATE portfolio_about SET description = $1, updated_at = NOW() WHERE id = $2",
     )
     .bind(&request.description)
     .bind(id)
@@ -64,7 +52,7 @@ pub async fn update_about(
     {
         Ok(_) => {
             let about = sqlx::query_as::<_, PortfolioAbout>(
-                "SELECT id, description, updated_at FROM portfolio_about WHERE id = ?",
+                "SELECT id, description, updated_at FROM portfolio_about WHERE id = $1",
             )
             .bind(id)
             .fetch_one(pool.inner())
@@ -100,32 +88,19 @@ pub async fn create_experience(
     request: Json<CreateExperienceRequest>,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioExperience>> {
-    match sqlx::query(
+    match sqlx::query_as::<_, PortfolioExperience>(
         "INSERT INTO portfolio_experience (title, company, date_from, date_to, description, created_at)
-         VALUES (?, ?, ?, ?, ?, NOW())",
+         VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id, title, company, date_from, date_to, description, created_at",
     )
     .bind(&request.title)
     .bind(&request.company)
     .bind(&request.date_from)
     .bind(&request.date_to)
     .bind(&request.description)
-    .execute(pool.inner())
+    .fetch_one(pool.inner())
     .await
     {
-        Ok(result) => {
-            let experience = sqlx::query_as::<_, PortfolioExperience>(
-                "SELECT id, title, company, date_from, date_to, description, created_at
-                 FROM portfolio_experience WHERE id = ?",
-            )
-            .bind(result.last_insert_rowid())
-            .fetch_one(pool.inner())
-            .await;
-
-            match experience {
-                Ok(exp) => Json(ApiResponse::success(exp)),
-                Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
-            }
-        }
+        Ok(exp) => Json(ApiResponse::success(exp)),
         Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
     }
 }
@@ -139,8 +114,8 @@ pub async fn update_experience(
 ) -> Json<ApiResponse<PortfolioExperience>> {
     match sqlx::query(
         "UPDATE portfolio_experience
-         SET title = ?, company = ?, date_from = ?, date_to = ?, description = ?
-         WHERE id = ?",
+         SET title = $1, company = $2, date_from = $3, date_to = $4, description = $5
+         WHERE id = $6",
     )
     .bind(&request.title)
     .bind(&request.company)
@@ -154,7 +129,7 @@ pub async fn update_experience(
         Ok(_) => {
             let experience = sqlx::query_as::<_, PortfolioExperience>(
                 "SELECT id, title, company, date_from, date_to, description, created_at
-                 FROM portfolio_experience WHERE id = ?",
+                 FROM portfolio_experience WHERE id = $1",
             )
             .bind(id)
             .fetch_one(pool.inner())
@@ -175,7 +150,7 @@ pub async fn delete_experience(
     id: i64,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<String>> {
-    match sqlx::query("DELETE FROM portfolio_experience WHERE id = ?")
+    match sqlx::query("DELETE FROM portfolio_experience WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -195,27 +170,15 @@ pub async fn create_skill(
     request: Json<CreateSkillRequest>,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioSkill>> {
-    match sqlx::query(
-        "INSERT INTO portfolio_skills (name, category, created_at) VALUES (?, ?, NOW())",
+    match sqlx::query_as::<_, PortfolioSkill>(
+        "INSERT INTO portfolio_skills (name, category, created_at) VALUES ($1, $2, NOW()) RETURNING id, name, category, created_at",
     )
     .bind(&request.name)
     .bind(&request.category)
-    .execute(pool.inner())
+    .fetch_one(pool.inner())
     .await
     {
-        Ok(result) => {
-            let skill = sqlx::query_as::<_, PortfolioSkill>(
-                "SELECT id, name, category, created_at FROM portfolio_skills WHERE id = ?",
-            )
-            .bind(result.last_insert_rowid())
-            .fetch_one(pool.inner())
-            .await;
-
-            match skill {
-                Ok(skill) => Json(ApiResponse::success(skill)),
-                Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
-            }
-        }
+        Ok(skill) => Json(ApiResponse::success(skill)),
         Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
     }
 }
@@ -227,7 +190,7 @@ pub async fn update_skill(
     request: Json<UpdateSkillRequest>,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioSkill>> {
-    match sqlx::query("UPDATE portfolio_skills SET name = ?, category = ? WHERE id = ?")
+    match sqlx::query("UPDATE portfolio_skills SET name = $1, category = $2 WHERE id = $3")
         .bind(&request.name)
         .bind(&request.category)
         .bind(id)
@@ -236,7 +199,7 @@ pub async fn update_skill(
     {
         Ok(_) => {
             let skill = sqlx::query_as::<_, PortfolioSkill>(
-                "SELECT id, name, category, created_at FROM portfolio_skills WHERE id = ?",
+                "SELECT id, name, category, created_at FROM portfolio_skills WHERE id = $1",
             )
             .bind(id)
             .fetch_one(pool.inner())
@@ -253,7 +216,7 @@ pub async fn update_skill(
 
 #[delete("/portfolio/skills/<id>")]
 pub async fn delete_skill(_auth: AuthGuard, id: i64, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
-    match sqlx::query("DELETE FROM portfolio_skills WHERE id = ?")
+    match sqlx::query("DELETE FROM portfolio_skills WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -273,28 +236,16 @@ pub async fn create_contact(
     request: Json<CreateContactRequest>,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioContact>> {
-    match sqlx::query(
-        "INSERT INTO portfolio_contacts (type, value, label, created_at) VALUES (?, ?, ?, NOW())",
+    match sqlx::query_as::<_, PortfolioContact>(
+        "INSERT INTO portfolio_contacts (type, value, label, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, type as contact_type, value, label, created_at",
     )
     .bind(&request.contact_type)
     .bind(&request.value)
     .bind(&request.label)
-    .execute(pool.inner())
+    .fetch_one(pool.inner())
     .await
     {
-        Ok(result) => {
-            let contact = sqlx::query_as::<_, PortfolioContact>(
-                "SELECT id, type as contact_type, value, label, created_at FROM portfolio_contacts WHERE id = ?",
-            )
-            .bind(result.last_insert_rowid())
-            .fetch_one(pool.inner())
-            .await;
-
-            match contact {
-                Ok(contact) => Json(ApiResponse::success(contact)),
-                Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
-            }
-        }
+        Ok(contact) => Json(ApiResponse::success(contact)),
         Err(e) => Json(ApiResponse::error(format!("Error: {}", e))),
     }
 }
@@ -306,7 +257,7 @@ pub async fn update_contact(
     request: Json<UpdateContactRequest>,
     pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioContact>> {
-    match sqlx::query("UPDATE portfolio_contacts SET type = ?, value = ?, label = ? WHERE id = ?")
+    match sqlx::query("UPDATE portfolio_contacts SET type = $1, value = $2, label = $3 WHERE id = $4")
         .bind(&request.contact_type)
         .bind(&request.value)
         .bind(&request.label)
@@ -316,7 +267,7 @@ pub async fn update_contact(
     {
         Ok(_) => {
             let contact = sqlx::query_as::<_, PortfolioContact>(
-                "SELECT id, type as contact_type, value, label, created_at FROM portfolio_contacts WHERE id = ?",
+                "SELECT id, type as contact_type, value, label, created_at FROM portfolio_contacts WHERE id = $1",
             )
             .bind(id)
             .fetch_one(pool.inner())
@@ -333,7 +284,7 @@ pub async fn update_contact(
 
 #[delete("/portfolio/contacts/<id>")]
 pub async fn delete_contact(_auth: AuthGuard, id: i64, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
-    match sqlx::query("DELETE FROM portfolio_contacts WHERE id = ?")
+    match sqlx::query("DELETE FROM portfolio_contacts WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -359,27 +310,29 @@ pub async fn create_case(
         Err(e) => return Json(ApiResponse::error(format!("Transaction error: {}", e))),
     };
 
-    // Insert case
-    let result = sqlx::query(
+    // Insert case with RETURNING clause
+    let result = sqlx::query_as::<_, PortfolioCase>(
         "INSERT INTO portfolio_cases (title, description, main_image, website_url, created_at)
-         VALUES (?, ?, ?, ?, NOW())",
+         VALUES ($1, $2, $3, $4, NOW()) RETURNING id, title, description, main_image, website_url, created_at",
     )
     .bind(&request.title)
     .bind(&request.description)
     .bind(&request.main_image)
     .bind(&request.website_url)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await;
 
-    let case_id = match result {
-        Ok(res) => res.last_insert_rowid(),
+    let case_data = match result {
+        Ok(data) => data,
         Err(e) => return Json(ApiResponse::error(format!("Error: {}", e))),
     };
+
+    let case_id = case_data.id;
 
     // Insert images
     for (index, image_url) in request.images.iter().enumerate() {
         if let Err(e) = sqlx::query(
-            "INSERT INTO portfolio_case_images (case_id, image_url, order_index) VALUES (?, ?, ?)",
+            "INSERT INTO portfolio_case_images (case_id, image_url, order_index) VALUES ($1, $2, $3)",
         )
         .bind(case_id)
         .bind(image_url)
@@ -396,21 +349,9 @@ pub async fn create_case(
         return Json(ApiResponse::error(format!("Commit error: {}", e)));
     }
 
-    // Fetch created case with images
-    let case_data = sqlx::query_as::<_, PortfolioCase>(
-        "SELECT id, title, description, main_image, website_url, created_at FROM portfolio_cases WHERE id = ?",
-    )
-    .bind(case_id)
-    .fetch_one(pool.inner())
-    .await;
-
-    let case_data = match case_data {
-        Ok(data) => data,
-        Err(e) => return Json(ApiResponse::error(format!("Error: {}", e))),
-    };
-
+    // Fetch images
     let images: Vec<String> = sqlx::query_scalar(
-        "SELECT image_url FROM portfolio_case_images WHERE case_id = ? ORDER BY order_index",
+        "SELECT image_url FROM portfolio_case_images WHERE case_id = $1 ORDER BY order_index",
     )
     .bind(case_id)
     .fetch_all(pool.inner())
@@ -431,7 +372,7 @@ pub async fn create_case(
 #[delete("/portfolio/cases/<id>")]
 pub async fn delete_case(_auth: AuthGuard, id: i64, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
     // Images will be deleted automatically due to ON DELETE CASCADE
-    match sqlx::query("DELETE FROM portfolio_cases WHERE id = ?")
+    match sqlx::query("DELETE FROM portfolio_cases WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -490,7 +431,7 @@ pub async fn get_portfolio(pool: &State<PgPool>) -> Json<ApiResponse<FullPortfol
     let mut cases = Vec::new();
     for case_data in cases_data {
         let images: Vec<String> = sqlx::query_scalar(
-            "SELECT image_url FROM portfolio_case_images WHERE case_id = ? ORDER BY order_index",
+            "SELECT image_url FROM portfolio_case_images WHERE case_id = $1 ORDER BY order_index",
         )
         .bind(case_data.id)
         .fetch_all(pool.inner())
