@@ -125,6 +125,11 @@ jobs:
             ROCKET_ENV=production
             ENVEOF
 
+            # Ensure data directory exists for database
+            echo "📁 Creating data directory..."
+            mkdir -p /var/www/bgalin/server/data
+            chmod 755 /var/www/bgalin/server/data
+
             # Build backend
             echo "🔨 Building backend..."
             source $HOME/.cargo/env 2>/dev/null || true
@@ -165,10 +170,9 @@ jobs:
 
             NODE_ENV=production npm run build
 
-            # Setup systemd service if not exists
-            if [ ! -f "/etc/systemd/system/bgalin-backend.service" ]; then
-              echo "⚙️ Creating systemd service..."
-              sudo bash -c "cat > /etc/systemd/system/bgalin-backend.service << 'EOF'
+            # Setup/update systemd service
+            echo "⚙️ Configuring systemd service..."
+            sudo bash -c "cat > /etc/systemd/system/bgalin-backend.service << 'EOF'
             [Unit]
             Description=BGalin Backend Service
             After=network.target
@@ -177,6 +181,7 @@ jobs:
             Type=simple
             User=$USER
             WorkingDirectory=/var/www/bgalin/server
+            EnvironmentFile=/var/www/bgalin/server/.env
             ExecStart=/var/www/bgalin/server/target/release/server
             Restart=always
             RestartSec=10
@@ -185,9 +190,8 @@ jobs:
             [Install]
             WantedBy=multi-user.target
             EOF"
-              sudo systemctl daemon-reload
-              sudo systemctl enable bgalin-backend.service
-            fi
+            sudo systemctl daemon-reload
+            sudo systemctl enable bgalin-backend.service
 
             # Setup/update nginx config
             echo "🌐 Configuring nginx..."
