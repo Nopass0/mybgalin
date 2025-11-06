@@ -1,8 +1,11 @@
 use crate::guards::AuthGuard;
+use crate::jobs::ai::AIClient;
+use crate::jobs::hh_api::HHClient;
 use crate::models::ApiResponse;
 use crate::portfolio::*;
 use rocket::serde::json::Json;
 use rocket::{delete, get, post, put, State};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 // ===================
@@ -512,4 +515,74 @@ pub async fn get_portfolio(pool: &State<SqlitePool>) -> Json<ApiResponse<FullPor
         contacts,
         cases,
     }))
+}
+
+
+#[derive(Deserialize)]
+pub struct ImproveTextRequest {
+    pub text: String,
+}
+
+#[derive(Serialize)]
+pub struct ImproveTextResponse {
+    pub improved_text: String,
+}
+
+#[post("/portfolio/improve-about", data = "<request>")]
+pub async fn improve_about_text(
+    _auth: AuthGuard,
+    request: Json<ImproveTextRequest>,
+) -> Json<ApiResponse<ImproveTextResponse>> {
+    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
+    let model = std::env::var("AI_MODEL").unwrap_or_else(|_| "google/gemini-2.0-flash-exp:free".to_string());
+    let ai_client = AIClient::new(api_key, model);
+
+    match ai_client.improve_about_text(&request.text).await {
+        Ok(improved_text) => Json(ApiResponse::success(ImproveTextResponse { improved_text })),
+        Err(e) => Json(ApiResponse::error(format!("AI error: {}", e))),
+    }
+}
+
+#[derive(Serialize)]
+pub struct HHResumeListItem {
+    pub id: String,
+    pub title: String,
+    pub updated: String,
+}
+
+#[get("/portfolio/hh-resumes")]
+pub async fn get_hh_resumes(
+    _auth: AuthGuard,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<Vec<HHResumeListItem>>> {
+    // Get HH token from database
+    let token_result = sqlx::query_scalar::<_, String>(
+        "SELECT access_token FROM hh_tokens ORDER BY created_at DESC LIMIT 1"
+    )
+    .fetch_optional(pool.inner())
+    .await;
+
+    let token = match token_result {
+        Ok(Some(t)) => t,
+        Ok(None) => return Json(ApiResponse::error("HH.ru не подключен. Авторизуйтесь через настройки.".to_string())),
+        Err(e) => return Json(ApiResponse::error(format!("Database error: {}", e))),
+    };
+
+    let mut hh_client = HHClient::new();
+    hh_client.set_token(token);
+
+    match hh_client.get_resumes().await {
+        Ok(resumes) => {
+            let resume_list: Vec<HHResumeListItem> = resumes.iter().filter_map(|r| {
+                Some(HHResumeListItem {
+                    id: r.get("id")?.as_str()?.to_string(),
+                    title: r.get("title")?.as_str()?.to_string(),
+                    updated: r.get("updated_at")?.as_str()?.to_string(),
+                })
+            }).collect();
+
+            Json(ApiResponse::success(resume_list))
+        },
+        Err(e) => Json(ApiResponse::error(format!("HH.ru API error: {}", e))),
+    }
 }

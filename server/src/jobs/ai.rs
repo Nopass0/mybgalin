@@ -36,6 +36,8 @@ impl AIClient {
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://bgalin.ru")
+            .header("X-Title", "BGalin Portfolio")
             .json(&json!({
                 "model": self.model,
                 "messages": [
@@ -47,8 +49,10 @@ impl AIClient {
             .await
             .map_err(|e| e.to_string())?;
 
-        if !res.status().is_success() {
-            return Err(format!("OpenRouter API error: {}", res.status()));
+        let status = res.status();
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("OpenRouter API error: {} - {}", status, error_body));
         }
 
         let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
@@ -78,6 +82,8 @@ impl AIClient {
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://bgalin.ru")
+            .header("X-Title", "BGalin Portfolio")
             .json(&json!({
                 "model": self.model,
                 "messages": [
@@ -89,8 +95,10 @@ impl AIClient {
             .await
             .map_err(|e| e.to_string())?;
 
-        if !res.status().is_success() {
-            return Err(format!("OpenRouter API error: {}", res.status()));
+        let status = res.status();
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("OpenRouter API error: {} - {}", status, error_body));
         }
 
         let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
@@ -120,6 +128,8 @@ impl AIClient {
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://bgalin.ru")
+            .header("X-Title", "BGalin Portfolio")
             .json(&json!({
                 "model": self.model,
                 "messages": [
@@ -131,8 +141,10 @@ impl AIClient {
             .await
             .map_err(|e| e.to_string())?;
 
-        if !res.status().is_success() {
-            return Err(format!("OpenRouter API error: {}", res.status()));
+        let status = res.status();
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("OpenRouter API error: {} - {}", status, error_body));
         }
 
         let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
@@ -158,5 +170,87 @@ impl AIClient {
 
         let message_lower = message.to_lowercase();
         bot_patterns.iter().any(|pattern| message_lower.contains(pattern))
+    }
+
+    pub async fn parse_hh_resume(&self, resume_html: &str) -> Result<String, String> {
+        let system_prompt = "Ты помощник по парсингу резюме с HH.ru. Извлеки данные из HTML и верни ТОЛЬКО JSON без дополнительного текста.";
+
+        let user_prompt = format!(
+            "Извлеки данные из этого HTML резюме с HH.ru и верни JSON:\n\n{}\n\nФормат ответа (верни ТОЛЬКО JSON, без markdown кодблоков):\n{{\n  \"about\": \"текст о себе\",\n  \"skills\": [{{\"name\": \"JavaScript\", \"category\": \"Frontend\"}}, ...],\n  \"experience\": [{{\"title\": \"Senior Developer\", \"company\": \"Company\", \"date_from\": \"Январь 2020\", \"date_to\": \"Декабрь 2023\", \"description\": \"описание\"}}, ...]\n}}",
+            resume_html
+        );
+
+        let res = self
+            .client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://bgalin.ru")
+            .header("X-Title", "BGalin Portfolio")
+            .json(&json!({
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            }))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("OpenRouter API error: {} - {}", status, error_body));
+        }
+
+        let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+        let parsed_json = data["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        Ok(parsed_json)
+    }
+
+    pub async fn improve_about_text(&self, text: &str) -> Result<String, String> {
+        let system_prompt = "Ты профессиональный копирайтер. Улучши текст 'О себе' для портфолио разработчика. ВАЖНО: Верни ТОЛЬКО улучшенный текст в Markdown формате, БЕЗ объяснений, вариантов, вступлений или комментариев.";
+
+        let user_prompt = format!(
+            "Улучши этот текст 'О себе' для портфолио:\n\n{}\n\nПравила форматирования:\n- Используй ### для подзаголовков (например: ### Опыт, ### Навыки)\n- **Жирный текст** для акцентов и ключевых слов\n- Маркированные списки через дефис (- элемент)\n- Нумерованные списки через цифру (1. элемент)\n- Обычный текст в параграфах, разделённых пустой строкой\n\nТребования:\n- Сохрани ВСЮ ключевую информацию из исходного текста\n- Профессиональный тон, структурированность\n- Максимум 6000 символов\n- Текст на русском языке\n- БЕЗ мета-текста (\"Вот улучшенный\", \"Вариант 1\" и т.д.)\n\nВерни ТОЛЬКО готовый Markdown текст.",
+            text
+        );
+
+        let res = self
+            .client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://bgalin.ru")
+            .header("X-Title", "BGalin Portfolio")
+            .json(&json!({
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            }))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("OpenRouter API error: {} - {}", status, error_body));
+        }
+
+        let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+        let improved_text = data["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        Ok(improved_text)
     }
 }

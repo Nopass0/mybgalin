@@ -1,21 +1,43 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useJobs } from '@/hooks/useJobs';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, ExternalLink, EyeOff, DollarSign, Building, Calendar } from 'lucide-react';
-import { toast } from 'sonner';
-import { motion } from 'motion/react';
+import { useEffect, useState } from "react";
+import { useJobs } from "@/hooks/useJobs";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Loader2,
+  ExternalLink,
+  EyeOff,
+  DollarSign,
+  Building,
+  Calendar,
+} from "lucide-react";
+import { toast } from "sonner";
+import { motion } from "motion/react";
+import { useTheme } from "next-themes";
+import { cn } from "@/lib/utils";
 
 export function VacanciesList() {
-  const { vacancies, isLoading, fetchVacancies, fetchVacanciesByStatus, ignoreVacancy } = useJobs();
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const {
+    vacancies,
+    isLoading,
+    fetchVacancies,
+    fetchVacanciesByStatus,
+    ignoreVacancy,
+  } = useJobs();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const { theme } = useTheme();
 
   useEffect(() => {
-    if (statusFilter === 'all') {
+    if (statusFilter === "all") {
       fetchVacancies();
     } else {
       fetchVacanciesByStatus(statusFilter);
@@ -25,23 +47,32 @@ export function VacanciesList() {
   const handleIgnore = async (id: number) => {
     try {
       await ignoreVacancy(id);
-      toast.success('Вакансия скрыта');
+      toast.success("Вакансия скрыта");
     } catch (error) {
-      toast.error('Ошибка');
+      toast.error("Ошибка");
     }
   };
 
   const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-      new: { label: 'Новая', variant: 'default' },
-      applied: { label: 'Отклик отправлен', variant: 'secondary' },
-      viewed: { label: 'Просмотрено', variant: 'outline' },
-      invited: { label: 'Приглашение', variant: 'default' },
-      rejected: { label: 'Отказ', variant: 'destructive' },
-      ignored: { label: 'Скрыта', variant: 'outline' },
+    const statusConfig: Record<
+      string,
+      {
+        label: string;
+        variant: "default" | "secondary" | "destructive" | "outline";
+      }
+    > = {
+      new: { label: "Новая", variant: "default" },
+      applied: { label: "Отклик отправлен", variant: "secondary" },
+      viewed: { label: "Просмотрено", variant: "outline" },
+      invited: { label: "Приглашение", variant: "default" },
+      rejected: { label: "Отказ", variant: "destructive" },
+      ignored: { label: "Скрыта", variant: "outline" },
     };
 
-    const config = statusConfig[status] || { label: status, variant: 'outline' };
+    const config = statusConfig[status] || {
+      label: status,
+      variant: "outline",
+    };
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
@@ -93,9 +124,17 @@ export function VacanciesList() {
                 <CardHeader>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <CardTitle className="text-lg">{item.vacancy.title}</CardTitle>
+                      <CardTitle className="text-lg">
+                        {item.vacancy.title}
+                      </CardTitle>
                       <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                        <Building className="h-4 w-4" />
+                        <Building
+                          className={cn(
+                            "h-5 w-5",
+                            theme === "dark" &&
+                              "drop-shadow-[0_0_6px_rgba(150,150,150,0.4)]",
+                          )}
+                        />
                         {item.vacancy.company}
                       </div>
                     </div>
@@ -105,11 +144,20 @@ export function VacanciesList() {
                 <CardContent className="space-y-4">
                   {(item.vacancy.salary_from || item.vacancy.salary_to) && (
                     <div className="flex items-center gap-2 text-sm">
-                      <DollarSign className="h-4 w-4 text-green-500" />
+                      <DollarSign
+                        className={cn(
+                          "h-5 w-5 text-green-500",
+                          theme === "dark" &&
+                            "drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]",
+                        )}
+                      />
                       <span>
-                        {item.vacancy.salary_from && `от ${item.vacancy.salary_from.toLocaleString()}`}
-                        {item.vacancy.salary_to && ` до ${item.vacancy.salary_to.toLocaleString()}`}
-                        {item.vacancy.salary_currency && ` ${item.vacancy.salary_currency}`}
+                        {item.vacancy.salary_from &&
+                          `от ${item.vacancy.salary_from.toLocaleString()}`}
+                        {item.vacancy.salary_to &&
+                          ` до ${item.vacancy.salary_to.toLocaleString()}`}
+                        {item.vacancy.salary_currency &&
+                          ` ${item.vacancy.salary_currency}`}
                       </span>
                     </div>
                   )}
@@ -122,7 +170,9 @@ export function VacanciesList() {
 
                   {item.response && (
                     <div className="rounded-lg border bg-muted p-3">
-                      <p className="text-xs font-semibold mb-1">Сопроводительное письмо:</p>
+                      <p className="text-xs font-semibold mb-1">
+                        Сопроводительное письмо:
+                      </p>
                       <p className="text-xs text-muted-foreground line-clamp-2">
                         {item.response.cover_letter}
                       </p>
@@ -130,10 +180,25 @@ export function VacanciesList() {
                   )}
 
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Calendar className="h-3 w-3" />
-                    Найдено: {new Date(item.vacancy.found_at).toLocaleDateString('ru-RU')}
+                    <Calendar
+                      className={cn(
+                        "h-4 w-4",
+                        theme === "dark" &&
+                          "drop-shadow-[0_0_6px_rgba(150,150,150,0.4)]",
+                      )}
+                    />
+                    Найдено:{" "}
+                    {new Date(item.vacancy.found_at).toLocaleDateString(
+                      "ru-RU",
+                    )}
                     {item.vacancy.applied_at && (
-                      <> • Отклик: {new Date(item.vacancy.applied_at).toLocaleDateString('ru-RU')}</>
+                      <>
+                        {" "}
+                        • Отклик:{" "}
+                        {new Date(item.vacancy.applied_at).toLocaleDateString(
+                          "ru-RU",
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -141,12 +206,12 @@ export function VacanciesList() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(item.vacancy.url, '_blank')}
+                      onClick={() => window.open(item.vacancy.url, "_blank")}
                     >
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Открыть на HH
                     </Button>
-                    {item.vacancy.status !== 'ignored' && (
+                    {item.vacancy.status !== "ignored" && (
                       <Button
                         variant="ghost"
                         size="sm"

@@ -1,3 +1,4 @@
+mod anime;
 mod auth;
 mod cs2;
 mod db;
@@ -141,6 +142,9 @@ async fn rocket() -> _ {
                 routes::portfolio::create_about,
                 routes::portfolio::update_about,
                 routes::portfolio::delete_about,
+                routes::portfolio::improve_about_text,
+                // HH.ru Import
+                routes::portfolio::get_hh_resumes,
                 // Experience
                 routes::portfolio::create_experience,
                 routes::portfolio::update_experience,
@@ -179,6 +183,16 @@ async fn rocket() -> _ {
             "/",
             routes![
                 routes::jobs::hh_oauth_callback,
+            ],
+        )
+        // Anime auction routes (protected)
+        .mount(
+            "/api",
+            routes![
+                routes::anime::get_upcoming_anime,
+                routes::anime::get_watched_anime,
+                routes::anime::sync_anime_data,
+                routes::anime::get_sync_progress,
             ],
         )
 }

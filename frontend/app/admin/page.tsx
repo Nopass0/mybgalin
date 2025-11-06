@@ -1,36 +1,55 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion } from 'motion/react';
-import { useAuth } from '@/hooks/useAuth';
-import { Lock, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
-import { AdminDashboard } from '@/components/admin/admin-dashboard';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
+import { useAuth } from "@/hooks/useAuth";
+import { Lock, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 export default function AdminPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, error, requestOtp, verifyOtp, initialize } = useAuth();
-  const [step, setStep] = useState<'request' | 'verify'>('request');
-  const [code, setCode] = useState('');
+  const {
+    isAuthenticated,
+    isLoading,
+    error,
+    requestOtp,
+    verifyOtp,
+    initialize,
+  } = useAuth();
+  const [step, setStep] = useState<"request" | "verify">("request");
+  const [code, setCode] = useState("");
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
     initialize();
   }, []);
 
+  useEffect(() => {
+    // Redirect to portfolio if authenticated
+    if (isAuthenticated) {
+      router.push("/admin/portfolio");
+    }
+  }, [isAuthenticated, router]);
+
   const handleRequestOtp = async () => {
     setRequesting(true);
     try {
       await requestOtp();
-      toast.success('Код отправлен в Telegram');
-      setStep('verify');
+      toast.success("Код отправлен в Telegram");
+      setStep("verify");
     } catch (error: any) {
-      toast.error(error.message || 'Не удалось отправить код');
+      toast.error(error.message || "Не удалось отправить код");
     } finally {
       setRequesting(false);
     }
@@ -39,24 +58,29 @@ export default function AdminPage() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || code.length !== 6) {
-      toast.error('Введите 6-значный код');
+      toast.error("Введите 6-значный код");
       return;
     }
 
     try {
       const success = await verifyOtp(code);
       if (success) {
-        toast.success('Вход выполнен успешно');
+        toast.success("Вход выполнен успешно");
       } else {
-        toast.error('Неверный код');
+        toast.error("Неверный код");
       }
     } catch (error: any) {
-      toast.error(error.message || 'Ошибка авторизации');
+      toast.error(error.message || "Ошибка авторизации");
     }
   };
 
+  // Show loading while redirecting
   if (isAuthenticated) {
-    return <AdminDashboard />;
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-8rem)]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   return (
@@ -74,13 +98,13 @@ export default function AdminPage() {
             </div>
             <CardTitle>Вход в админку</CardTitle>
             <CardDescription>
-              {step === 'request'
-                ? 'Получите код подтверждения в Telegram'
-                : 'Введите код из Telegram сообщения'}
+              {step === "request"
+                ? "Получите код подтверждения в Telegram"
+                : "Введите код из Telegram сообщения"}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {step === 'request' ? (
+            {step === "request" ? (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground text-center">
                   Нажмите кнопку ниже, чтобы получить одноразовый код в Telegram
@@ -97,7 +121,7 @@ export default function AdminPage() {
                       Отправка...
                     </>
                   ) : (
-                    'Отправить код'
+                    "Отправить код"
                   )}
                 </Button>
               </div>
@@ -110,7 +134,9 @@ export default function AdminPage() {
                     type="text"
                     placeholder="000000"
                     value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) =>
+                      setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
                     maxLength={6}
                     className="text-center text-2xl tracking-widest"
                     autoFocus
@@ -128,13 +154,13 @@ export default function AdminPage() {
                       Проверка...
                     </>
                   ) : (
-                    'Войти'
+                    "Войти"
                   )}
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => setStep('request')}
+                  onClick={() => setStep("request")}
                   className="w-full"
                 >
                   Отправить код снова

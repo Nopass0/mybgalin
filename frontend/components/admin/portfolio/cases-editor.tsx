@@ -1,16 +1,24 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { usePortfolio } from '@/hooks/usePortfolio';
-import type { PortfolioCase } from '@/lib/types';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, Check, X, Globe, Image as ImageIcon } from 'lucide-react';
-import { toast } from 'sonner';
-import Image from 'next/image';
+import { useState } from "react";
+import { usePortfolio } from "@/hooks/usePortfolio";
+import type { PortfolioCase } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  Check,
+  X,
+  Globe,
+  Image as ImageIcon,
+} from "lucide-react";
+import { toast } from "sonner";
+import Image from "next/image";
 
 interface CasesEditorProps {
   cases: PortfolioCase[];
@@ -19,28 +27,28 @@ interface CasesEditorProps {
 export function CasesEditor({ cases }: CasesEditorProps) {
   const { createCase, deleteCase } = usePortfolio();
   const [showForm, setShowForm] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [mainImage, setMainImage] = useState('');
-  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [mainImage, setMainImage] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [imageInput, setImageInput] = useState('');
+  const [imageInput, setImageInput] = useState("");
   const [saving, setSaving] = useState(false);
 
   const resetForm = () => {
-    setTitle('');
-    setDescription('');
-    setMainImage('');
-    setWebsiteUrl('');
+    setTitle("");
+    setDescription("");
+    setMainImage("");
+    setWebsiteUrl("");
     setImages([]);
-    setImageInput('');
+    setImageInput("");
     setShowForm(false);
   };
 
   const handleAddImage = () => {
     if (imageInput.trim()) {
       setImages([...images, imageInput.trim()]);
-      setImageInput('');
+      setImageInput("");
     }
   };
 
@@ -50,7 +58,7 @@ export function CasesEditor({ cases }: CasesEditorProps) {
 
   const handleSave = async () => {
     if (!title.trim()) {
-      toast.error('Заполните название');
+      toast.error("Заполните название");
       return;
     }
 
@@ -63,23 +71,23 @@ export function CasesEditor({ cases }: CasesEditorProps) {
         website_url: websiteUrl || undefined,
         images,
       });
-      toast.success('Кейс добавлен');
+      toast.success("Кейс добавлен");
       resetForm();
     } catch (error) {
-      toast.error('Ошибка сохранения');
+      toast.error("Ошибка сохранения");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Удалить этот кейс?')) return;
+    if (!confirm("Удалить этот кейс?")) return;
 
     try {
       await deleteCase(id);
-      toast.success('Кейс удален');
+      toast.success("Кейс удален");
     } catch (error) {
-      toast.error('Ошибка удаления');
+      toast.error("Ошибка удаления");
     }
   };
 
@@ -102,7 +110,9 @@ export function CasesEditor({ cases }: CasesEditorProps) {
                 )}
                 <h4 className="font-semibold">{projectCase.title}</h4>
                 {projectCase.description && (
-                  <p className="text-sm text-muted-foreground">{projectCase.description}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {projectCase.description}
+                  </p>
                 )}
                 {projectCase.website_url && (
                   <a
@@ -118,14 +128,26 @@ export function CasesEditor({ cases }: CasesEditorProps) {
                 {projectCase.images.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
                     {projectCase.images.map((img, idx) => (
-                      <div key={idx} className="relative h-16 w-16 rounded border">
-                        <Image src={img} alt={`Image ${idx + 1}`} fill className="object-cover" />
+                      <div
+                        key={idx}
+                        className="relative h-16 w-16 rounded border"
+                      >
+                        <Image
+                          src={img}
+                          alt={`Image ${idx + 1}`}
+                          fill
+                          className="object-cover"
+                        />
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-              <Button variant="ghost" size="icon" onClick={() => handleDelete(projectCase.id)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleDelete(projectCase.id)}
+              >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
@@ -138,7 +160,11 @@ export function CasesEditor({ cases }: CasesEditorProps) {
           <CardContent className="p-4 space-y-4">
             <div className="space-y-2">
               <Label>Название *</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Мой проект" />
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Мой проект"
+              />
             </div>
             <div className="space-y-2">
               <Label>Описание</Label>
@@ -172,9 +198,13 @@ export function CasesEditor({ cases }: CasesEditorProps) {
                   value={imageInput}
                   onChange={(e) => setImageInput(e.target.value)}
                   placeholder="https://example.com/image.jpg"
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddImage()}
+                  onKeyPress={(e) => e.key === "Enter" && handleAddImage()}
                 />
-                <Button type="button" onClick={handleAddImage} variant="outline">
+                <Button
+                  type="button"
+                  onClick={handleAddImage}
+                  variant="outline"
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
@@ -183,7 +213,13 @@ export function CasesEditor({ cases }: CasesEditorProps) {
                   {images.map((img, idx) => (
                     <div key={idx} className="relative group">
                       <div className="h-16 w-16 rounded border overflow-hidden">
-                        <Image src={img} alt={`Image ${idx + 1}`} width={64} height={64} className="object-cover" />
+                        <Image
+                          src={img}
+                          alt={`Image ${idx + 1}`}
+                          width={64}
+                          height={64}
+                          className="object-cover"
+                        />
                       </div>
                       <button
                         onClick={() => handleRemoveImage(idx)}
@@ -198,7 +234,11 @@ export function CasesEditor({ cases }: CasesEditorProps) {
             </div>
             <div className="flex gap-2">
               <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
               </Button>
               <Button variant="outline" onClick={resetForm}>
                 <X className="h-4 w-4" />
@@ -207,10 +247,16 @@ export function CasesEditor({ cases }: CasesEditorProps) {
           </CardContent>
         </Card>
       ) : (
-        <Button onClick={() => setShowForm(true)} variant="outline" className="w-full">
-          <Plus className="mr-2 h-4 w-4" />
-          Добавить кейс
-        </Button>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => setShowForm(true)}
+            variant="outline"
+            className="h-10"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Добавить кейс
+          </Button>
+        </div>
       )}
     </div>
   );

@@ -257,5 +257,97 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // Create anime auction table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS anime_auction (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            title TEXT NOT NULL,
+            watched INTEGER DEFAULT 0,
+            season TEXT,
+            episodes TEXT,
+            voice_acting TEXT,
+            buyer TEXT,
+            chat_rating REAL,
+            sheikh_rating REAL,
+            streamer_rating REAL,
+            vod_link TEXT,
+            sheets_url TEXT,
+            year INTEGER NOT NULL,
+            shikimori_id INTEGER,
+            shikimori_name TEXT,
+            shikimori_description TEXT,
+            shikimori_cover TEXT,
+            shikimori_score REAL,
+            shikimori_genres TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_anime_date ON anime_auction(date)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_anime_year ON anime_auction(year)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_anime_watched ON anime_auction(watched)")
+        .execute(&pool)
+        .await?;
+
+    // Anime sync progress tracking
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS anime_sync_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL,
+            current INTEGER DEFAULT 0,
+            total INTEGER DEFAULT 0,
+            message TEXT,
+            started_at TEXT NOT NULL DEFAULT (datetime('now')),
+            finished_at TEXT
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Migrations for anime_auction table - add missing columns if they don't exist
+    // Check if sheets_url column exists
+    let has_sheets_url: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('anime_auction') WHERE name = 'sheets_url'"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_sheets_url {
+        println!("🔧 Adding sheets_url column to anime_auction table");
+        sqlx::query("ALTER TABLE anime_auction ADD COLUMN sheets_url TEXT")
+            .execute(&pool)
+            .await?;
+    }
+
+    // Check if shikimori_genres column exists
+    let has_shikimori_genres: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('anime_auction') WHERE name = 'shikimori_genres'"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_shikimori_genres {
+        println!("🔧 Adding shikimori_genres column to anime_auction table");
+        sqlx::query("ALTER TABLE anime_auction ADD COLUMN shikimori_genres TEXT")
+            .execute(&pool)
+            .await?;
+    }
+
     Ok(pool)
 }

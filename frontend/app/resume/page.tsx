@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { motion } from 'motion/react';
-import { usePortfolio } from '@/hooks/usePortfolio';
+import { useEffect } from "react";
+import { motion } from "motion/react";
+import { usePortfolio } from "@/hooks/usePortfolio";
 import {
   Briefcase,
   Code,
@@ -13,12 +13,20 @@ import {
   Github,
   Calendar,
   Building,
-  Loader2
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import Image from 'next/image';
+  Loader2,
+  Send,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import Image from "next/image";
+import ReactMarkdown from "react-markdown";
 
 export default function ResumePage() {
   const { portfolio, isLoading, fetchPortfolio } = usePortfolio();
@@ -35,20 +43,52 @@ export default function ResumePage() {
     );
   }
 
-  const getContactIcon = (type: string) => {
+  const getContactIcon = (type: string | undefined) => {
+    if (!type) return <Mail className="h-4 w-4" />;
+
     switch (type.toLowerCase()) {
-      case 'email':
+      case "email":
         return <Mail className="h-4 w-4" />;
-      case 'phone':
+      case "phone":
         return <Phone className="h-4 w-4" />;
-      case 'website':
+      case "telegram":
+        return <Send className="h-4 w-4" />;
+      case "website":
         return <Globe className="h-4 w-4" />;
-      case 'linkedin':
+      case "linkedin":
         return <Linkedin className="h-4 w-4" />;
-      case 'github':
+      case "github":
         return <Github className="h-4 w-4" />;
       default:
         return <Mail className="h-4 w-4" />;
+    }
+  };
+
+  const formatContactValue = (type: string | undefined, value: string) => {
+    if (type?.toLowerCase() === "telegram") {
+      const username = value.startsWith("@") ? value.slice(1) : value;
+      return `@${username}`;
+    }
+    return value;
+  };
+
+  const getContactLink = (type: string | undefined, value: string) => {
+    if (!type) return null;
+
+    switch (type.toLowerCase()) {
+      case "email":
+        return `mailto:${value}`;
+      case "phone":
+        return `tel:${value}`;
+      case "telegram":
+        const username = value.startsWith("@") ? value.slice(1) : value;
+        return `https://t.me/${username}`;
+      case "website":
+      case "linkedin":
+      case "github":
+        return value.startsWith("http") ? value : `https://${value}`;
+      default:
+        return null;
     }
   };
 
@@ -83,15 +123,12 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
+          className="space-y-3"
         >
-          <Card>
-            <CardHeader>
-              <CardTitle>О себе</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground whitespace-pre-wrap">{portfolio.about}</p>
-            </CardContent>
-          </Card>
+          <h2 className="text-2xl font-semibold">О себе</h2>
+          <div className="prose prose-base dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3 prose-p:leading-relaxed prose-p:my-3 prose-strong:font-semibold prose-strong:text-foreground prose-ul:my-3 prose-ul:list-disc prose-ul:pl-6 prose-ol:my-3 prose-ol:list-decimal prose-ol:pl-6 prose-li:my-1">
+            <ReactMarkdown>{portfolio.about}</ReactMarkdown>
+          </div>
         </motion.div>
       )}
 
@@ -101,27 +138,43 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
+          className="space-y-3"
         >
-          <Card>
-            <CardHeader>
-              <CardTitle>Контакты</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {portfolio.contacts.map((contact) => (
-                  <div key={contact.id} className="flex items-center gap-2">
-                    {getContactIcon(contact.contact_type)}
-                    <div className="flex-1">
-                      {contact.label && (
-                        <p className="text-xs text-muted-foreground">{contact.label}</p>
-                      )}
-                      <p className="text-sm">{contact.value}</p>
-                    </div>
+          <h2 className="text-2xl font-semibold">Контакты</h2>
+          <div className="flex flex-col gap-3">
+            {portfolio.contacts.map((contact) => {
+              const link = getContactLink(contact.contact_type, contact.value);
+              const displayValue = formatContactValue(
+                contact.contact_type,
+                contact.value,
+              );
+
+              return (
+                <div key={contact.id} className="flex items-center gap-3">
+                  {getContactIcon(contact.contact_type)}
+                  <div className="flex-1">
+                    {contact.label && (
+                      <p className="text-sm text-muted-foreground">
+                        {contact.label}
+                      </p>
+                    )}
+                    {link ? (
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-base hover:underline hover:text-primary"
+                      >
+                        {displayValue}
+                      </a>
+                    ) : (
+                      <p className="text-base">{displayValue}</p>
+                    )}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              );
+            })}
+          </div>
         </motion.div>
       )}
 
@@ -131,44 +184,39 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
+          className="space-y-4"
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Briefcase className="h-5 w-5" />
-                Опыт работы
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {portfolio.experience.map((exp, index) => (
-                  <div key={exp.id}>
-                    {index > 0 && <Separator className="my-4" />}
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <h3 className="font-semibold">{exp.title}</h3>
-                          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                            <Building className="h-4 w-4" />
-                            {exp.company}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
-                          <Calendar className="h-4 w-4" />
-                          {exp.date_from} — {exp.date_to || 'настоящее время'}
-                        </div>
+          <h2 className="text-2xl font-semibold flex items-center gap-2">
+            <Briefcase className="h-6 w-6" />
+            Опыт работы
+          </h2>
+          <div className="space-y-6">
+            {portfolio.experience.map((exp, index) => (
+              <div key={exp.id}>
+                {index > 0 && <Separator className="my-4" />}
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold">{exp.title}</h3>
+                      <div className="flex items-center gap-2 mt-1 text-base text-muted-foreground">
+                        <Building className="h-5 w-5" />
+                        {exp.company}
                       </div>
-                      {exp.description && (
-                        <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">
-                          {exp.description}
-                        </p>
-                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-base text-muted-foreground whitespace-nowrap">
+                      <Calendar className="h-5 w-5" />
+                      {exp.date_from} — {exp.date_to || "настоящее время"}
                     </div>
                   </div>
-                ))}
+                  {exp.description && (
+                    <p className="text-base text-muted-foreground mt-2 whitespace-pre-wrap">
+                      {exp.description}
+                    </p>
+                  )}
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            ))}
+          </div>
         </motion.div>
       )}
 
@@ -178,31 +226,32 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.4 }}
+          className="space-y-4"
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Code className="h-5 w-5" />
-                Навыки
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {Object.entries(groupSkillsByCategory()).map(([category, skills]) => (
-                  <div key={category}>
-                    <h4 className="text-sm font-semibold mb-2">{category}</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {skills.map((skill, index) => (
-                        <Badge key={index} variant="secondary">
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
+          <h2 className="text-2xl font-semibold flex items-center gap-2">
+            <Code className="h-6 w-6" />
+            Навыки
+          </h2>
+          <div className="space-y-4">
+            {Object.entries(groupSkillsByCategory()).map(
+              ([category, skills]) => (
+                <div key={category}>
+                  <h4 className="text-base font-semibold mb-2">{category}</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {skills.map((skill, index) => (
+                      <Badge
+                        key={index}
+                        variant="secondary"
+                        className="text-sm px-3 py-1"
+                      >
+                        {skill}
+                      </Badge>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              ),
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -212,13 +261,14 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.5 }}
+          className="space-y-4"
         >
-          <h2 className="text-2xl font-semibold mb-4">Проекты</h2>
+          <h2 className="text-2xl font-semibold">Проекты</h2>
           <div className="grid gap-6 md:grid-cols-2">
             {portfolio.cases.map((projectCase) => (
-              <Card key={projectCase.id} className="overflow-hidden">
+              <div key={projectCase.id} className="space-y-3">
                 {projectCase.main_image && (
-                  <div className="relative h-48 w-full bg-muted">
+                  <div className="relative h-48 w-full bg-muted rounded-lg overflow-hidden">
                     <Image
                       src={projectCase.main_image}
                       alt={projectCase.title}
@@ -227,31 +277,32 @@ export default function ResumePage() {
                     />
                   </div>
                 )}
-                <CardHeader>
-                  <CardTitle>{projectCase.title}</CardTitle>
+                <div>
+                  <h3 className="text-lg font-semibold">{projectCase.title}</h3>
                   {projectCase.website_url && (
-                    <CardDescription>
-                      <a
-                        href={projectCase.website_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 hover:underline"
-                      >
-                        <Globe className="h-3 w-3" />
-                        {projectCase.website_url}
-                      </a>
-                    </CardDescription>
+                    <a
+                      href={projectCase.website_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-sm text-muted-foreground hover:underline hover:text-primary mt-1"
+                    >
+                      <Globe className="h-4 w-4" />
+                      {projectCase.website_url}
+                    </a>
                   )}
-                </CardHeader>
+                </div>
                 {projectCase.description && (
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  <div>
+                    <p className="text-base text-muted-foreground whitespace-pre-wrap">
                       {projectCase.description}
                     </p>
                     {projectCase.images && projectCase.images.length > 0 && (
                       <div className="grid grid-cols-3 gap-2 mt-4">
                         {projectCase.images.slice(0, 3).map((image, index) => (
-                          <div key={index} className="relative h-20 rounded-md overflow-hidden bg-muted">
+                          <div
+                            key={index}
+                            className="relative h-20 rounded-md overflow-hidden bg-muted"
+                          >
                             <Image
                               src={image}
                               alt={`${projectCase.title} ${index + 1}`}
@@ -262,9 +313,9 @@ export default function ResumePage() {
                         ))}
                       </div>
                     )}
-                  </CardContent>
+                  </div>
                 )}
-              </Card>
+              </div>
             ))}
           </div>
         </motion.div>

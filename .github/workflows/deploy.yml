@@ -65,6 +65,14 @@ jobs:
               export PATH="$HOME/.cargo/bin:$PATH"
             fi
 
+            # Install sccache for faster Rust builds
+            if ! command -v sccache &> /dev/null; then
+              echo "Installing sccache..."
+              source $HOME/.cargo/env 2>/dev/null || true
+              export PATH="$HOME/.cargo/bin:$PATH"
+              cargo install sccache || true
+            fi
+
             # Install Node.js if not present
             if ! command -v node &> /dev/null; then
               echo "Installing Node.js..."
@@ -115,7 +123,21 @@ jobs:
             echo "🔨 Building backend..."
             source $HOME/.cargo/env 2>/dev/null || true
             export PATH="$HOME/.cargo/bin:$PATH"
+
+            # Use sccache if available
+            if command -v sccache &> /dev/null; then
+              export RUSTC_WRAPPER=sccache
+              export SCCACHE_DIR=/var/www/.sccache
+              mkdir -p $SCCACHE_DIR
+              echo "Using sccache for faster builds..."
+            fi
+
             cargo build --release
+
+            # Show sccache stats
+            if command -v sccache &> /dev/null; then
+              sccache --show-stats || true
+            fi
 
             # Check if migrations exist and run them
             if [ -d "migrations" ]; then

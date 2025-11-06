@@ -4,3 +4,4 @@ pub mod public_routes;
 pub mod cs2;
 pub mod portfolio;
 pub mod jobs;
+pub mod anime;

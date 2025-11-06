@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use sqlx::SqlitePool;
 use crate::jobs::{HHClient, AIClient};
-use chrono::Utc;
+use chrono::{Utc, Timelike, Datelike};
 
 #[derive(Clone)]
 pub struct JobScheduler {
@@ -59,6 +59,14 @@ impl JobScheduler {
                     .unwrap_or_else(|_| "4".to_string())
                     .parse()
                     .unwrap_or(4);
+
+                // Check if it's time for daily anime sync (at 3 AM)
+                let now = chrono::Local::now();
+                if now.hour() == 3 && now.minute() < 10 {
+                    if let Err(e) = self.sync_anime().await {
+                        eprintln!("❌ Anime sync error: {}", e);
+                    }
+                }
 
                 // Check responses every 10 minutes
                 if let Err(e) = self.check_responses().await {
@@ -581,5 +589,85 @@ impl JobScheduler {
         let email = email.map(|(v,)| v).unwrap_or_else(|| "email@example.com".to_string());
 
         Ok((telegram, email))
+    }
+
+    async fn sync_anime(&self) -> Result<(), String> {
+        println!("🎬 Starting daily anime sync...");
+
+        use crate::anime::{GoogleSheetsClient, ShikimoriClient};
+
+        const SHEET_ID: &str = "1Dr02PNJp4W6lJnI31ohN-jkZWIL4Jylww6vVrPVrYfs";
+
+        let sheets_client = GoogleSheetsClient::new(SHEET_ID.to_string());
+        let shikimori_client = ShikimoriClient::new();
+
+        let mut total_synced = 0;
+
+        // Sync only current year after first sync
+        let current_year = chrono::Utc::now().year() as i64;
+
+        let rows = match sheets_client.fetch_sheet_data(current_year).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Error fetching sheet for year {}: {}", current_year, e);
+                return Err(e);
+            }
+        };
+
+        for row in rows {
+            let sheets_url = format!(
+                "https://docs.google.com/spreadsheets/d/{}/edit#gid={}",
+                SHEET_ID,
+                match current_year {
+                    2020 => "0", 2021 => "1", 2022 => "2",
+                    2023 => "3", 2024 => "4", 2025 => "5",
+                    _ => "0",
+                }
+            );
+
+            // Check if exists
+            let existing: Option<(i64,)> = sqlx::query_as(
+                "SELECT id FROM anime_auction WHERE title = ? AND year = ?"
+            )
+            .bind(&row.title)
+            .bind(current_year)
+            .fetch_optional(&self.pool)
+            .await
+            .ok()
+            .flatten();
+
+            if existing.is_some() {
+                // Update existing
+                sqlx::query(
+                    r#"UPDATE anime_auction
+                    SET date = ?, watched = ?, season = ?, episodes = ?,
+                        voice_acting = ?, buyer = ?, chat_rating = ?,
+                        sheikh_rating = ?, streamer_rating = ?, vod_link = ?,
+                        sheets_url = ?, updated_at = datetime('now')
+                    WHERE title = ? AND year = ?"#
+                )
+                .bind(&row.date)
+                .bind(if row.watched { 1 } else { 0 })
+                .bind(&row.season)
+                .bind(&row.episodes)
+                .bind(&row.voice_acting)
+                .bind(&row.buyer)
+                .bind(row.chat_rating)
+                .bind(row.sheikh_rating)
+                .bind(row.streamer_rating)
+                .bind(&row.vod_link)
+                .bind(&sheets_url)
+                .bind(&row.title)
+                .bind(current_year)
+                .execute(&self.pool)
+                .await
+                .ok();
+
+                total_synced += 1;
+            }
+        }
+
+        println!("✅ Anime sync completed. Updated {} entries", total_synced);
+        Ok(())
     }
 }

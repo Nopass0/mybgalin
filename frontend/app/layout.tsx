@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { StarfieldBackground } from "@/components/starfield-background";
+import { StarfieldProvider } from "@/components/starfield-context";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -39,15 +41,18 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <div className="relative flex min-h-screen">
-            <SidebarNav />
-            <main className="flex-1 md:pl-64">
-              <div className="container mx-auto p-6 pt-20 md:pt-6">
-                {children}
-              </div>
-            </main>
-          </div>
-          <Toaster />
+          <StarfieldProvider>
+            <StarfieldBackground />
+            <div className="relative flex min-h-screen">
+              <SidebarNav />
+              <main className="flex-1 md:pl-64">
+                <div className="container mx-auto p-6 pt-20 md:pt-6">
+                  {children}
+                </div>
+              </main>
+            </div>
+            <Toaster />
+          </StarfieldProvider>
         </ThemeProvider>
       </body>
     </html>

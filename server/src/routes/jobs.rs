@@ -3,6 +3,7 @@ use crate::jobs::*;
 use crate::models::ApiResponse;
 use rocket::serde::json::Json;
 use rocket::{get, post, put, State};
+use rocket::response::Redirect;
 use sqlx::SqlitePool;
 
 // ==================
@@ -254,12 +255,25 @@ pub async fn ignore_vacancy(
     Json(ApiResponse::success("Vacancy ignored".to_string()))
 }
 
-// HH OAuth callback endpoint (simplified)
-#[get("/auth/hh/callback?<code>")]
+// HH OAuth callback endpoint - redirects to frontend after processing
+#[get("/auth/hh/callback?<code>&<error>&<error_description>")]
 pub async fn hh_oauth_callback(
-    code: String,
+    code: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
     pool: &State<SqlitePool>,
-) -> String {
+) -> Redirect {
+    // If there's an error from HH, redirect to frontend with error
+    if let Some(err) = error {
+        let description = error_description.unwrap_or_else(|| "Unknown error".to_string());
+        return Redirect::to(format!("/auth/hh/callback?error={}&error_description={}", err, description));
+    }
+
+    // If no code, redirect with error
+    let Some(code) = code else {
+        return Redirect::to("/auth/hh/callback?error=no_code&error_description=Authorization code not received");
+    };
+
     let client_id = std::env::var("HH_CLIENT_ID").unwrap_or_default();
     let client_secret = std::env::var("HH_CLIENT_SECRET").unwrap_or_default();
     let redirect_uri = std::env::var("HH_REDIRECT_URI").unwrap_or_default();
@@ -268,19 +282,19 @@ pub async fn hh_oauth_callback(
         Ok((access_token, refresh_token, expires_in)) => {
             let expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
 
-            sqlx::query(
+            match sqlx::query(
                 "INSERT INTO hh_tokens (access_token, refresh_token, expires_at) VALUES (?, ?, ?)"
             )
             .bind(&access_token)
             .bind(&refresh_token)
             .bind(expires_at.to_rfc3339())
             .execute(pool.inner())
-            .await
-            .ok();
-
-            "Authorization successful! You can close this page.".to_string()
+            .await {
+                Ok(_) => Redirect::to("/auth/hh/callback?success=true"),
+                Err(e) => Redirect::to(format!("/auth/hh/callback?error=db_error&error_description={}", e)),
+            }
         }
-        Err(e) => format!("Authorization failed: {}", e),
+        Err(e) => Redirect::to(format!("/auth/hh/callback?error=token_exchange&error_description={}", e)),
     }
 }
 
