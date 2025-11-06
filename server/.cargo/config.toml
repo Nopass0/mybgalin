@@ -1,9 +1,6 @@
 # Cargo configuration for faster builds
 
 [build]
-# Use all available CPU cores
-jobs = 0
-
 # Incremental compilation for faster rebuilds
 incremental = true
 
