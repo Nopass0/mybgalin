@@ -5,7 +5,7 @@ use crate::models::ApiResponse;
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use chrono::Datelike;
 
 const SHEET_ID: &str = "1Dr02PNJp4W6lJnI31ohN-jkZWIL4Jylww6vVrPVrYfs";
@@ -13,7 +13,7 @@ const SHEET_ID: &str = "1Dr02PNJp4W6lJnI31ohN-jkZWIL4Jylww6vVrPVrYfs";
 #[get("/anime/upcoming")]
 pub async fn get_upcoming_anime(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<Vec<AnimeAuctionResponse>>> {
     let animes: Vec<AnimeAuction> = match sqlx::query_as::<_, AnimeAuction>(
         "SELECT * FROM anime_auction WHERE watched = 0 ORDER BY
@@ -48,7 +48,7 @@ pub async fn get_upcoming_anime(
 #[get("/anime/watched")]
 pub async fn get_watched_anime(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<Vec<AnimeAuctionResponse>>> {
     let animes: Vec<AnimeAuction> = match sqlx::query_as::<_, AnimeAuction>(
         "SELECT * FROM anime_auction WHERE watched = 1 ORDER BY date DESC"
@@ -98,7 +98,7 @@ pub struct SyncProgress {
 #[get("/anime/sync/progress")]
 pub async fn get_sync_progress(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<Option<SyncProgress>>> {
     let progress: Option<SyncProgress> = sqlx::query_as(
         "SELECT * FROM anime_sync_progress ORDER BY id DESC LIMIT 1"
@@ -114,7 +114,7 @@ pub async fn get_sync_progress(
 #[post("/anime/sync")]
 pub async fn sync_anime_data(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<String>> {
     // Check if sync is already running
     let existing: Option<(i64,)> = sqlx::query_as(
@@ -146,7 +146,7 @@ pub async fn sync_anime_data(
     Json(ApiResponse::success("Синхронизация запущена".to_string()))
 }
 
-async fn run_sync_task(pool: SqlitePool, progress_id: i64) {
+async fn run_sync_task(pool: PgPool, progress_id: i64) {
     println!("🎬 Starting anime sync task (progress_id: {})", progress_id);
 
     let sheets_client = GoogleSheetsClient::new(SHEET_ID.to_string());
@@ -232,7 +232,7 @@ async fn run_sync_task(pool: SqlitePool, progress_id: i64) {
                     SET date = ?, watched = ?, season = ?, episodes = ?,
                         voice_acting = ?, buyer = ?, chat_rating = ?,
                         sheikh_rating = ?, streamer_rating = ?, vod_link = ?,
-                        sheets_url = ?, updated_at = datetime('now')
+                        sheets_url = ?, updated_at = NOW()
                     WHERE title = ? AND year = ?
                     "#
                 )
@@ -334,7 +334,7 @@ async fn run_sync_task(pool: SqlitePool, progress_id: i64) {
     println!("{}", final_message);
 
     sqlx::query(
-        "UPDATE anime_sync_progress SET status = 'completed', current = total, message = ?, finished_at = datetime('now') WHERE id = ?"
+        "UPDATE anime_sync_progress SET status = 'completed', current = total, message = ?, finished_at = NOW() WHERE id = ?"
     )
     .bind(&final_message)
     .bind(progress_id)

@@ -1,7 +1,7 @@
 use crate::models::{OtpCode, Session, User};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 pub struct AuthService;
@@ -29,12 +29,12 @@ impl AuthService {
 
     // Get or create user by telegram_id
     pub async fn get_or_create_user(
-        pool: &SqlitePool,
+        pool: &PgPool,
         telegram_id: i64,
     ) -> Result<User, sqlx::Error> {
         // Try to find existing user
         let user = sqlx::query_as::<_, User>(
-            "SELECT id, telegram_id, username, created_at FROM users WHERE telegram_id = ?",
+            "SELECT id, telegram_id, username, created_at FROM users WHERE telegram_id = $1",
         )
         .bind(telegram_id)
         .fetch_optional(pool)
@@ -45,17 +45,10 @@ impl AuthService {
         }
 
         // Create new user
-        let result = sqlx::query(
-            "INSERT INTO users (telegram_id, created_at) VALUES (?, datetime('now'))",
+        let user = sqlx::query_as::<_, User>(
+            "INSERT INTO users (telegram_id, created_at) VALUES ($1, NOW()) RETURNING id, telegram_id, username, created_at",
         )
         .bind(telegram_id)
-        .execute(pool)
-        .await?;
-
-        let user = sqlx::query_as::<_, User>(
-            "SELECT id, telegram_id, username, created_at FROM users WHERE id = ?",
-        )
-        .bind(result.last_insert_rowid())
         .fetch_one(pool)
         .await?;
 
@@ -64,30 +57,24 @@ impl AuthService {
 
     // Create OTP code for user
     pub async fn create_otp(
-        pool: &SqlitePool,
+        pool: &PgPool,
         user_id: i64,
         code: &str,
     ) -> Result<OtpCode, sqlx::Error> {
         // Invalidate all previous unused codes
-        sqlx::query("UPDATE otp_codes SET used = 1 WHERE user_id = ? AND used = 0")
+        sqlx::query("UPDATE otp_codes SET used = TRUE WHERE user_id = $1 AND used = FALSE")
             .bind(user_id)
             .execute(pool)
             .await?;
 
         // Insert new code (expires in 5 minutes)
-        let result = sqlx::query(
+        let otp = sqlx::query_as::<_, OtpCode>(
             "INSERT INTO otp_codes (user_id, code, expires_at, created_at)
-             VALUES (?, ?, datetime('now', '+5 minutes'), datetime('now'))",
+             VALUES ($1, $2, NOW() + INTERVAL '5 minutes', NOW())
+             RETURNING id, user_id, code, expires_at, used, created_at",
         )
         .bind(user_id)
         .bind(code)
-        .execute(pool)
-        .await?;
-
-        let otp = sqlx::query_as::<_, OtpCode>(
-            "SELECT id, user_id, code, expires_at, used, created_at FROM otp_codes WHERE id = ?",
-        )
-        .bind(result.last_insert_rowid())
         .fetch_one(pool)
         .await?;
 
@@ -96,13 +83,13 @@ impl AuthService {
 
     // Verify OTP and create session
     pub async fn verify_otp(
-        pool: &SqlitePool,
+        pool: &PgPool,
         telegram_id: i64,
         code: &str,
     ) -> Result<Option<String>, sqlx::Error> {
         // Find user
         let user = sqlx::query_as::<_, User>(
-            "SELECT id, telegram_id, username, created_at FROM users WHERE telegram_id = ?",
+            "SELECT id, telegram_id, username, created_at FROM users WHERE telegram_id = $1",
         )
         .bind(telegram_id)
         .fetch_optional(pool)
@@ -117,7 +104,7 @@ impl AuthService {
         let otp = sqlx::query_as::<_, OtpCode>(
             "SELECT id, user_id, code, expires_at, used, created_at
              FROM otp_codes
-             WHERE user_id = ? AND code = ? AND used = 0 AND expires_at > datetime('now')
+             WHERE user_id = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
              ORDER BY created_at DESC
              LIMIT 1",
         )
@@ -132,7 +119,7 @@ impl AuthService {
         };
 
         // Mark OTP as used
-        sqlx::query("UPDATE otp_codes SET used = 1 WHERE id = ?")
+        sqlx::query("UPDATE otp_codes SET used = TRUE WHERE id = $1")
             .bind(otp.id)
             .execute(pool)
             .await?;
@@ -142,7 +129,7 @@ impl AuthService {
 
         sqlx::query(
             "INSERT INTO sessions (user_id, token, expires_at, created_at)
-             VALUES (?, ?, datetime('now', '+30 days'), datetime('now'))",
+             VALUES ($1, $2, NOW() + INTERVAL '30 days', NOW())",
         )
         .bind(user.id)
         .bind(&token)
@@ -154,13 +141,13 @@ impl AuthService {
 
     // Validate session token
     pub async fn validate_token(
-        pool: &SqlitePool,
+        pool: &PgPool,
         token: &str,
     ) -> Result<Option<User>, sqlx::Error> {
         let session = sqlx::query_as::<_, Session>(
             "SELECT id, user_id, token, expires_at, created_at
              FROM sessions
-             WHERE token = ? AND expires_at > datetime('now')",
+             WHERE token = $1 AND expires_at > NOW()",
         )
         .bind(token)
         .fetch_optional(pool)
@@ -172,7 +159,7 @@ impl AuthService {
         };
 
         let user = sqlx::query_as::<_, User>(
-            "SELECT id, telegram_id, username, created_at FROM users WHERE id = ?",
+            "SELECT id, telegram_id, username, created_at FROM users WHERE id = $1",
         )
         .bind(session.user_id)
         .fetch_one(pool)

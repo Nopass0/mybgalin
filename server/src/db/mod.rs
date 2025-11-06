@@ -1,26 +1,21 @@
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions, sqlite::SqliteConnectOptions};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
-use std::str::FromStr;
 
-pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    // Parse database URL and enable create_if_missing
-    let options = SqliteConnectOptions::from_str(database_url)?
-        .create_if_missing(true);
-
-    let pool = SqlitePoolOptions::new()
+pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(3))
-        .connect_with(options)
+        .connect(database_url)
         .await?;
 
     // Run migrations
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE NOT NULL,
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE NOT NULL,
             username TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -30,12 +25,12 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS otp_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
             code TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            used INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TIMESTAMP NOT NULL,
+            used BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         "#,
@@ -46,11 +41,11 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
             token TEXT UNIQUE NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         "#,
@@ -71,9 +66,9 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS portfolio_about (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             description TEXT NOT NULL,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -83,13 +78,13 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS portfolio_experience (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             company TEXT NOT NULL,
             date_from TEXT NOT NULL,
             date_to TEXT,
             description TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -99,10 +94,10 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS portfolio_skills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             category TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -112,11 +107,11 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS portfolio_contacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             type TEXT NOT NULL,
             value TEXT NOT NULL,
             label TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -126,12 +121,12 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS portfolio_cases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             description TEXT NOT NULL,
             main_image TEXT NOT NULL,
             website_url TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -141,7 +136,7 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS portfolio_case_images (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             case_id INTEGER NOT NULL,
             image_url TEXT NOT NULL,
             order_index INTEGER NOT NULL DEFAULT 0,
@@ -160,7 +155,7 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS job_vacancies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             hh_vacancy_id TEXT UNIQUE NOT NULL,
             title TEXT NOT NULL,
             company TEXT NOT NULL,
@@ -170,9 +165,9 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
             description TEXT,
             url TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'found',
-            found_at TEXT NOT NULL DEFAULT (datetime('now')),
-            applied_at TEXT,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            found_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            applied_at TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -182,13 +177,13 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS job_responses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             vacancy_id INTEGER NOT NULL,
             hh_negotiation_id TEXT,
             cover_letter TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'sent',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
             FOREIGN KEY (vacancy_id) REFERENCES job_vacancies(id) ON DELETE CASCADE
         )
         "#,
@@ -199,12 +194,12 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS job_chats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             vacancy_id INTEGER NOT NULL,
             hh_chat_id TEXT UNIQUE NOT NULL,
             last_message TEXT,
-            last_message_at TEXT,
-            has_bot INTEGER DEFAULT 0,
+            last_message_at TIMESTAMP,
+            has_bot BOOLEAN DEFAULT FALSE,
             FOREIGN KEY (vacancy_id) REFERENCES job_vacancies(id) ON DELETE CASCADE
         )
         "#,
@@ -215,11 +210,11 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS hh_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             access_token TEXT NOT NULL,
             refresh_token TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -229,16 +224,16 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS job_search_settings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            is_active INTEGER NOT NULL DEFAULT 0,
+            id SERIAL PRIMARY KEY,
+            is_active BOOLEAN NOT NULL DEFAULT FALSE,
             search_text TEXT,
             area_ids TEXT,
             experience TEXT,
             schedule TEXT,
             employment TEXT,
             salary_from INTEGER,
-            only_with_salary INTEGER DEFAULT 0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            only_with_salary BOOLEAN DEFAULT FALSE,
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -261,10 +256,10 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS anime_auction (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             date TEXT,
             title TEXT NOT NULL,
-            watched INTEGER DEFAULT 0,
+            watched BOOLEAN DEFAULT FALSE,
             season TEXT,
             episodes TEXT,
             voice_acting TEXT,
@@ -281,8 +276,8 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
             shikimori_cover TEXT,
             shikimori_score REAL,
             shikimori_genres TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         "#,
     )
@@ -305,49 +300,18 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS anime_sync_progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             status TEXT NOT NULL,
             current INTEGER DEFAULT 0,
             total INTEGER DEFAULT 0,
             message TEXT,
-            started_at TEXT NOT NULL DEFAULT (datetime('now')),
-            finished_at TEXT
+            started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMP
         )
         "#,
     )
     .execute(&pool)
     .await?;
-
-    // Migrations for anime_auction table - add missing columns if they don't exist
-    // Check if sheets_url column exists
-    let has_sheets_url: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM pragma_table_info('anime_auction') WHERE name = 'sheets_url'"
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !has_sheets_url {
-        println!("🔧 Adding sheets_url column to anime_auction table");
-        sqlx::query("ALTER TABLE anime_auction ADD COLUMN sheets_url TEXT")
-            .execute(&pool)
-            .await?;
-    }
-
-    // Check if shikimori_genres column exists
-    let has_shikimori_genres: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM pragma_table_info('anime_auction') WHERE name = 'shikimori_genres'"
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !has_shikimori_genres {
-        println!("🔧 Adding shikimori_genres column to anime_auction table");
-        sqlx::query("ALTER TABLE anime_auction ADD COLUMN shikimori_genres TEXT")
-            .execute(&pool)
-            .await?;
-    }
 
     Ok(pool)
 }

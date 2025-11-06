@@ -2,18 +2,18 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use crate::jobs::{HHClient, AIClient};
 use chrono::{Utc, Timelike, Datelike};
 
 #[derive(Clone)]
 pub struct JobScheduler {
     is_running: Arc<RwLock<bool>>,
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 impl JobScheduler {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self {
             is_running: Arc::new(RwLock::new(false)),
             pool,

@@ -6,7 +6,7 @@ use crate::portfolio::*;
 use rocket::serde::json::Json;
 use rocket::{delete, get, post, put, State};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 // ===================
 // ABOUT/DESCRIPTION
@@ -16,7 +16,7 @@ use sqlx::SqlitePool;
 pub async fn create_about(
     _auth: AuthGuard,
     request: Json<CreateAboutRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioAbout>> {
     // Delete existing about
     let _ = sqlx::query("DELETE FROM portfolio_about")
@@ -24,7 +24,7 @@ pub async fn create_about(
         .await;
 
     match sqlx::query(
-        "INSERT INTO portfolio_about (description, updated_at) VALUES (?, datetime('now'))",
+        "INSERT INTO portfolio_about (description, updated_at) VALUES (?, NOW())",
     )
     .bind(&request.description)
     .execute(pool.inner())
@@ -52,10 +52,10 @@ pub async fn update_about(
     _auth: AuthGuard,
     id: i64,
     request: Json<UpdateAboutRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioAbout>> {
     match sqlx::query(
-        "UPDATE portfolio_about SET description = ?, updated_at = datetime('now') WHERE id = ?",
+        "UPDATE portfolio_about SET description = ?, updated_at = NOW() WHERE id = ?",
     )
     .bind(&request.description)
     .bind(id)
@@ -80,7 +80,7 @@ pub async fn update_about(
 }
 
 #[delete("/portfolio/about")]
-pub async fn delete_about(_auth: AuthGuard, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_about(_auth: AuthGuard, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_about")
         .execute(pool.inner())
         .await
@@ -98,11 +98,11 @@ pub async fn delete_about(_auth: AuthGuard, pool: &State<SqlitePool>) -> Json<Ap
 pub async fn create_experience(
     _auth: AuthGuard,
     request: Json<CreateExperienceRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioExperience>> {
     match sqlx::query(
         "INSERT INTO portfolio_experience (title, company, date_from, date_to, description, created_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))",
+         VALUES (?, ?, ?, ?, ?, NOW())",
     )
     .bind(&request.title)
     .bind(&request.company)
@@ -135,7 +135,7 @@ pub async fn update_experience(
     _auth: AuthGuard,
     id: i64,
     request: Json<UpdateExperienceRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioExperience>> {
     match sqlx::query(
         "UPDATE portfolio_experience
@@ -173,7 +173,7 @@ pub async fn update_experience(
 pub async fn delete_experience(
     _auth: AuthGuard,
     id: i64,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_experience WHERE id = ?")
         .bind(id)
@@ -193,10 +193,10 @@ pub async fn delete_experience(
 pub async fn create_skill(
     _auth: AuthGuard,
     request: Json<CreateSkillRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioSkill>> {
     match sqlx::query(
-        "INSERT INTO portfolio_skills (name, category, created_at) VALUES (?, ?, datetime('now'))",
+        "INSERT INTO portfolio_skills (name, category, created_at) VALUES (?, ?, NOW())",
     )
     .bind(&request.name)
     .bind(&request.category)
@@ -225,7 +225,7 @@ pub async fn update_skill(
     _auth: AuthGuard,
     id: i64,
     request: Json<UpdateSkillRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioSkill>> {
     match sqlx::query("UPDATE portfolio_skills SET name = ?, category = ? WHERE id = ?")
         .bind(&request.name)
@@ -252,7 +252,7 @@ pub async fn update_skill(
 }
 
 #[delete("/portfolio/skills/<id>")]
-pub async fn delete_skill(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_skill(_auth: AuthGuard, id: i64, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_skills WHERE id = ?")
         .bind(id)
         .execute(pool.inner())
@@ -271,10 +271,10 @@ pub async fn delete_skill(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -
 pub async fn create_contact(
     _auth: AuthGuard,
     request: Json<CreateContactRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioContact>> {
     match sqlx::query(
-        "INSERT INTO portfolio_contacts (type, value, label, created_at) VALUES (?, ?, ?, datetime('now'))",
+        "INSERT INTO portfolio_contacts (type, value, label, created_at) VALUES (?, ?, ?, NOW())",
     )
     .bind(&request.contact_type)
     .bind(&request.value)
@@ -304,7 +304,7 @@ pub async fn update_contact(
     _auth: AuthGuard,
     id: i64,
     request: Json<UpdateContactRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioContact>> {
     match sqlx::query("UPDATE portfolio_contacts SET type = ?, value = ?, label = ? WHERE id = ?")
         .bind(&request.contact_type)
@@ -332,7 +332,7 @@ pub async fn update_contact(
 }
 
 #[delete("/portfolio/contacts/<id>")]
-pub async fn delete_contact(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_contact(_auth: AuthGuard, id: i64, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_contacts WHERE id = ?")
         .bind(id)
         .execute(pool.inner())
@@ -351,7 +351,7 @@ pub async fn delete_contact(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>)
 pub async fn create_case(
     _auth: AuthGuard,
     request: Json<CreateCaseRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<PortfolioCaseWithImages>> {
     // Start transaction
     let mut tx = match pool.begin().await {
@@ -362,7 +362,7 @@ pub async fn create_case(
     // Insert case
     let result = sqlx::query(
         "INSERT INTO portfolio_cases (title, description, main_image, website_url, created_at)
-         VALUES (?, ?, ?, ?, datetime('now'))",
+         VALUES (?, ?, ?, ?, NOW())",
     )
     .bind(&request.title)
     .bind(&request.description)
@@ -429,7 +429,7 @@ pub async fn create_case(
 }
 
 #[delete("/portfolio/cases/<id>")]
-pub async fn delete_case(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_case(_auth: AuthGuard, id: i64, pool: &State<PgPool>) -> Json<ApiResponse<String>> {
     // Images will be deleted automatically due to ON DELETE CASCADE
     match sqlx::query("DELETE FROM portfolio_cases WHERE id = ?")
         .bind(id)
@@ -446,7 +446,7 @@ pub async fn delete_case(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) ->
 // ===================
 
 #[get("/portfolio")]
-pub async fn get_portfolio(pool: &State<SqlitePool>) -> Json<ApiResponse<FullPortfolio>> {
+pub async fn get_portfolio(pool: &State<PgPool>) -> Json<ApiResponse<FullPortfolio>> {
     // Get about
     let about: Option<String> = sqlx::query_scalar("SELECT description FROM portfolio_about ORDER BY id DESC LIMIT 1")
         .fetch_optional(pool.inner())
@@ -553,7 +553,7 @@ pub struct HHResumeListItem {
 #[get("/portfolio/hh-resumes")]
 pub async fn get_hh_resumes(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<Vec<HHResumeListItem>>> {
     // Get HH token from database
     let token_result = sqlx::query_scalar::<_, String>(

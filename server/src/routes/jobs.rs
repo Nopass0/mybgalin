@@ -4,7 +4,7 @@ use crate::models::ApiResponse;
 use rocket::serde::json::Json;
 use rocket::{get, post, put, State};
 use rocket::response::Redirect;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 // ==================
 // SEARCH CONTROL
@@ -32,7 +32,7 @@ pub async fn stop_job_search(
 pub async fn get_search_status(
     _auth: AuthGuard,
     scheduler: &State<JobScheduler>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<SearchStatus>> {
     let is_active = scheduler.is_running();
 
@@ -63,14 +63,14 @@ pub async fn get_search_status(
 pub async fn update_search_settings(
     _auth: AuthGuard,
     request: Json<UpdateSearchSettingsRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<JobSearchSettings>> {
     let area_ids_json = request.area_ids.as_ref().map(|ids| serde_json::to_string(ids).unwrap());
 
     // Upsert settings
     sqlx::query(
         "INSERT INTO job_search_settings (id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at)
-         VALUES (1, 0, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         VALUES (1, 0, ?, ?, ?, ?, ?, ?, ?, NOW())
          ON CONFLICT(id) DO UPDATE SET
          search_text = excluded.search_text,
          area_ids = excluded.area_ids,
@@ -79,7 +79,7 @@ pub async fn update_search_settings(
          employment = excluded.employment,
          salary_from = excluded.salary_from,
          only_with_salary = excluded.only_with_salary,
-         updated_at = datetime('now')"
+         updated_at = NOW()"
     )
     .bind(&request.search_text)
     .bind(&area_ids_json)
@@ -110,7 +110,7 @@ pub async fn update_search_settings(
 #[get("/jobs/vacancies")]
 pub async fn get_vacancies(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
@@ -141,7 +141,7 @@ pub async fn get_vacancies(
 pub async fn get_vacancy_details(
     _auth: AuthGuard,
     id: i64,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<VacancyWithResponse>> {
     let vacancy: Option<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
@@ -173,7 +173,7 @@ pub async fn get_vacancy_details(
 pub async fn get_vacancies_by_status(
     _auth: AuthGuard,
     status: &str,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
@@ -204,7 +204,7 @@ pub async fn get_vacancies_by_status(
 #[get("/jobs/stats")]
 pub async fn get_job_stats(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<JobStats>> {
     let total_found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies")
         .fetch_one(pool.inner())
@@ -244,7 +244,7 @@ pub async fn get_job_stats(
 pub async fn ignore_vacancy(
     _auth: AuthGuard,
     id: i64,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Json<ApiResponse<String>> {
     sqlx::query("UPDATE job_vacancies SET status = 'ignored' WHERE id = ?")
         .bind(id)
@@ -261,7 +261,7 @@ pub async fn hh_oauth_callback(
     code: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
-    pool: &State<SqlitePool>,
+    pool: &State<PgPool>,
 ) -> Redirect {
     // If there's an error from HH, redirect to frontend with error
     if let Some(err) = error {
