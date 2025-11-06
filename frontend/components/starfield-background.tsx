@@ -30,7 +30,7 @@ export function StarfieldBackground() {
   const { updateBrightStars } = useStarfield();
   const starsRef = useRef<Star[]>([]);
   const nebulaeRef = useRef<Nebula[]>([]);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | null>(null);
   const frameCountRef = useRef(0);
   const [mounted, setMounted] = useState(false);
 
