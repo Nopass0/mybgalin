@@ -85,12 +85,87 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   });
   const [hoveredHandle, setHoveredHandle] = useState<HandleType | null>(null);
 
+  // Gradient tool state
+  const [gradientStart, setGradientStart] = useState<{ x: number; y: number } | null>(null);
+  const [gradientEnd, setGradientEnd] = useState<{ x: number; y: number } | null>(null);
+  const [isDrawingGradient, setIsDrawingGradient] = useState(false);
+
   // Initialize offscreen canvas
   useEffect(() => {
     offscreenCanvasRef.current = document.createElement('canvas');
     offscreenCanvasRef.current.width = CANVAS_SIZE;
     offscreenCanvasRef.current.height = CANVAS_SIZE;
   }, []);
+
+  // Handle clipboard paste for images
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      // Check if we have image data in clipboard
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+
+          const file = item.getAsFile();
+          if (!file) continue;
+
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            const img = new Image();
+            img.onload = () => {
+              // Scale image to fit canvas while preserving aspect ratio
+              const canvas = document.createElement('canvas');
+              canvas.width = CANVAS_SIZE;
+              canvas.height = CANVAS_SIZE;
+              const ctx = canvas.getContext('2d')!;
+
+              // Calculate scaling to fit while preserving aspect ratio
+              const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
+              const scaledWidth = img.width * scale;
+              const scaledHeight = img.height * scale;
+              const offsetX = (CANVAS_SIZE - scaledWidth) / 2;
+              const offsetY = (CANVAS_SIZE - scaledHeight) / 2;
+
+              // Clear with transparent background
+              ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+              ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+
+              const scaledDataUrl = canvas.toDataURL('image/png');
+
+              // Create new layer with pasted image
+              const newLayer = addLayer('raster', 'Pasted Image');
+              if (newLayer) {
+                updateLayer(newLayer.id, {
+                  imageData: scaledDataUrl,
+                  transform: {
+                    x: offsetX,
+                    y: offsetY,
+                    width: scaledWidth,
+                    height: scaledHeight,
+                    rotation: 0,
+                    scaleX: 1,
+                    scaleY: 1,
+                    skewX: 0,
+                    skewY: 0,
+                  }
+                });
+                pushHistory('Paste image');
+              }
+            };
+            img.src = dataUrl;
+          };
+          reader.readAsDataURL(file);
+          break; // Only process first image
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [addLayer, updateLayer, pushHistory]);
 
   // Get or create layer canvas
   const getLayerCanvas = useCallback((layerId: string): HTMLCanvasElement => {
@@ -488,6 +563,18 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         pushHistory('Fill');
       }
     }
+
+    // Handle gradient tool
+    if (activeTool === 'gradient') {
+      if (!activeLayerId) return;
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (!activeLayer || activeLayer.locked) return;
+
+      setIsDrawingGradient(true);
+      setGradientStart({ x, y });
+      setGradientEnd({ x, y });
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -607,6 +694,11 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
       setLastPoint({ x, y });
     }
+
+    // Update gradient end point while dragging
+    if (isDrawingGradient && gradientStart) {
+      setGradientEnd({ x, y });
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -623,6 +715,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     getLayerTransform,
     getHandleAtPoint,
     updateLayer,
+    isDrawingGradient,
+    gradientStart,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -655,10 +749,43 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
     }
 
+    // Apply gradient when done dragging
+    if (isDrawingGradient && gradientStart && gradientEnd && activeLayerId) {
+      const layerCanvas = getLayerCanvas(activeLayerId);
+      const ctx = layerCanvas.getContext('2d');
+      if (ctx) {
+        // Create gradient based on start and end points
+        const gradient = ctx.createLinearGradient(
+          gradientStart.x,
+          gradientStart.y,
+          gradientEnd.x,
+          gradientEnd.y
+        );
+        gradient.addColorStop(0, primaryColor);
+        gradient.addColorStop(1, secondaryColor);
+
+        // Fill the layer with the gradient
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+        compositeCanvas();
+
+        // Save layer data
+        const imageData = layerCanvas.toDataURL();
+        updateLayer(activeLayerId, { imageData });
+
+        pushHistory('Gradient');
+      }
+
+      setIsDrawingGradient(false);
+      setGradientStart(null);
+      setGradientEnd(null);
+    }
+
     setIsPanning(false);
     setLastPoint(null);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState]);
+  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas]);
 
   // Handle wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -812,6 +939,56 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             transform: 'translate(-50%, -50%)',
           }}
         />
+      )}
+
+      {/* Gradient preview line */}
+      {isDrawingGradient && gradientStart && gradientEnd && (
+        <svg
+          className="absolute inset-0 pointer-events-none z-40"
+          width="100%"
+          height="100%"
+        >
+          <defs>
+            <linearGradient
+              id="gradient-preview"
+              x1={gradientStart.x / CANVAS_SIZE * 100 + '%'}
+              y1={gradientStart.y / CANVAS_SIZE * 100 + '%'}
+              x2={gradientEnd.x / CANVAS_SIZE * 100 + '%'}
+              y2={gradientEnd.y / CANVAS_SIZE * 100 + '%'}
+            >
+              <stop offset="0%" stopColor={primaryColor} />
+              <stop offset="100%" stopColor={secondaryColor} />
+            </linearGradient>
+          </defs>
+          {/* Preview line */}
+          <line
+            x1={`calc(50% + ${(gradientStart.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+            y1={`calc(50% + ${(gradientStart.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+            x2={`calc(50% + ${(gradientEnd.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+            y2={`calc(50% + ${(gradientEnd.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+            stroke="white"
+            strokeWidth="2"
+            strokeDasharray="4"
+          />
+          {/* Start point */}
+          <circle
+            cx={`calc(50% + ${(gradientStart.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+            cy={`calc(50% + ${(gradientStart.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+            r="6"
+            fill={primaryColor}
+            stroke="white"
+            strokeWidth="2"
+          />
+          {/* End point */}
+          <circle
+            cx={`calc(50% + ${(gradientEnd.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+            cy={`calc(50% + ${(gradientEnd.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+            r="6"
+            fill={secondaryColor}
+            stroke="white"
+            strokeWidth="2"
+          />
+        </svg>
       )}
 
       {/* Zoom indicator */}
