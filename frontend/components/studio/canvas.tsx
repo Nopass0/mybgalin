@@ -64,6 +64,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     updatePointerState,
     pushHistory,
     updateLayer,
+    addLayer,
     setPan,
     setZoom,
   } = useStudioEditor();
@@ -72,6 +73,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [isPanning, setIsPanning] = useState(false);
   const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
   const [brushPreview, setBrushPreview] = useState<{ x: number; y: number } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Transform state for draggable objects
   const [transformState, setTransformState] = useState<TransformState>({
@@ -678,6 +680,88 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     setBrushPreview(null);
   }, []);
 
+  // Handle drag and drop for image import
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set false if leaving the container (not entering a child)
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length === 0) return;
+
+    // Process each image file
+    Array.from(files).forEach((file, index) => {
+      if (!file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          // Scale image to fit canvas while preserving aspect ratio
+          const canvas = document.createElement('canvas');
+          canvas.width = CANVAS_SIZE;
+          canvas.height = CANVAS_SIZE;
+          const ctx = canvas.getContext('2d')!;
+
+          // Calculate scaling to fit while preserving aspect ratio
+          const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
+          const scaledWidth = img.width * scale;
+          const scaledHeight = img.height * scale;
+          const offsetX = (CANVAS_SIZE - scaledWidth) / 2;
+          const offsetY = (CANVAS_SIZE - scaledHeight) / 2;
+
+          // Clear with transparent background
+          ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+
+          const scaledDataUrl = canvas.toDataURL('image/png');
+
+          // Create new layer with image
+          const layerName = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+          const newLayer = addLayer('raster', layerName);
+          if (newLayer) {
+            // Update the layer with image data
+            updateLayer(newLayer.id, {
+              imageData: scaledDataUrl,
+              transform: {
+                x: offsetX,
+                y: offsetY,
+                width: scaledWidth,
+                height: scaledHeight,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1,
+                skewX: 0,
+                skewY: 0,
+              }
+            });
+            pushHistory(`Import ${layerName}`);
+          }
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }, [addLayer, updateLayer, pushHistory]);
+
   return (
     <div
       ref={containerRef}
@@ -687,6 +771,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onWheel={handleWheel}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       style={{
         touchAction: 'none',
         cursor: getCursorForTool(activeTool, hoveredHandle),
@@ -731,6 +818,16 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       <div className="absolute bottom-4 left-4 px-2 py-1 bg-black/50 rounded text-[10px] text-white/60">
         {Math.round(zoom * 100)}%
       </div>
+
+      {/* Drop overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-orange-500/20 border-2 border-dashed border-orange-500 flex items-center justify-center pointer-events-none z-50">
+          <div className="bg-black/70 px-6 py-4 rounded-lg text-center">
+            <div className="text-orange-400 text-lg font-medium mb-1">Drop Image Here</div>
+            <div className="text-white/60 text-sm">Image will be added as new layer</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

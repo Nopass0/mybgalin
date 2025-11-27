@@ -385,9 +385,50 @@ export default function ProjectEditorPage() {
 
   // Capture current canvas as frame
   const captureCanvasFrame = useCallback((): string => {
-    // TODO: Capture from actual canvas
-    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-  }, []);
+    // Try to capture from main canvas element
+    const mainCanvas = document.querySelector<HTMLCanvasElement>('#main-canvas, canvas');
+    if (mainCanvas) {
+      try {
+        return mainCanvas.toDataURL('image/png');
+      } catch {
+        console.warn('Failed to capture canvas directly');
+      }
+    }
+
+    // Fallback: composite all visible layers manually
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+    const visibleLayers = layers.filter(l => l.visible);
+
+    if (visibleLayers.length === 0) {
+      // Return transparent canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      return canvas.toDataURL('image/png');
+    }
+
+    // Create composite canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+
+    // Draw layers in order (bottom to top)
+    for (let i = visibleLayers.length - 1; i >= 0; i--) {
+      const layer = visibleLayers[i];
+      if (layer.imageData) {
+        const img = new window.Image();
+        img.src = layer.imageData;
+        if (img.complete) {
+          ctx.globalAlpha = layer.opacity / 100;
+          ctx.drawImage(img, 0, 0);
+        }
+      }
+    }
+
+    return canvas.toDataURL('image/png');
+  }, [layers, project]);
 
   // Handle selecting lenticular frame
   const handleSelectLenticularFrame = useCallback((frame: LenticularFrame) => {
