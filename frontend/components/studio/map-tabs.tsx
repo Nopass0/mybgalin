@@ -1,11 +1,11 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { Image, CircleDot, Sparkles, Circle } from 'lucide-react';
+import { Image, CircleDot, Sparkles, Circle, Eye } from 'lucide-react';
 
 interface MapTabsProps {
-  activeTab: 'color' | 'normal' | 'metalness' | 'roughness';
-  onChange: (tab: 'color' | 'normal' | 'metalness' | 'roughness') => void;
+  activeTab: 'color' | 'normal' | 'metalness' | 'roughness' | 'render';
+  onChange: (tab: 'color' | 'normal' | 'metalness' | 'roughness' | 'render') => void;
 }
 
 const tabs = [
@@ -13,6 +13,7 @@ const tabs = [
   { id: 'normal' as const, label: 'Normal', icon: CircleDot, color: '#8080ff' },
   { id: 'metalness' as const, label: 'Metalness', icon: Sparkles, color: '#888888' },
   { id: 'roughness' as const, label: 'Roughness', icon: Circle, color: '#666666' },
+  { id: 'render' as const, label: 'CS2 Preview', icon: Eye, color: '#f97316' },
 ];
 
 export function StudioMapTabs({ activeTab, onChange }: MapTabsProps) {

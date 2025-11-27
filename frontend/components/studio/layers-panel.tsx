@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import {
   Eye,
@@ -106,6 +106,11 @@ export function StudioLayersPanel() {
     setLayers,
     activeLayerId,
     setActiveLayer,
+    selectedLayerIds,
+    toggleLayerSelection,
+    groupSelectedLayers,
+    mergeSelectedLayers,
+    ungroupLayer,
     addLayer,
     removeLayer,
     duplicateLayer,
@@ -119,14 +124,75 @@ export function StudioLayersPanel() {
     updateLayer,
     canvasWidth,
     canvasHeight,
+    pushHistory,
   } = useStudioEditor();
 
   const [expandedLayers, setExpandedLayers] = useState<Set<string>>(new Set());
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showColorAdjustments, setShowColorAdjustments] = useState(false);
+  const [layerContextMenu, setLayerContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
 
   const activeLayer = layers.find((l) => l.id === activeLayerId);
+
+  // Handle keyboard shortcuts for layer operations
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+G - Group selected layers
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey) {
+        if (selectedLayerIds.length >= 2) {
+          e.preventDefault();
+          groupSelectedLayers();
+          pushHistory?.('Group layers');
+        }
+      }
+      // Ctrl+Shift+G - Ungroup
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'G') {
+        const selectedLayer = layers.find((l) => l.id === activeLayerId);
+        if (selectedLayer?.type === 'group') {
+          e.preventDefault();
+          ungroupLayer(activeLayerId!);
+          pushHistory?.('Ungroup layers');
+        }
+      }
+      // Ctrl+E - Merge selected layers
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        if (selectedLayerIds.length >= 2) {
+          e.preventDefault();
+          mergeSelectedLayers();
+          pushHistory?.('Merge layers');
+        }
+      }
+      // Ctrl+A - Select all layers
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        // Only if focus is on the layers panel
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-layers-panel]')) {
+          e.preventDefault();
+          const allIds = layers.map((l) => l.id);
+          setActiveLayer(layers[0]?.id || null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedLayerIds, activeLayerId, layers, groupSelectedLayers, mergeSelectedLayers, ungroupLayer, pushHistory, setActiveLayer]);
+
+  // Handle layer click with multi-select support
+  const handleLayerClick = useCallback((layerId: string, e: React.MouseEvent) => {
+    toggleLayerSelection(layerId, e.ctrlKey || e.metaKey, e.shiftKey);
+  }, [toggleLayerSelection]);
+
+  // Handle layer context menu
+  const handleLayerContextMenu = useCallback((e: React.MouseEvent, layerId: string) => {
+    e.preventDefault();
+    // Select the layer if not already selected
+    if (!selectedLayerIds.includes(layerId)) {
+      toggleLayerSelection(layerId, false, false);
+    }
+    setLayerContextMenu({ x: e.clientX, y: e.clientY, layerId });
+  }, [selectedLayerIds, toggleLayerSelection]);
 
   // Get canvas dimensions with defaults
   const width = canvasWidth || 1024;
@@ -248,7 +314,7 @@ export function StudioLayersPanel() {
     // Generate a unique ID for the group
     const groupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    // Create the group with the layer as a child
+    // Create the group with the layer ID as a child
     const group: Layer = {
       id: groupId,
       name: `Group ${layers.filter(l => l.type === 'group').length + 1}`,
@@ -257,12 +323,15 @@ export function StudioLayersPanel() {
       locked: false,
       opacity: 100,
       blendMode: 'normal',
-      children: [layer],
+      children: [layer.id],
       isExpanded: true,
     };
 
-    // Replace the layer with the group
-    const newLayers = layers.map(l => l.id === layerId ? group : l);
+    // Update layer to have parent reference and insert group before it
+    const layerWithParent = { ...layer, parentId: groupId };
+    const layerIndex = layers.findIndex(l => l.id === layerId);
+    const newLayers = [...layers];
+    newLayers.splice(layerIndex, 1, group, layerWithParent);
     setLayers(newLayers);
     setActiveLayer(groupId);
     setExpandedLayers(prev => new Set([...prev, groupId]));
@@ -275,15 +344,19 @@ export function StudioLayersPanel() {
 
     if (!layer || !group || group.type !== 'group') return;
 
-    // Remove layer from top level
-    const newLayers = layers.filter(l => l.id !== layerId);
-
-    // Add to group's children
-    const updatedLayers = newLayers.map(l => {
+    // Update group's children to include the layer ID
+    // Update layer's parentId to reference the group
+    const updatedLayers = layers.map(l => {
       if (l.id === groupId) {
         return {
           ...l,
-          children: [...(l.children || []), layer],
+          children: [...(l.children || []), layerId],
+        };
+      }
+      if (l.id === layerId) {
+        return {
+          ...l,
+          parentId: groupId,
         };
       }
       return l;
@@ -297,23 +370,26 @@ export function StudioLayersPanel() {
     const group = layers.find(l => l.id === groupId);
     if (!group || !group.children) return;
 
-    const layer = group.children.find(c => c.id === layerId);
-    if (!layer) return;
+    // Check if layer ID is in group's children
+    if (!group.children.includes(layerId)) return;
 
-    // Remove from group's children
+    // Update group's children to remove the layer ID
+    // Update layer's parentId to undefined
     const updatedLayers = layers.map(l => {
       if (l.id === groupId) {
         return {
           ...l,
-          children: l.children?.filter(c => c.id !== layerId),
+          children: l.children?.filter(id => id !== layerId),
+        };
+      }
+      if (l.id === layerId) {
+        return {
+          ...l,
+          parentId: undefined,
         };
       }
       return l;
     });
-
-    // Add back to top level after the group
-    const groupIndex = updatedLayers.findIndex(l => l.id === groupId);
-    updatedLayers.splice(groupIndex + 1, 0, layer);
 
     setLayers(updatedLayers);
   }, [layers, setLayers]);
@@ -1047,64 +1123,71 @@ export function StudioLayersPanel() {
                     {/* Children layers (for groups) */}
                     {layer.type === 'group' && expandedLayers.has(layer.id) && layer.children && (
                       <div className="ml-4 pl-2 border-l border-white/10">
-                        {layer.children.map((child) => (
-                          <div
-                            key={child.id}
-                            onClick={() => setActiveLayer(child.id)}
-                            className={cn(
-                              'flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer select-none group',
-                              activeLayerId === child.id
-                                ? 'bg-orange-500/20'
-                                : 'hover:bg-white/5'
-                            )}
-                          >
-                            {/* Visibility */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                // Need to implement child visibility toggle
-                              }}
-                              className="p-0.5 hover:bg-white/10 rounded"
+                        {layer.children.map((childId) => {
+                          const child = layers.find(l => l.id === childId);
+                          if (!child) return null;
+                          return (
+                            <div
+                              key={child.id}
+                              onClick={(e) => handleLayerClick(child.id, e)}
+                              onContextMenu={(e) => handleLayerContextMenu(e, child.id)}
+                              className={cn(
+                                'flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer select-none group',
+                                activeLayerId === child.id
+                                  ? 'bg-orange-500/20'
+                                  : selectedLayerIds.includes(child.id)
+                                    ? 'bg-orange-500/10'
+                                    : 'hover:bg-white/5'
+                              )}
                             >
-                              {child.visible ? (
-                                <Eye className="w-3 h-3 text-white/60" />
-                              ) : (
-                                <EyeOff className="w-3 h-3 text-white/30" />
-                              )}
-                            </button>
+                              {/* Visibility */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleLayerVisibility(child.id);
+                                }}
+                                className="p-0.5 hover:bg-white/10 rounded"
+                              >
+                                {child.visible ? (
+                                  <Eye className="w-3 h-3 text-white/60" />
+                                ) : (
+                                  <EyeOff className="w-3 h-3 text-white/30" />
+                                )}
+                              </button>
 
-                            {/* Type Icon */}
-                            <span className="text-white/40">
-                              {layerTypeIcons[child.type]}
-                            </span>
+                              {/* Type Icon */}
+                              <span className="text-white/40">
+                                {layerTypeIcons[child.type]}
+                              </span>
 
-                            {/* Thumbnail */}
-                            <div className="w-6 h-6 rounded bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-                              {child.imageData ? (
-                                <img src={child.imageData} alt={child.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <span className="text-white/20 text-[6px]">-</span>
-                              )}
+                              {/* Thumbnail */}
+                              <div className="w-6 h-6 rounded bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
+                                {child.imageData ? (
+                                  <img src={child.imageData} alt={child.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-white/20 text-[6px]">-</span>
+                                )}
+                              </div>
+
+                              {/* Name */}
+                              <span className="flex-1 text-[11px] truncate text-white/70">
+                                {child.name}
+                              </span>
+
+                              {/* Remove from group */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFromGroup(child.id, layer.id);
+                                }}
+                                className="p-0.5 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100"
+                                title="Remove from group"
+                              >
+                                <ChevronUp className="w-3 h-3 text-white/40" />
+                              </button>
                             </div>
-
-                            {/* Name */}
-                            <span className="flex-1 text-[11px] truncate text-white/70">
-                              {child.name}
-                            </span>
-
-                            {/* Remove from group */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeFromGroup(child.id, layer.id);
-                              }}
-                              className="p-0.5 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100"
-                              title="Remove from group"
-                            >
-                              <ChevronUp className="w-3 h-3 text-white/40" />
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </motion.div>
@@ -1161,6 +1244,130 @@ export function StudioLayersPanel() {
           <TooltipContent>Delete Layer</TooltipContent>
         </Tooltip>
       </div>
+
+      {/* Layer context menu */}
+      {layerContextMenu && (
+        <div
+          className="fixed z-50 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-48"
+          style={{ left: layerContextMenu.x, top: layerContextMenu.y }}
+          onClick={() => setLayerContextMenu(null)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              const layer = layers.find(l => l.id === layerContextMenu.layerId);
+              if (layer) {
+                duplicateLayer(layerContextMenu.layerId);
+              }
+            }}
+          >
+            <Copy className="w-4 h-4" />
+            Duplicate Layer
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              const layer = layers.find(l => l.id === layerContextMenu.layerId);
+              if (layer) {
+                updateLayer(layerContextMenu.layerId, { locked: !layer.locked });
+              }
+            }}
+          >
+            {layers.find(l => l.id === layerContextMenu.layerId)?.locked ? (
+              <>
+                <Unlock className="w-4 h-4" />
+                Unlock Layer
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4" />
+                Lock Layer
+              </>
+            )}
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              const layer = layers.find(l => l.id === layerContextMenu.layerId);
+              if (layer) {
+                updateLayer(layerContextMenu.layerId, { visible: !layer.visible });
+              }
+            }}
+          >
+            {layers.find(l => l.id === layerContextMenu.layerId)?.visible !== false ? (
+              <>
+                <EyeOff className="w-4 h-4" />
+                Hide Layer
+              </>
+            ) : (
+              <>
+                <Eye className="w-4 h-4" />
+                Show Layer
+              </>
+            )}
+          </button>
+          <div className="h-px bg-zinc-700 my-1" />
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => moveLayer(layerContextMenu.layerId, 'up')}
+          >
+            <ChevronUp className="w-4 h-4" />
+            Move Up
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => moveLayer(layerContextMenu.layerId, 'down')}
+          >
+            <ChevronDown className="w-4 h-4" />
+            Move Down
+          </button>
+          <div className="h-px bg-zinc-700 my-1" />
+          {selectedLayerIds.length > 1 && (
+            <>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+                onClick={groupSelectedLayers}
+              >
+                <FolderClosed className="w-4 h-4" />
+                Group Selected (Ctrl+G)
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+                onClick={mergeSelectedLayers}
+              >
+                <Merge className="w-4 h-4" />
+                Merge Selected (Ctrl+E)
+              </button>
+              <div className="h-px bg-zinc-700 my-1" />
+            </>
+          )}
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              if (layers.length > 1) {
+                removeLayer(layerContextMenu.layerId);
+              }
+            }}
+            disabled={layers.length <= 1}
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete Layer
+          </button>
+        </div>
+      )}
+
+      {/* Click outside to close context menu */}
+      {layerContextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setLayerContextMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setLayerContextMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }

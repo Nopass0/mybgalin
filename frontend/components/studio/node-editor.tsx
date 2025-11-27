@@ -1681,6 +1681,27 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Add Node button */}
+          <Button
+            variant="default"
+            size="sm"
+            onClick={(e) => {
+              const rect = (e.target as HTMLElement).closest('div')?.parentElement?.getBoundingClientRect();
+              setNodePickerPosition({
+                x: rect ? rect.width / 2 : 400,
+                y: rect ? rect.height / 2 : 300,
+              });
+              setShowNodePicker(true);
+            }}
+            className="bg-orange-600 hover:bg-orange-500 text-white"
+            title="Add node (or right-click on canvas)"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Node
+          </Button>
+
+          <div className="w-px h-6 bg-white/10" />
+
           {/* View controls */}
           <Button
             variant="ghost"
@@ -1819,6 +1840,23 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
               />
             )}
           </svg>
+
+          {/* Empty state placeholder */}
+          {nodes.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center p-8 bg-black/40 rounded-xl border border-white/10">
+                <Grid3X3 className="w-12 h-12 text-white/20 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-white/60 mb-2">No Nodes Yet</h3>
+                <p className="text-sm text-white/40 mb-4">
+                  Click &quot;Add Node&quot; button above or<br />
+                  right-click anywhere to add nodes
+                </p>
+                <p className="text-xs text-white/30">
+                  Connect nodes by clicking on ports
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Nodes */}
           <div

@@ -31,7 +31,7 @@ function blendModeToCompositeOp(blendMode: BlendMode): GlobalCompositeOperation 
 interface StudioCanvasProps {
   zoom: number;
   showGrid: boolean;
-  activeMapTab: 'color' | 'normal' | 'metalness' | 'roughness';
+  activeMapTab: 'color' | 'normal' | 'metalness' | 'roughness' | 'render';
 }
 
 const CANVAS_SIZE = 1024;
@@ -52,6 +52,24 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const layerCanvasesRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+  // Track which imageData has been loaded into each layer canvas (to detect changes)
+  const layerImageDataRef = useRef<Map<string, string>>(new Map());
+  // Cache for loaded mask images (key: imageData string, value: loaded Image)
+  const maskImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  // Flag to trigger re-composite after async image loads
+  const [imageLoadCounter, setImageLoadCounter] = useState(0);
+
+  // GPU optimization: batch stroke points for efficient drawing
+  const pendingStrokesRef = useRef<Array<{
+    x: number;
+    y: number;
+    pressure: number;
+    timestamp: number;
+  }>>([]);
+  // Animation frame ID for batched compositing
+  const compositeRAFRef = useRef<number | null>(null);
+  // Track if composite is pending
+  const compositePendingRef = useRef(false);
 
   const {
     layers,
@@ -110,10 +128,19 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
   // Rulers and guides state
   const [showRulers, setShowRulers] = useState(false);
-  const [guides, setGuides] = useState<Array<{ id: string; type: 'horizontal' | 'vertical'; position: number }>>([]);
+  const [guides, setGuides] = useState<Array<{
+    id: string;
+    type: 'horizontal' | 'vertical' | 'line';
+    position?: number;
+    start?: { x: number; y: number };
+    end?: { x: number; y: number };
+  }>>([]);
   const [mouseCanvasPos, setMouseCanvasPos] = useState<{ x: number; y: number } | null>(null);
   const [isCreatingGuide, setIsCreatingGuide] = useState(false);
   const [guideStartPoint, setGuideStartPoint] = useState<{ x: number; y: number } | null>(null);
+
+  // Alt key for panning
+  const [altHeld, setAltHeld] = useState(false);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -140,6 +167,58 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     angle: number;
     spread: number;
   }>>([]);
+
+  // Snap to guides setting
+  const [snapToGuides, setSnapToGuides] = useState(true);
+  const SNAP_THRESHOLD = 10; // pixels
+
+  // Snap a point to nearby guides
+  const snapPointToGuides = useCallback((x: number, y: number): { x: number; y: number; snapped: boolean } => {
+    if (!snapToGuides || guides.length === 0) {
+      return { x, y, snapped: false };
+    }
+
+    let snappedX = x;
+    let snappedY = y;
+    let didSnap = false;
+
+    for (const guide of guides) {
+      if (guide.type === 'horizontal' && guide.position !== undefined) {
+        // Snap to horizontal guide
+        if (Math.abs(y - guide.position) < SNAP_THRESHOLD) {
+          snappedY = guide.position;
+          didSnap = true;
+        }
+      } else if (guide.type === 'vertical' && guide.position !== undefined) {
+        // Snap to vertical guide
+        if (Math.abs(x - guide.position) < SNAP_THRESHOLD) {
+          snappedX = guide.position;
+          didSnap = true;
+        }
+      } else if (guide.type === 'line' && guide.start && guide.end) {
+        // Snap to line guide - find closest point on line
+        const dx = guide.end.x - guide.start.x;
+        const dy = guide.end.y - guide.start.y;
+        const lengthSq = dx * dx + dy * dy;
+
+        if (lengthSq > 0) {
+          // Project point onto line
+          const t = Math.max(0, Math.min(1, ((x - guide.start.x) * dx + (y - guide.start.y) * dy) / lengthSq));
+          const closestX = guide.start.x + t * dx;
+          const closestY = guide.start.y + t * dy;
+          const dist = Math.sqrt(Math.pow(x - closestX, 2) + Math.pow(y - closestY, 2));
+
+          if (dist < SNAP_THRESHOLD) {
+            snappedX = closestX;
+            snappedY = closestY;
+            didSnap = true;
+          }
+        }
+      }
+    }
+
+    return { x: snappedX, y: snappedY, snapped: didSnap };
+  }, [snapToGuides, guides]);
 
   // Initialize offscreen canvas
   useEffect(() => {
@@ -218,7 +297,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     return () => window.removeEventListener('paste', handlePaste);
   }, [addLayer, updateLayer, pushHistory]);
 
-  // Handle keyboard events for rulers (Ctrl) and shift constraint
+  // Handle keyboard events for rulers (Ctrl), shift constraint, and alt for panning
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Control') {
@@ -226,6 +305,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
       if (e.key === 'Shift') {
         setShiftHeld(true);
+      }
+      if (e.key === 'Alt') {
+        setAltHeld(true);
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -237,6 +319,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       if (e.key === 'Shift') {
         setShiftHeld(false);
         setConstrainedAxis(null);
+      }
+      if (e.key === 'Alt') {
+        setAltHeld(false);
       }
     };
 
@@ -621,19 +706,33 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       // Apply mask if exists
       if (layer.mask?.enabled && layer.mask.imageData) {
-        // Create temporary canvas for masked result
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = CANVAS_SIZE;
-        tempCanvas.height = CANVAS_SIZE;
-        const tempCtx = tempCanvas.getContext('2d');
-        if (tempCtx) {
-          tempCtx.drawImage(layerCanvas, 0, 0);
-          tempCtx.globalCompositeOperation = 'destination-in';
-          // Draw mask
-          const maskImg = new Image();
-          maskImg.src = layer.mask.imageData;
-          tempCtx.drawImage(maskImg, 0, 0);
-          ctx.drawImage(tempCanvas, 0, 0);
+        // Check if mask image is cached
+        let maskImg = maskImageCacheRef.current.get(layer.mask.imageData);
+
+        if (!maskImg || !maskImg.complete) {
+          // Need to load mask image asynchronously
+          if (!maskImg) {
+            maskImg = new Image();
+            maskImg.src = layer.mask.imageData;
+            maskImageCacheRef.current.set(layer.mask.imageData, maskImg);
+            maskImg.onload = () => {
+              setImageLoadCounter(c => c + 1); // Trigger re-composite
+            };
+          }
+          // For now, draw layer without mask (will be applied after image loads)
+          ctx.drawImage(layerCanvas, 0, 0);
+        } else {
+          // Mask image is loaded, apply it
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = CANVAS_SIZE;
+          tempCanvas.height = CANVAS_SIZE;
+          const tempCtx = tempCanvas.getContext('2d');
+          if (tempCtx) {
+            tempCtx.drawImage(layerCanvas, 0, 0);
+            tempCtx.globalCompositeOperation = 'destination-in';
+            tempCtx.drawImage(maskImg, 0, 0);
+            ctx.drawImage(tempCanvas, 0, 0);
+          }
         }
       } else {
         ctx.drawImage(layerCanvas, 0, 0);
@@ -675,6 +774,26 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
     }
   }, [layers, showGrid, activeTool, activeLayerId, applyLayerEffects]);
+
+  // Batched composite using requestAnimationFrame for GPU-optimized rendering
+  const scheduleComposite = useCallback(() => {
+    if (compositePendingRef.current) return;
+
+    compositePendingRef.current = true;
+    compositeRAFRef.current = requestAnimationFrame(() => {
+      compositeCanvas();
+      compositePendingRef.current = false;
+    });
+  }, [compositeCanvas]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (compositeRAFRef.current) {
+        cancelAnimationFrame(compositeRAFRef.current);
+      }
+    };
+  }, []);
 
   // Draw transform handles around the layer
   const drawTransformHandles = useCallback((ctx: CanvasRenderingContext2D, transform: Transform) => {
@@ -791,10 +910,102 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     return null;
   }, []);
 
-  // Render on layer changes
+  // Initialize layer canvases from imageData and render text/shape layers
+  useEffect(() => {
+    let isMounted = true;
+    let loadedAny = false;
+
+    const initializeLayerCanvases = async () => {
+      for (const layer of layers) {
+        const layerCanvas = getLayerCanvas(layer.id);
+        const ctx = layerCanvas.getContext('2d');
+        if (!ctx) continue;
+
+        // For raster layers, load from imageData if available
+        if (layer.imageData && layer.type === 'raster') {
+          // Check if this imageData is already loaded
+          const currentLoaded = layerImageDataRef.current.get(layer.id);
+          if (currentLoaded === layer.imageData) continue; // Already loaded
+
+          const img = new window.Image();
+          img.src = layer.imageData;
+          await new Promise<void>((resolve) => {
+            img.onload = () => {
+              if (!isMounted) {
+                resolve();
+                return;
+              }
+              ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+              ctx.drawImage(img, 0, 0);
+              layerImageDataRef.current.set(layer.id, layer.imageData!);
+              loadedAny = true;
+              resolve();
+            };
+            img.onerror = () => resolve();
+          });
+        }
+        // For text layers, render text content
+        else if (layer.type === 'text' && layer.textContent) {
+          ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          const { text, fontFamily, fontSize, fontWeight, fontStyle, textAlign, color, stroke, shadow } = layer.textContent;
+
+          // Wait for font to load
+          try {
+            await document.fonts.load(`${fontWeight} ${fontSize}px "${fontFamily}"`);
+          } catch (e) {
+            console.warn('Font loading failed, using fallback:', e);
+          }
+
+          ctx.save();
+          ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}"`;
+          ctx.textAlign = textAlign as CanvasTextAlign;
+          ctx.textBaseline = 'middle';
+
+          // Apply shadow
+          if (shadow) {
+            ctx.shadowColor = shadow.color;
+            ctx.shadowBlur = shadow.blur;
+            ctx.shadowOffsetX = shadow.offsetX;
+            ctx.shadowOffsetY = shadow.offsetY;
+          }
+
+          // Apply transform if available
+          const x = layer.transform?.x ?? CANVAS_SIZE / 2;
+          const y = layer.transform?.y ?? CANVAS_SIZE / 2;
+
+          // Draw stroke if available
+          if (stroke) {
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.width * 2;
+            ctx.lineJoin = 'round';
+            ctx.strokeText(text, x, y);
+          }
+
+          // Fill text
+          ctx.fillStyle = color || '#ffffff';
+          ctx.fillText(text, x, y);
+
+          ctx.restore();
+        }
+      }
+      // Trigger re-composite if any images were loaded
+      if (loadedAny && isMounted) {
+        setImageLoadCounter(c => c + 1);
+      }
+      compositeCanvas();
+    };
+
+    initializeLayerCanvases();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [layers, getLayerCanvas, compositeCanvas]);
+
+  // Render on layer changes or after images load
   useEffect(() => {
     compositeCanvas();
-  }, [layers, compositeCanvas]);
+  }, [layers, compositeCanvas, imageLoadCounter]);
 
   // Convert screen coordinates to canvas coordinates
   const screenToCanvas = useCallback((clientX: number, clientY: number) => {
@@ -1481,11 +1692,12 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         setGuideStartPoint({ x, y });
         setIsCreatingGuide(true);
       } else {
-        // Create guide line from guideStartPoint to current point
+        // Create a line guide through both points (extends to canvas edges)
         const newGuide = {
           id: `guide-${Date.now()}`,
-          type: Math.abs(x - guideStartPoint.x) > Math.abs(y - guideStartPoint.y) ? 'horizontal' as const : 'vertical' as const,
-          position: Math.abs(x - guideStartPoint.x) > Math.abs(y - guideStartPoint.y) ? guideStartPoint.y : guideStartPoint.x,
+          type: 'line' as const,
+          start: { ...guideStartPoint },
+          end: { x, y },
         };
         setGuides(prev => [...prev, newGuide]);
         setGuideStartPoint(null);
@@ -1494,8 +1706,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       return;
     }
 
-    // Handle hand tool or space+click panning
-    if (activeTool === 'hand' || e.buttons === 4) {
+    // Handle hand tool, space+click, or Alt+drag panning
+    if (activeTool === 'hand' || e.buttons === 4 || (e.altKey && !e.ctrlKey && !e.shiftKey)) {
       setIsPanning(true);
       setLastPoint({ x: e.clientX, y: e.clientY });
       return;
@@ -1545,8 +1757,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const activeLayer = layers.find((l) => l.id === activeLayerId);
       if (!activeLayer || activeLayer.locked) return;
 
+      // Apply snapping to guides
+      const snapped = snapPointToGuides(x, y);
+      const drawX = snapped.x;
+      const drawY = snapped.y;
+
       setIsDrawing(true);
-      setLastPoint({ x, y });
+      setLastPoint({ x: drawX, y: drawY });
 
       // Get or create layer canvas
       const layerCanvas = getLayerCanvas(activeLayerId);
@@ -1554,7 +1771,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       if (ctx) {
         // Draw initial point
         updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
-        drawStroke(ctx, x, y, x, y, e.pressure || 0.5);
+        drawStroke(ctx, drawX, drawY, drawX, drawY, e.pressure || 0.5);
         compositeCanvas();
       }
 
@@ -1568,9 +1785,57 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const layerCanvas = getLayerCanvas(activeLayerId);
       const ctx = layerCanvas.getContext('2d');
       if (ctx) {
-        floodFill(ctx, Math.floor(x), Math.floor(y), primaryColor);
-        compositeCanvas();
-        pushHistory('Fill');
+        // If there's a selection, fill only within the selection
+        if (selection) {
+          ctx.save();
+          ctx.beginPath();
+
+          if (selection.type === 'rect' && selection.bounds) {
+            ctx.rect(selection.bounds.x, selection.bounds.y, selection.bounds.width, selection.bounds.height);
+          } else if (selection.type === 'ellipse' && selection.bounds) {
+            const { x: ex, y: ey, width: ew, height: eh } = selection.bounds;
+            ctx.ellipse(ex + ew / 2, ey + eh / 2, ew / 2, eh / 2, 0, 0, Math.PI * 2);
+          } else if (selection.type === 'lasso' && selection.path && selection.path.length > 2) {
+            ctx.moveTo(selection.path[0].x, selection.path[0].y);
+            for (let i = 1; i < selection.path.length; i++) {
+              ctx.lineTo(selection.path[i].x, selection.path[i].y);
+            }
+            ctx.closePath();
+          } else if (selection.type === 'magic' && selection.maskData) {
+            // For magic wand, use the mask as clipping
+            // Fill with mask data
+            ctx.fillStyle = primaryColor;
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = CANVAS_SIZE;
+            tempCanvas.height = CANVAS_SIZE;
+            const tempCtx = tempCanvas.getContext('2d');
+            if (tempCtx) {
+              tempCtx.putImageData(selection.maskData, 0, 0);
+              // Use the mask as composite
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+              ctx.globalCompositeOperation = 'destination-in';
+              ctx.drawImage(tempCanvas, 0, 0);
+              ctx.globalCompositeOperation = 'source-over';
+            }
+            ctx.restore();
+            compositeCanvas();
+            pushHistory('Fill selection');
+            return;
+          }
+
+          ctx.clip();
+          ctx.fillStyle = primaryColor;
+          ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          ctx.restore();
+          compositeCanvas();
+          pushHistory('Fill selection');
+        } else {
+          // No selection - use flood fill
+          floodFill(ctx, Math.floor(x), Math.floor(y), primaryColor);
+          compositeCanvas();
+          pushHistory('Fill');
+        }
       }
     }
 
@@ -1782,6 +2047,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     showRulers,
     guideStartPoint,
     warpMode,
+    snapPointToGuides,
   ]);
 
   // Magic wand selection algorithm
@@ -1902,6 +2168,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       } else if (constrainedAxis === 'y') {
         x = strokeStartPoint.x;
       }
+    }
+
+    // Apply guide snapping for brush tools during drawing
+    if (isDrawing && (activeTool === 'brush' || activeTool === 'eraser')) {
+      const snapped = snapPointToGuides(x, y);
+      x = snapped.x;
+      y = snapped.y;
     }
 
     // Update brush preview position
@@ -2031,7 +2304,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
               applySpongeAtPoint(ctx, px, py, radius, strength, e.shiftKey);
             }
           }
-          compositeCanvas();
+          scheduleComposite(); // GPU-batched rendering
         } else if (activeTool === 'clone' && cloneSource && cloneOffset) {
           // Handle clone stamp tool
           const radius = currentBrush.size / 2;
@@ -2054,13 +2327,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
               applyCloneAtPoint(ctx, sourceCanvas, px, py, sourceX, sourceY, radius, opacity);
             }
-            compositeCanvas();
+            scheduleComposite(); // GPU-batched rendering
           }
         } else {
           // Normal brush/eraser
           updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
           drawStroke(ctx, lastPoint.x, lastPoint.y, x, y, e.pressure || 0.5);
-          compositeCanvas();
+          scheduleComposite(); // GPU-batched rendering
         }
       }
       setLastPoint({ x, y });
@@ -2102,7 +2375,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
 
         applyWarpAtPoint(ctx, x, y, deltaX, deltaY, radius, strength, warpMode);
-        compositeCanvas();
+        scheduleComposite(); // GPU-batched rendering
       }
       setLastPoint({ x, y });
     }
@@ -2143,6 +2416,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     isWarping,
     warpMode,
     applyWarpAtPoint,
+    snapPointToGuides,
+    scheduleComposite,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -2288,14 +2563,30 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     };
   }, []);
 
-  // Handle wheel zoom
+  // Handle wheel zoom and pan
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
+    // Alt + scroll = zoom
+    if (e.altKey) {
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom(zoom * delta);
-    } else {
-      // Pan with wheel
+      setZoom(Math.max(0.1, Math.min(10, zoom * delta)));
+    }
+    // Ctrl/Cmd + scroll = zoom (original behavior)
+    else if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(Math.max(0.1, Math.min(10, zoom * delta)));
+    }
+    // Shift + scroll = horizontal pan
+    else if (e.shiftKey) {
+      e.preventDefault();
+      setPanLocal((prev) => ({
+        x: prev.x - e.deltaY, // Use deltaY for horizontal scroll when shift is held
+        y: prev.y,
+      }));
+    }
+    // Regular scroll = pan
+    else {
       setPanLocal((prev) => ({
         x: prev.x - e.deltaX,
         y: prev.y - e.deltaY,
@@ -2424,6 +2715,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         }}
       >
         <canvas
+          id="main-canvas"
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
@@ -2639,54 +2931,98 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       )}
 
       {/* Rulers (shown when Ctrl is held) */}
-      {showRulers && (
+      {showRulers && containerRef.current && (
         <>
           {/* Top ruler */}
           <div className="absolute top-0 left-[30px] right-0 h-[30px] bg-[#2d2d2f] border-b border-[#3a3a3c] z-50 flex items-end overflow-hidden">
-            {Array.from({ length: Math.ceil(CANVAS_SIZE / 50) + 1 }).map((_, i) => {
-              const pos = i * 50;
-              const screenX = (pos - CANVAS_SIZE / 2) * zoom + pan.x + window.innerWidth / 2 - 30;
-              return (
-                <div
-                  key={`h-${i}`}
-                  className="absolute bottom-0 flex flex-col items-center"
-                  style={{ left: screenX }}
-                >
-                  <span className="text-[8px] text-white/50 mb-0.5">{pos}</span>
-                  <div className="w-px h-2 bg-white/30" />
-                </div>
-              );
-            })}
+            {(() => {
+              const containerWidth = containerRef.current?.offsetWidth || 800;
+              const canvasStartX = containerWidth / 2 + pan.x - (CANVAS_SIZE * zoom) / 2;
+              const markers = [];
+
+              // Generate ruler markers from 0 to CANVAS_SIZE
+              for (let pos = 0; pos <= CANVAS_SIZE; pos += 50) {
+                const screenX = canvasStartX + pos * zoom;
+                if (screenX >= -50 && screenX <= containerWidth + 50) {
+                  markers.push(
+                    <div
+                      key={`h-${pos}`}
+                      className="absolute bottom-0 flex flex-col items-center"
+                      style={{ left: screenX }}
+                    >
+                      <span className="text-[8px] text-white/50 mb-0.5">{pos}</span>
+                      <div className="w-px h-2 bg-white/30" />
+                    </div>
+                  );
+                  // Add minor ticks
+                  for (let minor = 10; minor < 50; minor += 10) {
+                    const minorX = screenX + minor * zoom;
+                    if (minorX >= 0 && minorX <= containerWidth) {
+                      markers.push(
+                        <div
+                          key={`h-${pos}-${minor}`}
+                          className="absolute bottom-0 w-px h-1 bg-white/20"
+                          style={{ left: minorX }}
+                        />
+                      );
+                    }
+                  }
+                }
+              }
+              return markers;
+            })()}
             {/* Cursor position indicator */}
             {mouseCanvasPos && (
               <div
                 className="absolute bottom-0 w-px h-full bg-cyan-400/50"
-                style={{ left: (mouseCanvasPos.x - CANVAS_SIZE / 2) * zoom + pan.x + window.innerWidth / 2 - 30 }}
+                style={{ left: (containerRef.current?.offsetWidth || 800) / 2 + pan.x - (CANVAS_SIZE * zoom) / 2 + mouseCanvasPos.x * zoom }}
               />
             )}
           </div>
 
           {/* Left ruler */}
           <div className="absolute top-[30px] left-0 bottom-0 w-[30px] bg-[#2d2d2f] border-r border-[#3a3a3c] z-50 flex flex-col items-end overflow-hidden">
-            {Array.from({ length: Math.ceil(CANVAS_SIZE / 50) + 1 }).map((_, i) => {
-              const pos = i * 50;
-              const screenY = (pos - CANVAS_SIZE / 2) * zoom + pan.y + window.innerHeight / 2 - 30;
-              return (
-                <div
-                  key={`v-${i}`}
-                  className="absolute right-0 flex items-center"
-                  style={{ top: screenY }}
-                >
-                  <span className="text-[8px] text-white/50 mr-0.5 transform -rotate-90 origin-center">{pos}</span>
-                  <div className="h-px w-2 bg-white/30" />
-                </div>
-              );
-            })}
+            {(() => {
+              const containerHeight = containerRef.current?.offsetHeight || 600;
+              const canvasStartY = containerHeight / 2 + pan.y - (CANVAS_SIZE * zoom) / 2;
+              const markers = [];
+
+              // Generate ruler markers from 0 to CANVAS_SIZE
+              for (let pos = 0; pos <= CANVAS_SIZE; pos += 50) {
+                const screenY = canvasStartY + pos * zoom;
+                if (screenY >= -50 && screenY <= containerHeight + 50) {
+                  markers.push(
+                    <div
+                      key={`v-${pos}`}
+                      className="absolute right-0 flex items-center"
+                      style={{ top: screenY }}
+                    >
+                      <span className="text-[8px] text-white/50 mr-0.5 transform -rotate-90 origin-center whitespace-nowrap">{pos}</span>
+                      <div className="h-px w-2 bg-white/30" />
+                    </div>
+                  );
+                  // Add minor ticks
+                  for (let minor = 10; minor < 50; minor += 10) {
+                    const minorY = screenY + minor * zoom;
+                    if (minorY >= 0 && minorY <= containerHeight) {
+                      markers.push(
+                        <div
+                          key={`v-${pos}-${minor}`}
+                          className="absolute right-0 h-px w-1 bg-white/20"
+                          style={{ top: minorY }}
+                        />
+                      );
+                    }
+                  }
+                }
+              }
+              return markers;
+            })()}
             {/* Cursor position indicator */}
             {mouseCanvasPos && (
               <div
                 className="absolute right-0 h-px w-full bg-cyan-400/50"
-                style={{ top: (mouseCanvasPos.y - CANVAS_SIZE / 2) * zoom + pan.y + window.innerHeight / 2 - 30 }}
+                style={{ top: (containerRef.current?.offsetHeight || 600) / 2 + pan.y - (CANVAS_SIZE * zoom) / 2 + mouseCanvasPos.y * zoom }}
               />
             )}
           </div>
@@ -2758,31 +3094,82 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       {/* Guides overlay */}
       {guides.length > 0 && (
         <svg className="absolute inset-0 pointer-events-none z-30" width="100%" height="100%">
-          {guides.map((guide) => (
-            guide.type === 'horizontal' ? (
-              <line
-                key={guide.id}
-                x1="0"
-                y1={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
-                x2="100%"
-                y2={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
-                stroke="cyan"
-                strokeWidth="1"
-                strokeDasharray="4 2"
-              />
-            ) : (
-              <line
-                key={guide.id}
-                x1={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
-                y1="0"
-                x2={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
-                y2="100%"
-                stroke="cyan"
-                strokeWidth="1"
-                strokeDasharray="4 2"
-              />
-            )
-          ))}
+          {guides.map((guide) => {
+            if (guide.type === 'horizontal' && guide.position !== undefined) {
+              return (
+                <line
+                  key={guide.id}
+                  x1="0"
+                  y1={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                  x2="100%"
+                  y2={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                  stroke="cyan"
+                  strokeWidth="1"
+                  strokeDasharray="4 2"
+                />
+              );
+            } else if (guide.type === 'vertical' && guide.position !== undefined) {
+              return (
+                <line
+                  key={guide.id}
+                  x1={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                  y1="0"
+                  x2={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                  y2="100%"
+                  stroke="cyan"
+                  strokeWidth="1"
+                  strokeDasharray="4 2"
+                />
+              );
+            } else if (guide.type === 'line' && guide.start && guide.end) {
+              // Extend the line beyond the two points to the canvas edges
+              const dx = guide.end.x - guide.start.x;
+              const dy = guide.end.y - guide.start.y;
+              const len = Math.sqrt(dx * dx + dy * dy);
+              if (len === 0) return null;
+
+              // Extend line to reach far beyond canvas
+              const extendFactor = 3000 / len;
+              const extStart = {
+                x: guide.start.x - dx * extendFactor,
+                y: guide.start.y - dy * extendFactor,
+              };
+              const extEnd = {
+                x: guide.end.x + dx * extendFactor,
+                y: guide.end.y + dy * extendFactor,
+              };
+
+              return (
+                <g key={guide.id}>
+                  <line
+                    x1={`calc(50% + ${(extStart.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                    y1={`calc(50% + ${(extStart.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                    x2={`calc(50% + ${(extEnd.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                    y2={`calc(50% + ${(extEnd.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                    stroke="cyan"
+                    strokeWidth="1"
+                    strokeDasharray="4 2"
+                  />
+                  {/* Markers for the two defining points */}
+                  <circle
+                    cx={`calc(50% + ${(guide.start.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                    cy={`calc(50% + ${(guide.start.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                    r="4"
+                    fill="cyan"
+                    opacity="0.8"
+                  />
+                  <circle
+                    cx={`calc(50% + ${(guide.end.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                    cy={`calc(50% + ${(guide.end.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                    r="4"
+                    fill="cyan"
+                    opacity="0.8"
+                  />
+                </g>
+              );
+            }
+            return null;
+          })}
         </svg>
       )}
 

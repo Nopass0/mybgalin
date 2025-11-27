@@ -144,17 +144,22 @@ export async function compositeLayerToCanvas(
 /**
  * Composite multiple layers into a single canvas
  * Layers should be ordered from bottom to top
+ * allLayers is the complete layer list for looking up group children by ID
  */
 export async function compositeLayers(
   layers: Layer[],
   width: number,
   height: number,
-  backgroundColor?: string
+  backgroundColor?: string,
+  allLayers?: Layer[]
 ): Promise<HTMLCanvasElement> {
   const canvas = createOffscreenCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
   if (!ctx) throw new Error('Failed to get canvas context');
+
+  // Use provided allLayers or the layers array itself for lookups
+  const layerLookup = allLayers || layers;
 
   // Fill background if specified
   if (backgroundColor) {
@@ -167,8 +172,13 @@ export async function compositeLayers(
 
   for (const layer of orderedLayers) {
     if (layer.type === 'group' && layer.children) {
+      // Look up child layers by ID
+      const childLayers = layer.children
+        .map(childId => layerLookup.find(l => l.id === childId))
+        .filter((l): l is Layer => l !== undefined);
+
       // Recursively composite group children
-      const groupCanvas = await compositeLayers(layer.children, width, height);
+      const groupCanvas = await compositeLayers(childLayers, width, height, undefined, layerLookup);
 
       // Draw group canvas with group's blend mode and opacity
       ctx.globalAlpha = layer.opacity / 100;

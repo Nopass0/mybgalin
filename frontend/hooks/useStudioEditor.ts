@@ -38,8 +38,13 @@ interface EditorState {
   // Layers
   layers: Layer[];
   activeLayerId: string | null;
+  selectedLayerIds: string[];
   setLayers: (layers: Layer[]) => void;
   setActiveLayer: (id: string | null) => void;
+  setSelectedLayers: (ids: string[]) => void;
+  toggleLayerSelection: (id: string, multiSelect: boolean, rangeSelect: boolean) => void;
+  selectAllLayers: () => void;
+  clearLayerSelection: () => void;
   addLayer: (type?: LayerType, name?: string) => Layer;
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
@@ -51,6 +56,9 @@ interface EditorState {
   setLayerBlendMode: (id: string, blendMode: BlendMode) => void;
   addLayerMask: (id: string) => void;
   removeLayerMask: (id: string) => void;
+  groupSelectedLayers: () => void;
+  mergeSelectedLayers: () => void;
+  ungroupLayer: (id: string) => void;
 
   // Tools
   activeTool: ToolType;
@@ -398,8 +406,54 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
   // Layers
   layers: [],
   activeLayerId: null,
+  selectedLayerIds: [],
   setLayers: (layers) => set({ layers }),
-  setActiveLayer: (id) => set({ activeLayerId: id }),
+  setActiveLayer: (id) => set({ activeLayerId: id, selectedLayerIds: id ? [id] : [] }),
+  setSelectedLayers: (ids) => set({ selectedLayerIds: ids }),
+
+  toggleLayerSelection: (id, multiSelect, rangeSelect) => {
+    const { layers, selectedLayerIds, activeLayerId } = get();
+
+    if (rangeSelect && activeLayerId) {
+      // Shift+click: select range from active to clicked layer
+      const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+      const clickedIndex = layers.findIndex((l) => l.id === id);
+
+      if (activeIndex !== -1 && clickedIndex !== -1) {
+        const start = Math.min(activeIndex, clickedIndex);
+        const end = Math.max(activeIndex, clickedIndex);
+        const rangeIds = layers.slice(start, end + 1).map((l) => l.id);
+        set({ selectedLayerIds: rangeIds });
+      }
+    } else if (multiSelect) {
+      // Ctrl+click: toggle individual selection
+      if (selectedLayerIds.includes(id)) {
+        const newSelection = selectedLayerIds.filter((i) => i !== id);
+        set({
+          selectedLayerIds: newSelection,
+          activeLayerId: newSelection.length > 0 ? newSelection[0] : null,
+        });
+      } else {
+        set({
+          selectedLayerIds: [...selectedLayerIds, id],
+          activeLayerId: id,
+        });
+      }
+    } else {
+      // Normal click: single selection
+      set({ selectedLayerIds: [id], activeLayerId: id });
+    }
+  },
+
+  selectAllLayers: () => {
+    const { layers } = get();
+    set({
+      selectedLayerIds: layers.map((l) => l.id),
+      activeLayerId: layers[0]?.id || null,
+    });
+  },
+
+  clearLayerSelection: () => set({ selectedLayerIds: [], activeLayerId: null }),
 
   addLayer: (type = 'raster', name) => {
     const id = generateId();
@@ -531,6 +585,105 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
       layers: layers.map((l) =>
         l.id === id ? { ...l, mask: undefined } : l
       ),
+    });
+  },
+
+  groupSelectedLayers: () => {
+    const { layers, selectedLayerIds } = get();
+
+    if (selectedLayerIds.length < 2) return;
+
+    // Get the selected layers in their original order
+    const selectedLayers = layers.filter((l) => selectedLayerIds.includes(l.id));
+    const firstSelectedIndex = layers.findIndex((l) => selectedLayerIds.includes(l.id));
+
+    // Create a group layer
+    const groupId = generateId();
+    const groupLayer: Layer = {
+      id: groupId,
+      name: `Group ${layers.filter((l) => l.type === 'group').length + 1}`,
+      type: 'group',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      children: selectedLayers.map((l) => l.id),
+    };
+
+    // Update layers: remove selected, insert group with children at the position of the first selected
+    const newLayers = layers.filter((l) => !selectedLayerIds.includes(l.id));
+    newLayers.splice(firstSelectedIndex, 0, groupLayer, ...selectedLayers.map((l) => ({
+      ...l,
+      parentId: groupId,
+    })));
+
+    set({
+      layers: newLayers,
+      activeLayerId: groupId,
+      selectedLayerIds: [groupId],
+    });
+  },
+
+  mergeSelectedLayers: () => {
+    const { layers, selectedLayerIds } = get();
+
+    if (selectedLayerIds.length < 2) return;
+
+    // Get visible selected layers from top to bottom
+    const selectedLayers = layers
+      .filter((l) => selectedLayerIds.includes(l.id) && l.visible)
+      .reverse(); // Reverse to draw bottom layer first
+
+    if (selectedLayers.length < 2) return;
+
+    // Create merged layer at the position of the topmost selected layer
+    const firstSelectedIndex = layers.findIndex((l) => selectedLayerIds.includes(l.id));
+    const mergedId = generateId();
+    const mergedLayer: Layer = {
+      id: mergedId,
+      name: 'Merged Layer',
+      type: 'raster',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      // Image data will need to be composited by the canvas component
+      needsMerge: true,
+      mergeSourceIds: selectedLayers.map((l) => l.id),
+    };
+
+    // Remove selected layers and insert merged layer
+    const newLayers = layers.filter((l) => !selectedLayerIds.includes(l.id));
+    newLayers.splice(firstSelectedIndex, 0, mergedLayer);
+
+    set({
+      layers: newLayers,
+      activeLayerId: mergedId,
+      selectedLayerIds: [mergedId],
+    });
+  },
+
+  ungroupLayer: (id) => {
+    const { layers } = get();
+    const groupLayer = layers.find((l) => l.id === id);
+
+    if (!groupLayer || groupLayer.type !== 'group' || !groupLayer.children) return;
+
+    const groupIndex = layers.findIndex((l) => l.id === id);
+
+    // Get child layers and remove parent reference
+    const childLayers = layers
+      .filter((l) => groupLayer.children?.includes(l.id))
+      .map((l) => ({ ...l, parentId: undefined }));
+
+    // Remove the group and its children, then insert children at group position
+    const newLayers = layers.filter((l) => l.id !== id && !groupLayer.children?.includes(l.id));
+    newLayers.splice(groupIndex, 0, ...childLayers);
+
+    set({
+      layers: newLayers,
+      selectedLayerIds: childLayers.map((l) => l.id),
+      activeLayerId: childLayers[0]?.id || null,
     });
   },
 

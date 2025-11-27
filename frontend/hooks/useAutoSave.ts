@@ -28,6 +28,11 @@ export function useAutoSave(projectId: string | null) {
     smartMaterials,
     smartMasks,
     environmentSettings,
+    brushes,
+    activeLayerId,
+    activeTool,
+    primaryColor,
+    secondaryColor,
   } = useStudioEditor();
   const { updateProject } = useStudioAuth();
 
@@ -89,23 +94,29 @@ export function useAutoSave(projectId: string | null) {
         }
       }
 
-      // Update project with current state
+      // Update project with current state - serialize data as JSON string for backend
+      const projectData = {
+        layers,
+        materials: smartMaterials,
+        smartMasks,
+        environment: environmentSettings,
+        width: project.data?.width || 1024,
+        height: project.data?.height || 1024,
+        brushes,
+        activeLayerId,
+        activeTool,
+        primaryColor,
+        secondaryColor,
+        editorState: {
+          zoom,
+          panX,
+          panY,
+        },
+      };
+
       const updatedProject = {
         ...project,
-        data: {
-          ...project.data,
-          layers,
-          materials: smartMaterials,
-          smartMasks,
-          environment: environmentSettings,
-          width: project.data?.width || 1024,
-          height: project.data?.height || 1024,
-          editorState: {
-            zoom,
-            panX,
-            panY,
-          },
-        },
+        data: projectData,
         thumbnail,
         updatedAt: new Date().toISOString(),
       };
@@ -123,7 +134,7 @@ export function useAutoSave(projectId: string | null) {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, project, isSaving, serializeProjectData, layers, zoom, panX, panY, smartMaterials, smartMasks, environmentSettings, updateProject]);
+  }, [projectId, project, isSaving, serializeProjectData, layers, zoom, panX, panY, smartMaterials, smartMasks, environmentSettings, brushes, activeLayerId, activeTool, primaryColor, secondaryColor, updateProject]);
 
   /**
    * Schedule a debounced save

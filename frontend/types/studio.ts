@@ -55,7 +55,8 @@ export interface Layer {
   imageData?: string;
   mask?: LayerMask;
   smartMask?: SmartMaskInstance;
-  children?: Layer[];
+  children?: string[]; // Child layer IDs for groups
+  parentId?: string; // Parent group layer ID
   isExpanded?: boolean;
   transform?: Transform;
   // Text layer specific
@@ -66,6 +67,9 @@ export interface Layer {
   smartFill?: SmartMaterialInstance;
   // Layer effects (drop shadow, glow, etc.)
   effects?: LayerEffect[];
+  // Merge marker for layers that need to be composited
+  needsMerge?: boolean;
+  mergeSourceIds?: string[];
 }
 
 export type LayerType =

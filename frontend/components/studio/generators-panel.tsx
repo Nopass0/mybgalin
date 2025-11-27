@@ -128,10 +128,12 @@ const GENERATORS: GeneratorPreset[] = [
 ];
 
 export function GeneratorsPanel({ onApplyToLayer, onCreateLayer, className }: GeneratorsPanelProps) {
-  const [selectedGenerator, setSelectedGenerator] = useState<GeneratorPreset | null>(null);
-  const [params, setParams] = useState<GeneratorParameters>({});
+  // Select first generator by default
+  const [selectedGenerator, setSelectedGenerator] = useState<GeneratorPreset | null>(GENERATORS[0]);
+  const [params, setParams] = useState<GeneratorParameters>(GENERATORS[0].defaultParams);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [previewSize] = useState(256);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const generateTexture = useCallback(() => {
     if (!selectedGenerator || !canvasRef.current) return;
@@ -139,6 +141,18 @@ export function GeneratorsPanel({ onApplyToLayer, onCreateLayer, className }: Ge
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    setIsGenerating(true);
+
+    // Clear canvas first with checkerboard background
+    const checkSize = 8;
+    for (let y = 0; y < previewSize; y += checkSize) {
+      for (let x = 0; x < previewSize; x += checkSize) {
+        const isLight = ((x / checkSize) + (y / checkSize)) % 2 === 0;
+        ctx.fillStyle = isLight ? '#3a3a3c' : '#2d2d2f';
+        ctx.fillRect(x, y, checkSize, checkSize);
+      }
+    }
 
     const imageData = ctx.createImageData(previewSize, previewSize);
     const data = imageData.data;
@@ -425,11 +439,21 @@ export function GeneratorsPanel({ onApplyToLayer, onCreateLayer, className }: Ge
     }
 
     ctx.putImageData(imageData, 0, 0);
+    setIsGenerating(false);
   }, [selectedGenerator, params, previewSize]);
 
+  // Generate texture whenever generator or params change
   useEffect(() => {
     generateTexture();
   }, [generateTexture]);
+
+  // Initial generation on mount (with slight delay to ensure canvas is ready)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      generateTexture();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleRandomize = () => {
     setParams((prev) => ({ ...prev, seed: Math.floor(Math.random() * 99999) }));
@@ -648,13 +672,18 @@ export function GeneratorsPanel({ onApplyToLayer, onCreateLayer, className }: Ge
       {/* Preview canvas */}
       <div className="p-3 border-t border-zinc-800">
         <div className="text-xs text-zinc-500 mb-2">Preview</div>
-        <div className="aspect-square bg-zinc-800 rounded overflow-hidden">
+        <div className="aspect-square bg-zinc-800 rounded overflow-hidden relative">
           <canvas
             ref={canvasRef}
             width={previewSize}
             height={previewSize}
             className="w-full h-full"
           />
+          {isGenerating && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+              <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
         </div>
       </div>
 
