@@ -74,6 +74,21 @@ export default function ProjectEditorPage() {
     history,
     historyIndex,
     pushHistory,
+    // Smart materials from store (for auto-save)
+    smartMaterials,
+    setSmartMaterials,
+    activeMaterialId,
+    setActiveMaterialId,
+    addMaterial,
+    updateMaterial,
+    deleteMaterial: deleteMaterialStore,
+    duplicateMaterial: duplicateMaterialStore,
+    // Smart masks from store
+    smartMasks,
+    setSmartMasks,
+    // Environment from store
+    environmentSettings,
+    setEnvironmentSettings,
   } = useStudioEditor();
 
   // Initialize hotkeys for Photoshop-like shortcuts
@@ -103,11 +118,7 @@ export default function ProjectEditorPage() {
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('default');
   const [showNodeEditor, setShowNodeEditor] = useState(false);
 
-  // Smart features state
-  const [smartMasks, setSmartMasks] = useState<SmartMask[]>(DEFAULT_SMART_MASKS);
-  const [smartMaterials, setSmartMaterials] = useState<SmartMaterial[]>([]);
-  const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
-  const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>(DEFAULT_ENVIRONMENT);
+  // Lenticular state (local - not yet in store)
   const [lenticularFrames, setLenticularFrames] = useState<LenticularFrame[]>([]);
   const [lenticularSettings, setLenticularSettings] = useState<LenticularSettings>({
     frameCount: 8,
@@ -132,12 +143,27 @@ export default function ProjectEditorPage() {
         } else {
           setLayers(foundProject.data.layers);
         }
+
+        // Load materials from project data
+        if (foundProject.data?.materials) {
+          setSmartMaterials(foundProject.data.materials);
+        }
+
+        // Load smart masks from project data
+        if (foundProject.data?.smartMasks) {
+          setSmartMasks(foundProject.data.smartMasks);
+        }
+
+        // Load environment settings from project data
+        if (foundProject.data?.environment) {
+          setEnvironmentSettings(foundProject.data.environment);
+        }
       }
       setIsLoading(false);
     } else if (!authLoading && !isAuthenticated) {
       router.push('/studio');
     }
-  }, [authLoading, isAuthenticated, projects, projectId]);
+  }, [authLoading, isAuthenticated, projects, projectId, setSmartMaterials, setSmartMasks, setEnvironmentSettings]);
 
   // Manual save handler
   const handleSave = useCallback(async () => {
@@ -175,8 +201,8 @@ export default function ProjectEditorPage() {
 
   // Handle creating new mask
   const handleCreateMask = useCallback((mask: SmartMask) => {
-    setSmartMasks((prev) => [...prev, mask]);
-  }, []);
+    setSmartMasks([...smartMasks, mask]);
+  }, [smartMasks, setSmartMasks]);
 
   // Handle applying generator to layer
   const handleApplyGeneratorToLayer = useCallback((imageData: ImageData) => {
@@ -203,48 +229,27 @@ export default function ProjectEditorPage() {
     setLayers(frame.layers);
   }, [setLayers]);
 
-  // Material handlers
+  // Material handlers - using store functions for auto-save
   const handleCreateMaterial = useCallback(() => {
-    const newMaterial: SmartMaterial = {
-      id: `material-${Date.now()}`,
-      name: `Material ${smartMaterials.length + 1}`,
-      category: 'custom',
-      nodes: [],
-      connections: [],
-      outputNodeId: '',
-    };
-    setSmartMaterials(prev => [...prev, newMaterial]);
-    setActiveMaterialId(newMaterial.id);
-  }, [smartMaterials.length]);
+    addMaterial();
+  }, [addMaterial]);
 
   const handleDuplicateMaterial = useCallback((id: string) => {
-    const material = smartMaterials.find(m => m.id === id);
-    if (!material) return;
-
-    const duplicate: SmartMaterial = {
-      ...material,
-      id: `material-${Date.now()}`,
-      name: `${material.name} (copy)`,
-    };
-    setSmartMaterials(prev => [...prev, duplicate]);
-    setActiveMaterialId(duplicate.id);
-  }, [smartMaterials]);
+    duplicateMaterialStore(id);
+  }, [duplicateMaterialStore]);
 
   const handleDeleteMaterial = useCallback((id: string) => {
-    setSmartMaterials(prev => prev.filter(m => m.id !== id));
-    if (activeMaterialId === id) {
-      setActiveMaterialId(null);
-    }
-  }, [activeMaterialId]);
+    deleteMaterialStore(id);
+  }, [deleteMaterialStore]);
 
   const handleUpdateMaterial = useCallback((material: SmartMaterial) => {
-    setSmartMaterials(prev => prev.map(m => m.id === material.id ? material : m));
-  }, []);
+    updateMaterial(material);
+  }, [updateMaterial]);
 
   const handleOpenMaterialEditor = useCallback((id: string) => {
     setActiveMaterialId(id);
     setShowNodeEditor(true);
-  }, []);
+  }, [setActiveMaterialId]);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;

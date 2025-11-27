@@ -8,7 +8,11 @@ import type {
   StudioProject,
   HistoryState,
   Gradient,
+  SmartMaterial,
+  SmartMask,
+  EnvironmentSettings,
 } from '@/types/studio';
+import { DEFAULT_ENVIRONMENT, DEFAULT_SMART_MASKS } from '@/types/studio';
 
 // Simple UUID generator since we may not have uuid package
 const generateId = () => {
@@ -106,6 +110,24 @@ interface EditorState {
   // Canvas dimensions (computed from project)
   canvasWidth: number;
   canvasHeight: number;
+
+  // Smart Materials
+  smartMaterials: SmartMaterial[];
+  activeMaterialId: string | null;
+  setSmartMaterials: (materials: SmartMaterial[]) => void;
+  addMaterial: () => SmartMaterial;
+  updateMaterial: (material: SmartMaterial) => void;
+  deleteMaterial: (id: string) => void;
+  duplicateMaterial: (id: string) => void;
+  setActiveMaterialId: (id: string | null) => void;
+
+  // Smart Masks
+  smartMasks: SmartMask[];
+  setSmartMasks: (masks: SmartMask[]) => void;
+
+  // Environment
+  environmentSettings: EnvironmentSettings;
+  setEnvironmentSettings: (settings: EnvironmentSettings) => void;
 }
 
 const defaultBrush: CustomBrush = {
@@ -474,4 +496,64 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
     const project = get().project;
     return project?.data?.height || 1024;
   },
+
+  // Smart Materials
+  smartMaterials: [],
+  activeMaterialId: null,
+  setSmartMaterials: (smartMaterials) => set({ smartMaterials }),
+  addMaterial: () => {
+    const { smartMaterials } = get();
+    const newMaterial: SmartMaterial = {
+      id: generateId(),
+      name: `Material ${smartMaterials.length + 1}`,
+      category: 'custom',
+      nodes: [],
+      connections: [],
+      outputNodeId: '',
+    };
+    set({ smartMaterials: [...smartMaterials, newMaterial], activeMaterialId: newMaterial.id });
+    return newMaterial;
+  },
+  updateMaterial: (material) => {
+    const { smartMaterials } = get();
+    set({
+      smartMaterials: smartMaterials.map((m) =>
+        m.id === material.id ? material : m
+      ),
+    });
+  },
+  deleteMaterial: (id) => {
+    const { smartMaterials, activeMaterialId } = get();
+    set({
+      smartMaterials: smartMaterials.filter((m) => m.id !== id),
+      activeMaterialId: activeMaterialId === id ? null : activeMaterialId,
+    });
+  },
+  duplicateMaterial: (id) => {
+    const { smartMaterials } = get();
+    const material = smartMaterials.find((m) => m.id === id);
+    if (!material) return;
+
+    const duplicate: SmartMaterial = {
+      ...material,
+      id: generateId(),
+      name: `${material.name} copy`,
+      nodes: JSON.parse(JSON.stringify(material.nodes)),
+      connections: JSON.parse(JSON.stringify(material.connections)),
+    };
+
+    set({
+      smartMaterials: [...smartMaterials, duplicate],
+      activeMaterialId: duplicate.id,
+    });
+  },
+  setActiveMaterialId: (activeMaterialId) => set({ activeMaterialId }),
+
+  // Smart Masks
+  smartMasks: DEFAULT_SMART_MASKS,
+  setSmartMasks: (smartMasks) => set({ smartMasks }),
+
+  // Environment
+  environmentSettings: DEFAULT_ENVIRONMENT,
+  setEnvironmentSettings: (environmentSettings) => set({ environmentSettings }),
 }));

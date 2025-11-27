@@ -19,7 +19,16 @@ const DEBOUNCE_DELAY = 2000;
  * Saves project data to backend periodically and on changes
  */
 export function useAutoSave(projectId: string | null) {
-  const { project, layers, zoom, panX, panY } = useStudioEditor();
+  const {
+    project,
+    layers,
+    zoom,
+    panX,
+    panY,
+    smartMaterials,
+    smartMasks,
+    environmentSettings,
+  } = useStudioEditor();
   const { updateProject } = useStudioAuth();
 
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -41,8 +50,11 @@ export function useAutoSave(projectId: string | null) {
       zoom,
       panX,
       panY,
+      smartMaterials,
+      smartMasks,
+      environmentSettings,
     });
-  }, [layers, zoom, panX, panY]);
+  }, [layers, zoom, panX, panY, smartMaterials, smartMasks, environmentSettings]);
 
   /**
    * Save project to backend
@@ -83,6 +95,9 @@ export function useAutoSave(projectId: string | null) {
         data: {
           ...project.data,
           layers,
+          materials: smartMaterials,
+          smartMasks,
+          environment: environmentSettings,
           width: project.data?.width || 1024,
           height: project.data?.height || 1024,
           editorState: {
@@ -108,7 +123,7 @@ export function useAutoSave(projectId: string | null) {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, project, isSaving, serializeProjectData, layers, zoom, panX, panY, updateProject]);
+  }, [projectId, project, isSaving, serializeProjectData, layers, zoom, panX, panY, smartMaterials, smartMasks, environmentSettings, updateProject]);
 
   /**
    * Schedule a debounced save
@@ -143,7 +158,7 @@ export function useAutoSave(projectId: string | null) {
     if (currentData !== lastSavedDataRef.current) {
       scheduleSave();
     }
-  }, [layers, zoom, panX, panY, projectId, serializeProjectData, scheduleSave]);
+  }, [layers, zoom, panX, panY, smartMaterials, smartMasks, environmentSettings, projectId, serializeProjectData, scheduleSave]);
 
   // Set up periodic auto-save
   useEffect(() => {
