@@ -948,3 +948,471 @@ export async function combineChannels(
   ctx.putImageData(resultData, 0, 0);
   return canvasToDataUrl(canvas);
 }
+
+// ==================== NOISE GENERATION ====================
+
+/**
+ * Permutation table for Perlin/Simplex noise
+ */
+const PERM = new Uint8Array(512);
+const GRAD3 = [
+  [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+  [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+  [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+];
+
+// Initialize permutation table with seed
+function initNoiseSeed(seed: number): void {
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+
+  // Fisher-Yates shuffle with seeded random
+  let s = seed;
+  for (let i = 255; i > 0; i--) {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    const j = s % (i + 1);
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+
+  for (let i = 0; i < 256; i++) {
+    PERM[i] = PERM[i + 256] = p[i];
+  }
+}
+
+function fade(t: number): number {
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + t * (b - a);
+}
+
+function dot3(g: number[], x: number, y: number, z: number): number {
+  return g[0] * x + g[1] * y + g[2] * z;
+}
+
+/**
+ * 2D Perlin noise
+ */
+export function perlinNoise2D(x: number, y: number): number {
+  const X = Math.floor(x) & 255;
+  const Y = Math.floor(y) & 255;
+
+  x -= Math.floor(x);
+  y -= Math.floor(y);
+
+  const u = fade(x);
+  const v = fade(y);
+
+  const aa = PERM[PERM[X] + Y];
+  const ab = PERM[PERM[X] + Y + 1];
+  const ba = PERM[PERM[X + 1] + Y];
+  const bb = PERM[PERM[X + 1] + Y + 1];
+
+  const gradAA = GRAD3[aa % 12];
+  const gradAB = GRAD3[ab % 12];
+  const gradBA = GRAD3[ba % 12];
+  const gradBB = GRAD3[bb % 12];
+
+  const n00 = dot3(gradAA, x, y, 0);
+  const n01 = dot3(gradAB, x, y - 1, 0);
+  const n10 = dot3(gradBA, x - 1, y, 0);
+  const n11 = dot3(gradBB, x - 1, y - 1, 0);
+
+  return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
+}
+
+/**
+ * 2D Value noise (simpler, blocky noise)
+ */
+export function valueNoise2D(x: number, y: number): number {
+  const X = Math.floor(x);
+  const Y = Math.floor(y);
+
+  const fx = x - X;
+  const fy = y - Y;
+
+  const u = fade(fx);
+  const v = fade(fy);
+
+  const n00 = PERM[(PERM[X & 255] + Y) & 255] / 255;
+  const n01 = PERM[(PERM[X & 255] + Y + 1) & 255] / 255;
+  const n10 = PERM[(PERM[(X + 1) & 255] + Y) & 255] / 255;
+  const n11 = PERM[(PERM[(X + 1) & 255] + Y + 1) & 255] / 255;
+
+  return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
+}
+
+/**
+ * Fractal Brownian Motion (FBM) - layered noise
+ */
+export function fbmNoise2D(
+  x: number,
+  y: number,
+  octaves: number = 4,
+  persistence: number = 0.5,
+  lacunarity: number = 2.0,
+  noiseFunc: (x: number, y: number) => number = perlinNoise2D
+): number {
+  let total = 0;
+  let amplitude = 1;
+  let frequency = 1;
+  let maxValue = 0;
+
+  for (let i = 0; i < octaves; i++) {
+    total += noiseFunc(x * frequency, y * frequency) * amplitude;
+    maxValue += amplitude;
+    amplitude *= persistence;
+    frequency *= lacunarity;
+  }
+
+  return total / maxValue;
+}
+
+/**
+ * Turbulence noise (absolute value of FBM for more chaotic look)
+ */
+export function turbulenceNoise2D(
+  x: number,
+  y: number,
+  octaves: number = 4,
+  persistence: number = 0.5,
+  lacunarity: number = 2.0
+): number {
+  let total = 0;
+  let amplitude = 1;
+  let frequency = 1;
+  let maxValue = 0;
+
+  for (let i = 0; i < octaves; i++) {
+    total += Math.abs(perlinNoise2D(x * frequency, y * frequency)) * amplitude;
+    maxValue += amplitude;
+    amplitude *= persistence;
+    frequency *= lacunarity;
+  }
+
+  return total / maxValue;
+}
+
+/**
+ * Ridged noise (inverted turbulence for mountain-like features)
+ */
+export function ridgedNoise2D(
+  x: number,
+  y: number,
+  octaves: number = 4,
+  persistence: number = 0.5,
+  lacunarity: number = 2.0
+): number {
+  let total = 0;
+  let amplitude = 1;
+  let frequency = 1;
+  let weight = 1;
+
+  for (let i = 0; i < octaves; i++) {
+    let signal = perlinNoise2D(x * frequency, y * frequency);
+    signal = 1 - Math.abs(signal);
+    signal *= signal * weight;
+    weight = Math.min(1, Math.max(0, signal * 2));
+    total += signal * amplitude;
+    amplitude *= persistence;
+    frequency *= lacunarity;
+  }
+
+  return total;
+}
+
+/**
+ * Generate a noise texture to a canvas
+ */
+export function generateNoiseTexture(
+  width: number,
+  height: number,
+  options: {
+    type?: 'perlin' | 'value' | 'fbm' | 'turbulence' | 'ridged';
+    scale?: number;
+    octaves?: number;
+    persistence?: number;
+    lacunarity?: number;
+    seed?: number;
+    color1?: string;
+    color2?: string;
+  } = {}
+): string {
+  const {
+    type = 'perlin',
+    scale = 50,
+    octaves = 4,
+    persistence = 0.5,
+    lacunarity = 2.0,
+    seed = 42,
+    color1 = '#000000',
+    color2 = '#ffffff',
+  } = options;
+
+  // Initialize noise with seed
+  initNoiseSeed(seed);
+
+  const canvas = createOffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to get canvas context');
+
+  const imageData = ctx.createImageData(width, height);
+  const data = imageData.data;
+
+  // Parse colors
+  const c1 = hexToRgb(color1);
+  const c2 = hexToRgb(color2);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const nx = x / scale;
+      const ny = y / scale;
+
+      let noiseValue: number;
+      switch (type) {
+        case 'value':
+          noiseValue = valueNoise2D(nx, ny);
+          break;
+        case 'fbm':
+          noiseValue = (fbmNoise2D(nx, ny, octaves, persistence, lacunarity) + 1) / 2;
+          break;
+        case 'turbulence':
+          noiseValue = turbulenceNoise2D(nx, ny, octaves, persistence, lacunarity);
+          break;
+        case 'ridged':
+          noiseValue = ridgedNoise2D(nx, ny, octaves, persistence, lacunarity) / 2;
+          break;
+        default: // perlin
+          noiseValue = (perlinNoise2D(nx, ny) + 1) / 2;
+      }
+
+      noiseValue = Math.max(0, Math.min(1, noiseValue));
+
+      const idx = (y * width + x) * 4;
+      data[idx] = Math.round(c1.r + (c2.r - c1.r) * noiseValue);
+      data[idx + 1] = Math.round(c1.g + (c2.g - c1.g) * noiseValue);
+      data[idx + 2] = Math.round(c1.b + (c2.b - c1.b) * noiseValue);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvasToDataUrl(canvas);
+}
+
+// ==================== IMAGE FILTERS ====================
+
+/**
+ * Apply filter to image data
+ */
+export async function applyFilter(
+  sourceDataUrl: string,
+  filter: 'invert' | 'posterize' | 'edge' | 'emboss' | 'pixelate' | 'noise' | 'sepia' | 'threshold',
+  params: Record<string, number> = {}
+): Promise<string> {
+  const img = await loadImageFromDataUrl(sourceDataUrl);
+  const width = img.width;
+  const height = img.height;
+
+  const canvas = createOffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to get canvas context');
+
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0, 0, width, height);
+
+  switch (filter) {
+    case 'invert':
+      filterInvert(imageData);
+      break;
+    case 'posterize':
+      filterPosterize(imageData, params.levels || 4);
+      break;
+    case 'edge':
+      filterEdgeDetection(imageData, width, height);
+      break;
+    case 'emboss':
+      filterEmboss(imageData, width, height, params.strength || 1);
+      break;
+    case 'pixelate':
+      filterPixelate(imageData, width, height, params.size || 8);
+      break;
+    case 'noise':
+      filterNoise(imageData, params.amount || 30);
+      break;
+    case 'sepia':
+      filterSepia(imageData, params.intensity || 1);
+      break;
+    case 'threshold':
+      filterThreshold(imageData, params.level || 128);
+      break;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvasToDataUrl(canvas);
+}
+
+function filterInvert(imageData: ImageData): void {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 255 - data[i];
+    data[i + 1] = 255 - data[i + 1];
+    data[i + 2] = 255 - data[i + 2];
+  }
+}
+
+function filterPosterize(imageData: ImageData, levels: number): void {
+  const data = imageData.data;
+  const step = 255 / (levels - 1);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.round(Math.round(data[i] / step) * step);
+    data[i + 1] = Math.round(Math.round(data[i + 1] / step) * step);
+    data[i + 2] = Math.round(Math.round(data[i + 2] / step) * step);
+  }
+}
+
+function filterEdgeDetection(imageData: ImageData, width: number, height: number): void {
+  const data = imageData.data;
+  const original = new Uint8ClampedArray(data);
+
+  // Sobel kernel
+  const kernelX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+  const kernelY = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      let gx = 0, gy = 0;
+
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const idx = ((y + ky) * width + (x + kx)) * 4;
+          const gray = (original[idx] + original[idx + 1] + original[idx + 2]) / 3;
+          const ki = (ky + 1) * 3 + (kx + 1);
+          gx += gray * kernelX[ki];
+          gy += gray * kernelY[ki];
+        }
+      }
+
+      const magnitude = Math.min(255, Math.sqrt(gx * gx + gy * gy));
+      const idx = (y * width + x) * 4;
+      data[idx] = magnitude;
+      data[idx + 1] = magnitude;
+      data[idx + 2] = magnitude;
+    }
+  }
+}
+
+function filterEmboss(imageData: ImageData, width: number, height: number, strength: number): void {
+  const data = imageData.data;
+  const original = new Uint8ClampedArray(data);
+
+  // Emboss kernel
+  const kernel = [-2, -1, 0, -1, 1, 1, 0, 1, 2];
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      let r = 0, g = 0, b = 0;
+
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const idx = ((y + ky) * width + (x + kx)) * 4;
+          const ki = (ky + 1) * 3 + (kx + 1);
+          r += original[idx] * kernel[ki] * strength;
+          g += original[idx + 1] * kernel[ki] * strength;
+          b += original[idx + 2] * kernel[ki] * strength;
+        }
+      }
+
+      const idx = (y * width + x) * 4;
+      data[idx] = Math.max(0, Math.min(255, r + 128));
+      data[idx + 1] = Math.max(0, Math.min(255, g + 128));
+      data[idx + 2] = Math.max(0, Math.min(255, b + 128));
+    }
+  }
+}
+
+function filterPixelate(imageData: ImageData, width: number, height: number, size: number): void {
+  const data = imageData.data;
+
+  for (let y = 0; y < height; y += size) {
+    for (let x = 0; x < width; x += size) {
+      let r = 0, g = 0, b = 0, count = 0;
+
+      // Average color in block
+      for (let by = 0; by < size && y + by < height; by++) {
+        for (let bx = 0; bx < size && x + bx < width; bx++) {
+          const idx = ((y + by) * width + (x + bx)) * 4;
+          r += data[idx];
+          g += data[idx + 1];
+          b += data[idx + 2];
+          count++;
+        }
+      }
+
+      r = Math.round(r / count);
+      g = Math.round(g / count);
+      b = Math.round(b / count);
+
+      // Fill block with average
+      for (let by = 0; by < size && y + by < height; by++) {
+        for (let bx = 0; bx < size && x + bx < width; bx++) {
+          const idx = ((y + by) * width + (x + bx)) * 4;
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+        }
+      }
+    }
+  }
+}
+
+function filterNoise(imageData: ImageData, amount: number): void {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const noise = (Math.random() - 0.5) * amount * 2;
+    data[i] = Math.max(0, Math.min(255, data[i] + noise));
+    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise));
+    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
+  }
+}
+
+function filterSepia(imageData: ImageData, intensity: number): void {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+
+    const sepiaR = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+    const sepiaG = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+    const sepiaB = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+
+    data[i] = r + (sepiaR - r) * intensity;
+    data[i + 1] = g + (sepiaG - g) * intensity;
+    data[i + 2] = b + (sepiaB - b) * intensity;
+  }
+}
+
+function filterThreshold(imageData: ImageData, level: number): void {
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    const value = gray >= level ? 255 : 0;
+    data[i] = value;
+    data[i + 1] = value;
+    data[i + 2] = value;
+  }
+}
+
+// Helper to parse hex color to RGB
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
+    : { r: 0, g: 0, b: 0 };
+}
