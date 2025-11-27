@@ -21,6 +21,10 @@ async fn rocket() -> _ {
 
     // Get configuration from environment
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    if !database_url.starts_with("sqlite:") {
+        panic!("DATABASE_URL must start with 'sqlite:'");
+    }
+
     let telegram_bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set");
     let admin_telegram_id: i64 = env::var("ADMIN_TELEGRAM_ID")
         .expect("ADMIN_TELEGRAM_ID must be set")

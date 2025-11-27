@@ -107,6 +107,8 @@ if [ ! -f "server/.env" ]; then
 # This file will be automatically populated by GitHub Actions
 # Do not edit manually - use GitHub Secrets instead
 DATABASE_URL=sqlite:./data.db
+ROCKET_PORT=3001
+ROCKET_ADDRESS=0.0.0.0
 EOF
     chown "$DEPLOY_USER":"$DEPLOY_USER" server/.env
     echo -e "${GREEN}✅ Created server/.env placeholder${NC}"

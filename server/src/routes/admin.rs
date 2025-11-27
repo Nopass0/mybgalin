@@ -39,7 +39,7 @@ pub async fn admin_dashboard(_auth: AuthGuard) -> Json<ApiResponse<String>> {
 #[get("/admin/stats")]
 pub async fn admin_stats(
     _auth: AuthGuard,
-    pool: &rocket::State<sqlx::PgPool>,
+    pool: &rocket::State<sqlx::SqlitePool>,
 ) -> Json<ApiResponse<AdminStats>> {
     let total_sessions: (i64,) = match sqlx::query_as("SELECT COUNT(*) FROM sessions")
         .fetch_one(pool.inner())
@@ -50,7 +50,7 @@ pub async fn admin_stats(
     };
 
     let active_sessions: (i64,) = match sqlx::query_as(
-        "SELECT COUNT(*) FROM sessions WHERE expires_at > NOW()",
+        "SELECT COUNT(*) FROM sessions WHERE expires_at > datetime('now')",
     )
     .fetch_one(pool.inner())
     .await

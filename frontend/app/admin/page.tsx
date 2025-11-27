@@ -50,6 +50,8 @@ export default function AdminPage() {
       setStep("verify");
     } catch (error: any) {
       toast.error(error.message || "Не удалось отправить код");
+      // Temporary alert for debugging
+      alert(`Error: ${error.message}`);
     } finally {
       setRequesting(false);
     }
@@ -102,6 +104,10 @@ export default function AdminPage() {
                 ? "Получите код подтверждения в Telegram"
                 : "Введите код из Telegram сообщения"}
             </CardDescription>
+            {/* Debug Info */}
+            <div className="text-xs text-red-500 mt-2">
+              Step: {step}, Requesting: {requesting ? "yes" : "no"}
+            </div>
           </CardHeader>
           <CardContent>
             {step === "request" ? (

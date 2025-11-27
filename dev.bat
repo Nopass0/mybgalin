@@ -62,11 +62,18 @@ if not exist "node_modules" (
     %PACKAGE_MANAGER% install
 )
 
+:: Check for cargo-watch
+where cargo-watch >nul 2>nul
+if %errorlevel% neq 0 (
+    echo 📦 Installing cargo-watch for hot reload...
+    cargo install cargo-watch
+)
+
 :: Start backend in new window
 echo.
-echo 🔧 Starting backend server...
+echo 🔧 Starting backend server with hot reload...
 cd ..\server
-start "BGalin Backend" cmd /k "cargo run"
+start "BGalin Backend" cmd /k "cargo watch -x run"
 
 :: Wait for backend to start
 timeout /t 3 /nobreak >nul

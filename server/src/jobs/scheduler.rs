@@ -2,18 +2,18 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use crate::jobs::{HHClient, AIClient};
 use chrono::{Utc, Timelike, Datelike};
 
 #[derive(Clone)]
 pub struct JobScheduler {
     is_running: Arc<RwLock<bool>>,
-    pool: PgPool,
+    pool: SqlitePool,
 }
 
 impl JobScheduler {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: SqlitePool) -> Self {
         Self {
             is_running: Arc::new(RwLock::new(false)),
             pool,
@@ -135,17 +135,10 @@ impl JobScheduler {
         };
 
         // Get HH token
-        let token: Option<(String,)> = sqlx::query_as(
-            "SELECT access_token FROM hh_tokens ORDER BY id DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let access_token = match token {
-            Some((t,)) => t,
-            None => {
-                println!("⚠️  No HH.ru token found. Please authorize first.");
+        let access_token = match self.get_valid_token().await {
+            Ok(t) => t,
+            Err(e) => {
+                println!("⚠️  {}", e);
                 return Ok(());
             }
         };
@@ -331,16 +324,9 @@ impl JobScheduler {
 
     async fn check_responses(&self) -> Result<(), String> {
         // Get HH token
-        let token: Option<(String,)> = sqlx::query_as(
-            "SELECT access_token FROM hh_tokens ORDER BY id DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let access_token = match token {
-            Some((t,)) => t,
-            None => return Ok(()),
+        let access_token = match self.get_valid_token().await {
+            Ok(t) => t,
+            Err(_) => return Ok(()),
         };
 
         let mut hh_client = HHClient::new();
@@ -398,16 +384,9 @@ impl JobScheduler {
 
     async fn monitor_chats(&self) -> Result<(), String> {
         // Get HH token
-        let token: Option<(String,)> = sqlx::query_as(
-            "SELECT access_token FROM hh_tokens ORDER BY id DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let access_token = match token {
-            Some((t,)) => t,
-            None => return Ok(()),
+        let access_token = match self.get_valid_token().await {
+            Ok(t) => t,
+            Err(_) => return Ok(()),
         };
 
         let mut hh_client = HHClient::new();
@@ -591,6 +570,54 @@ impl JobScheduler {
         Ok((telegram, email))
     }
 
+    async fn get_valid_token(&self) -> Result<String, String> {
+        // Get latest token
+        let token_row: Option<(i64, String, String, String)> = sqlx::query_as(
+            "SELECT id, access_token, refresh_token, expires_at FROM hh_tokens ORDER BY id DESC LIMIT 1"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let (_id, access_token, refresh_token, expires_at) = match token_row {
+            Some(row) => row,
+            None => return Err("No HH.ru token found. Please authorize first.".to_string()),
+        };
+
+        // Check expiration (buffer 5 minutes)
+        let expires_dt = chrono::DateTime::parse_from_rfc3339(&expires_at)
+            .map_err(|e| format!("Failed to parse expiration date: {}", e))?
+            .with_timezone(&Utc);
+        
+        if expires_dt > Utc::now() + chrono::Duration::minutes(5) {
+            return Ok(access_token);
+        }
+
+        println!("🔄 HH token expired or expiring soon. Refreshing...");
+
+        let client_id = std::env::var("HH_CLIENT_ID").map_err(|_| "HH_CLIENT_ID not set")?;
+        let client_secret = std::env::var("HH_CLIENT_SECRET").map_err(|_| "HH_CLIENT_SECRET not set")?;
+
+        let (new_access_token, new_refresh_token, expires_in) = 
+            HHClient::refresh_token(&client_id, &client_secret, &refresh_token).await?;
+
+        let new_expires_at = Utc::now() + chrono::Duration::seconds(expires_in);
+
+        // Save new token
+        sqlx::query(
+            "INSERT INTO hh_tokens (access_token, refresh_token, expires_at) VALUES (?, ?, ?)"
+        )
+        .bind(&new_access_token)
+        .bind(&new_refresh_token)
+        .bind(new_expires_at.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        println!("✅ HH token refreshed successfully");
+        Ok(new_access_token)
+    }
+
     async fn sync_anime(&self) -> Result<(), String> {
         println!("🎬 Starting daily anime sync...");
 
@@ -599,7 +626,7 @@ impl JobScheduler {
         const SHEET_ID: &str = "1Dr02PNJp4W6lJnI31ohN-jkZWIL4Jylww6vVrPVrYfs";
 
         let sheets_client = GoogleSheetsClient::new(SHEET_ID.to_string());
-        let shikimori_client = ShikimoriClient::new();
+        let _shikimori_client = ShikimoriClient::new();
 
         let mut total_synced = 0;
 

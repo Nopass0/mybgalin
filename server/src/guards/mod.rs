@@ -4,7 +4,7 @@ use rocket::http::Status;
 use rocket::request::{self, FromRequest, Request};
 use rocket::outcome::Outcome;
 use rocket::State;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 // Authenticated user guard for admin routes
 pub struct AuthGuard {
@@ -32,7 +32,7 @@ impl<'r> FromRequest<'r> for AuthGuard {
         };
 
         // Get database pool from state
-        let pool = match req.guard::<&State<PgPool>>().await {
+        let pool = match req.guard::<&State<SqlitePool>>().await {
             Outcome::Success(pool) => pool,
             _ => return Outcome::Error((Status::InternalServerError, ())),
         };

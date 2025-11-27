@@ -89,12 +89,35 @@ struct UserFilesResponse {
 #[derive(Debug, Deserialize)]
 struct UserFilesData {
     total: u32,
-    publishedfiledetails: Vec<PublishedFileId>,
+    #[serde(default)]
+    publishedfiledetails: Vec<PublishedFileIdWrapper>,
 }
 
 #[derive(Debug, Deserialize)]
-struct PublishedFileId {
+struct PublishedFileIdWrapper {
     publishedfileid: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    short_description: String,
+    #[serde(default)]
+    preview_url: String,
+    #[serde(default)]
+    time_created: u64,
+    #[serde(default)]
+    time_updated: u64,
+    #[serde(default)]
+    subscriptions: u64,
+    #[serde(default)]
+    favorited: u64,
+    #[serde(default)]
+    views: u64,
+    #[serde(default)]
+    tags: Vec<WorkshopTag>,
+    #[serde(default)]
+    file_url: Option<String>,
+    #[serde(default)]
+    file_size: String,  // Steam API returns this as string!
 }
 
 impl SteamClient {
@@ -141,32 +164,60 @@ impl SteamClient {
             self.api_key, self.steam_id, appid
         );
 
+        println!("============ STEAM WORKSHOP DEBUG ============");
         println!("Fetching workshop items from: {}", url.replace(&self.api_key, "***"));
+        println!("Steam ID: {}", self.steam_id);
+        println!("App ID: {}", appid);
 
         let response = self.client.get(&url).send().await?;
 
+        println!("HTTP Status: {}", response.status());
+
         if !response.status().is_success() {
             let error_msg = format!("Steam API error: {}", response.status());
-            println!("{}", error_msg);
+            println!("ERROR: {}", error_msg);
             return Err(error_msg.into());
         }
 
         let response_text = response.text().await?;
-        println!("Response: {}", response_text);
+        println!("Raw API Response: {}", response_text);
 
-        let user_files: UserFilesResponse = serde_json::from_str(&response_text)?;
+        let user_files: UserFilesResponse = match serde_json::from_str(&response_text) {
+            Ok(data) => data,
+            Err(e) => {
+                println!("ERROR parsing JSON: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+
+        println!("Total files found: {}", user_files.response.total);
+        println!("Files in response: {}", user_files.response.publishedfiledetails.len());
+        println!("============================================");
 
         if user_files.response.publishedfiledetails.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Get detailed info for each file
-        let file_ids: Vec<String> = user_files.response.publishedfiledetails
-            .iter()
-            .map(|f| f.publishedfileid.clone())
+        // Convert the response data directly to WorkshopItem
+        let items = user_files.response.publishedfiledetails
+            .into_iter()
+            .map(|file| WorkshopItem {
+                publishedfileid: file.publishedfileid,
+                title: file.title,
+                description: file.short_description,
+                preview_url: file.preview_url,
+                time_created: file.time_created,
+                time_updated: file.time_updated,
+                subscriptions: file.subscriptions,
+                favorited: file.favorited,
+                views: file.views,
+                tags: file.tags,
+                file_url: file.file_url,
+                file_size: file.file_size.parse::<u64>().unwrap_or(0),
+            })
             .collect();
 
-        self.get_workshop_details(&file_ids).await
+        Ok(items)
     }
 
     async fn get_workshop_details(&self, file_ids: &[String]) -> Result<Vec<WorkshopItem>, Box<dyn std::error::Error>> {

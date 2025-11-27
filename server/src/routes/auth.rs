@@ -3,12 +3,12 @@ use crate::models::{ApiResponse, RequestOtpRequest, RequestOtpResponse, VerifyOt
 use crate::telegram::TelegramBot;
 use rocket::serde::json::Json;
 use rocket::{post, State};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[post("/auth/request-otp", data = "<_request>")]
 pub async fn request_otp(
     _request: Json<RequestOtpRequest>,
-    pool: &State<PgPool>,
+    pool: &State<SqlitePool>,
     telegram_bot: &State<TelegramBot>,
     admin_telegram_id: &State<i64>,
 ) -> Json<ApiResponse<RequestOtpResponse>> {
@@ -47,7 +47,7 @@ pub async fn request_otp(
 #[post("/auth/verify-otp", data = "<request>")]
 pub async fn verify_otp(
     request: Json<VerifyOtpRequest>,
-    pool: &State<PgPool>,
+    pool: &State<SqlitePool>,
     admin_telegram_id: &State<i64>,
 ) -> Json<ApiResponse<VerifyOtpResponse>> {
     let telegram_id = **admin_telegram_id;

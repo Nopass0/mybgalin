@@ -5,15 +5,16 @@ use crate::models::ApiResponse;
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+
 use chrono::Datelike;
+use sqlx::SqlitePool;
 
 const SHEET_ID: &str = "1Dr02PNJp4W6lJnI31ohN-jkZWIL4Jylww6vVrPVrYfs";
 
 #[get("/anime/upcoming")]
 pub async fn get_upcoming_anime(
     _auth: AuthGuard,
-    pool: &State<PgPool>,
+    pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Vec<AnimeAuctionResponse>>> {
     let animes: Vec<AnimeAuction> = match sqlx::query_as::<_, AnimeAuction>(
         "SELECT * FROM anime_auction WHERE watched = 0 ORDER BY
@@ -48,7 +49,7 @@ pub async fn get_upcoming_anime(
 #[get("/anime/watched")]
 pub async fn get_watched_anime(
     _auth: AuthGuard,
-    pool: &State<PgPool>,
+    pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Vec<AnimeAuctionResponse>>> {
     let animes: Vec<AnimeAuction> = match sqlx::query_as::<_, AnimeAuction>(
         "SELECT * FROM anime_auction WHERE watched = 1 ORDER BY date DESC"
@@ -98,9 +99,9 @@ pub struct SyncProgress {
 #[get("/anime/sync/progress")]
 pub async fn get_sync_progress(
     _auth: AuthGuard,
-    pool: &State<PgPool>,
+    pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Option<SyncProgress>>> {
-    let progress: Option<SyncProgress> = sqlx::query_as(
+    let progress: Option<SyncProgress> = sqlx::query_as::<sqlx::Sqlite, SyncProgress>(
         "SELECT * FROM anime_sync_progress ORDER BY id DESC LIMIT 1"
     )
     .fetch_optional(pool.inner())
@@ -114,10 +115,10 @@ pub async fn get_sync_progress(
 #[post("/anime/sync")]
 pub async fn sync_anime_data(
     _auth: AuthGuard,
-    pool: &State<PgPool>,
+    pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<String>> {
     // Check if sync is already running
-    let existing: Option<(i64,)> = sqlx::query_as(
+    let existing: Option<(i64,)> = sqlx::query_as::<sqlx::Sqlite, (i64,)>(
         "SELECT id FROM anime_sync_progress WHERE status = 'running' LIMIT 1"
     )
     .fetch_optional(pool.inner())
@@ -130,7 +131,7 @@ pub async fn sync_anime_data(
     }
 
     // Create new progress record
-    let progress_id: i64 = sqlx::query_scalar(
+    let progress_id: i64 = sqlx::query_scalar::<sqlx::Sqlite, i64>(
         "INSERT INTO anime_sync_progress (status, message) VALUES ('running', 'Начало синхронизации...') RETURNING id"
     )
     .fetch_one(pool.inner())
@@ -146,7 +147,7 @@ pub async fn sync_anime_data(
     Json(ApiResponse::success("Синхронизация запущена".to_string()))
 }
 
-async fn run_sync_task(pool: PgPool, progress_id: i64) {
+async fn run_sync_task(pool: SqlitePool, progress_id: i64) {
     println!("🎬 Starting anime sync task (progress_id: {})", progress_id);
 
     let sheets_client = GoogleSheetsClient::new(SHEET_ID.to_string());
@@ -162,29 +163,27 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
     println!("📅 Will sync years: {:?}", years);
 
     // Update total count
-    sqlx::query(
+    let _: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query::<sqlx::Sqlite>(
         "UPDATE anime_sync_progress SET total = $1, message = $2 WHERE id = $3"
     )
     .bind(years.len() as i64)
     .bind("Загрузка данных...")
     .bind(progress_id)
     .execute(&pool)
-    .await
-    .ok();
+    .await;
 
     for (idx, &year) in years.iter().enumerate() {
         // Update progress
         println!("📊 Processing year {} ({}/{})", year, idx + 1, years.len());
 
-        sqlx::query(
+        let _: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query::<sqlx::Sqlite>(
             "UPDATE anime_sync_progress SET current = $1, message = $2 WHERE id = $3"
         )
         .bind((idx + 1) as i64)
         .bind(format!("Обработка {} года... ({}/{})", year, idx + 1, years.len()))
         .bind(progress_id)
         .execute(&pool)
-        .await
-        .ok();
+        .await;
 
         let rows = match sheets_client.fetch_sheet_data(year).await {
             Ok(r) => {
@@ -200,7 +199,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
 
         for row in rows {
             // Check if anime already exists
-            let existing: Option<(i64,)> = sqlx::query_as(
+            let existing: Option<(i64,)> = sqlx::query_as::<sqlx::Sqlite, (i64,)>(
                 "SELECT id FROM anime_auction WHERE title = $1 AND year = $2"
             )
             .bind(&row.title)
@@ -226,13 +225,13 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
 
             if existing.is_some() {
                 // Update existing record
-                let result = sqlx::query(
+                let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query(
                     r#"
                     UPDATE anime_auction
                     SET date = $1, watched = $2, season = $3, episodes = $4,
                         voice_acting = $5, buyer = $6, chat_rating = $7,
                         sheikh_rating = $8, streamer_rating = $9, vod_link = $10,
-                        sheets_url = $11, updated_at = NOW()
+                        sheets_url = $11, updated_at = datetime('now')
                     WHERE title = $12 AND year = $13
                     "#
                 )
@@ -286,7 +285,7 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
                 };
 
                 // Insert new record
-                let result = sqlx::query(
+                let result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query(
                     r#"
                     INSERT INTO anime_auction
                     (date, title, watched, season, episodes, voice_acting, buyer,
@@ -333,14 +332,13 @@ async fn run_sync_task(pool: PgPool, progress_id: i64) {
     let final_message = format!("✅ Завершено! Синхронизировано: {}, ошибок: {}", total_synced, total_errors);
     println!("{}", final_message);
 
-    sqlx::query(
-        "UPDATE anime_sync_progress SET status = 'completed', current = total, message = $1, finished_at = NOW() WHERE id = $2"
+    let _: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> = sqlx::query(
+        "UPDATE anime_sync_progress SET status = 'completed', current = total, message = $1, finished_at = datetime('now') WHERE id = $2"
     )
     .bind(&final_message)
     .bind(progress_id)
     .execute(&pool)
-    .await
-    .ok();
+    .await;
 
     println!("🎬 Anime sync task completed (progress_id: {})", progress_id);
 }
