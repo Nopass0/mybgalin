@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CS2 Skin Studio",
+  "version": "1.0.0",
+  "identifier": "com.cs2skinstudio.app",
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../frontend-dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "CS2 Skin Studio",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "center": true,
+        "focus": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; font-src 'self' data: https:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "deb", "rpm", "appimage", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "category": "Graphics",
+    "shortDescription": "Professional CS2 skin and sticker creation studio",
+    "longDescription": "A professional desktop application for creating CS2 skins, stickers, and weapon finishes with advanced PBR material editing, node-based workflows, and real-time 3D preview."
+  },
+  "plugins": {
+    "fs": {
+      "scope": ["$APPDATA/**", "$DOWNLOAD/**", "$DOCUMENT/**", "$PICTURE/**", "$HOME/**"]
+    },
+    "shell": {
+      "open": true
+    },
+    "http": {
+      "scope": ["https://*", "http://localhost:*"]
+    }
+  }
+}
