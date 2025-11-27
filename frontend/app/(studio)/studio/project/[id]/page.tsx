@@ -42,6 +42,7 @@ import { GeneratorsPanel } from '@/components/studio/generators-panel';
 import { NodeEditor } from '@/components/studio/node-editor';
 import { MaterialsPanel } from '@/components/studio/materials-panel';
 import { LenticularEditor } from '@/components/studio/lenticular-editor';
+import { ExportDialog } from '@/components/studio/export-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -117,6 +118,7 @@ export default function ProjectEditorPage() {
   // Panel states
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('default');
   const [showNodeEditor, setShowNodeEditor] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
 
   // Lenticular state (local - not yet in store)
   const [lenticularFrames, setLenticularFrames] = useState<LenticularFrame[]>([]);
@@ -176,22 +178,26 @@ export default function ProjectEditorPage() {
     }
   }, [project, autoSave]);
 
-  // Ctrl+S save shortcut (separate from useHotkeys to access autoSave)
+  const handleExport = useCallback(() => {
+    setShowExportDialog(true);
+  }, []);
+
+  // Ctrl+S save / Ctrl+E export shortcuts (separate from useHotkeys to access handlers)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        handleExport();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSave]);
-
-  const handleExport = async () => {
-    // TODO: Implement export
-  };
+  }, [handleSave, handleExport]);
 
   // Handle applying mask to active layer
   const handleApplyMask = useCallback((mask: SmartMask) => {
@@ -690,6 +696,17 @@ export default function ProjectEditorPage() {
               </div>
             </div>
           )}
+
+          {/* Export Dialog */}
+          <ExportDialog
+            isOpen={showExportDialog}
+            onClose={() => setShowExportDialog(false)}
+            projectName={project.name}
+            layers={layers}
+            canvasWidth={project.data?.width || 1024}
+            canvasHeight={project.data?.height || 1024}
+            stickerType={project.stickerType}
+          />
         </div>
       </div>
     </TooltipProvider>
