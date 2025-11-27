@@ -31,7 +31,7 @@ function blendModeToCompositeOp(blendMode: BlendMode): GlobalCompositeOperation 
 interface StudioCanvasProps {
   zoom: number;
   showGrid: boolean;
-  activeMapTab: 'color' | 'normal' | 'metalness' | 'roughness';
+  activeMapTab: 'color' | 'normal' | 'metalness' | 'roughness' | 'render';
 }
 
 const CANVAS_SIZE = 1024;

@@ -43,6 +43,8 @@ import { NodeEditor } from '@/components/studio/node-editor';
 import { MaterialsPanel } from '@/components/studio/materials-panel';
 import { LenticularEditor } from '@/components/studio/lenticular-editor';
 import { ExportDialog } from '@/components/studio/export-dialog';
+import { MaterialMapPanel } from '@/components/studio/material-map-panel';
+import { CS2RenderPreview } from '@/components/studio/cs2-render-preview';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -114,7 +116,7 @@ export default function ProjectEditorPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
-  const [activeMapTab, setActiveMapTab] = useState<'color' | 'normal' | 'metalness' | 'roughness'>('color');
+  const [activeMapTab, setActiveMapTab] = useState<'color' | 'normal' | 'metalness' | 'roughness' | 'render'>('color');
 
   // Panel states
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('default');
@@ -674,13 +676,28 @@ export default function ProjectEditorPage() {
               onChange={setActiveMapTab}
             />
 
-            {/* Canvas */}
+            {/* Canvas or Render Preview */}
             <div className="flex-1 relative overflow-hidden bg-[#1a1a1c]">
-              <StudioCanvas
-                zoom={zoom}
-                showGrid={showGrid}
-                activeMapTab={activeMapTab}
-              />
+              {activeMapTab === 'render' ? (
+                <CS2RenderPreview className="w-full h-full" />
+              ) : (
+                <div className="flex h-full">
+                  <div className="flex-1 relative">
+                    <StudioCanvas
+                      zoom={zoom}
+                      showGrid={showGrid}
+                      activeMapTab={activeMapTab}
+                    />
+                  </div>
+                  {/* Material Map Panel for metalness/normal/roughness tabs */}
+                  {(activeMapTab === 'metalness' || activeMapTab === 'roughness' || activeMapTab === 'normal') && (
+                    <MaterialMapPanel
+                      mapType={activeMapTab}
+                      className="w-64 shrink-0"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
