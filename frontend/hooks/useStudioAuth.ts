@@ -67,7 +67,9 @@ export const useStudioAuth = create<StudioAuthState>()(
 
           if (response.ok) {
             const data = await response.json();
-            set({ user: data.user, isAuthenticated: true, isLoading: false });
+            // Backend returns ApiResponse: { success, data: { user }, error }
+            const user = data.data?.user || data.user;
+            set({ user, isAuthenticated: true, isLoading: false });
             // Load projects after auth
             get().loadProjects();
           } else {
@@ -92,8 +94,10 @@ export const useStudioAuth = create<StudioAuthState>()(
 
           if (response.ok) {
             const data = await response.json();
+            // Backend returns ApiResponse: { success, data: { projects }, error }
+            const projectsArray = data.data?.projects || data.projects || [];
             // Filter out any undefined/null projects and ensure each has required fields
-            const validProjects = (data.projects || []).filter(
+            const validProjects = projectsArray.filter(
               (p: unknown) => p && typeof p === 'object' && 'id' in p
             );
             set({ projects: validProjects });
@@ -121,7 +125,13 @@ export const useStudioAuth = create<StudioAuthState>()(
         }
 
         const data = await response.json();
-        const newProject = data.project;
+        // Backend returns ApiResponse: { success, data: { project }, error }
+        const newProject = data.data?.project || data.project;
+
+        if (!newProject || !newProject.id) {
+          console.error('Invalid project response:', data);
+          throw new Error('Failed to create project: invalid response');
+        }
 
         set((state) => ({
           projects: [newProject, ...state.projects],
