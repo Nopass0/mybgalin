@@ -828,9 +828,22 @@ export function StudioLayersPanel() {
                             src={layer.imageData}
                             alt={layer.name}
                             className="w-full h-full object-cover"
+                            style={{ imageRendering: 'auto' }}
                           />
                         ) : layer.type === 'group' ? (
-                          <FolderClosed className="w-3 h-3 text-white/30" />
+                          layer.isExpanded ? (
+                            <FolderOpen className="w-3 h-3 text-white/30" />
+                          ) : (
+                            <FolderClosed className="w-3 h-3 text-white/30" />
+                          )
+                        ) : layer.type === 'text' ? (
+                          <Type className="w-3 h-3 text-white/30" />
+                        ) : layer.type === 'shape' ? (
+                          <Pentagon className="w-3 h-3 text-white/30" />
+                        ) : layer.type === 'adjustment' ? (
+                          <Sliders className="w-3 h-3 text-white/30" />
+                        ) : layer.smartFill ? (
+                          <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 opacity-50" />
                         ) : (
                           <span className="text-white/20 text-[7px]">Empty</span>
                         )}

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import type { Transform, Layer, BlendMode, LayerEffect } from '@/types/studio';
+import { BrushContextMenu, TextContextMenu, FilterContextMenu, ContextMenu, ContextMenuItem } from './context-menu';
 
 // Map BlendMode to valid Canvas 2D GlobalCompositeOperation
 function blendModeToCompositeOp(blendMode: BlendMode): GlobalCompositeOperation {
@@ -107,6 +108,25 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [lassoPoints, setLassoPoints] = useState<{ x: number; y: number }[]>([]);
   const selectionAnimationRef = useRef<number>(0);
 
+  // Rulers and guides state
+  const [showRulers, setShowRulers] = useState(false);
+  const [guides, setGuides] = useState<Array<{ id: string; type: 'horizontal' | 'vertical'; position: number }>>([]);
+  const [mouseCanvasPos, setMouseCanvasPos] = useState<{ x: number; y: number } | null>(null);
+  const [isCreatingGuide, setIsCreatingGuide] = useState(false);
+  const [guideStartPoint, setGuideStartPoint] = useState<{ x: number; y: number } | null>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    type: 'brush' | 'text' | 'filter' | 'canvas' | null;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Shift constraint for straight lines
+  const [shiftHeld, setShiftHeld] = useState(false);
+  const [strokeStartPoint, setStrokeStartPoint] = useState<{ x: number; y: number } | null>(null);
+  const [constrainedAxis, setConstrainedAxis] = useState<'x' | 'y' | null>(null);
+
   // Initialize offscreen canvas
   useEffect(() => {
     offscreenCanvasRef.current = document.createElement('canvas');
@@ -183,6 +203,36 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, [addLayer, updateLayer, pushHistory]);
+
+  // Handle keyboard events for rulers (Ctrl) and shift constraint
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control') {
+        setShowRulers(true);
+      }
+      if (e.key === 'Shift') {
+        setShiftHeld(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') {
+        setShowRulers(false);
+        setIsCreatingGuide(false);
+        setGuideStartPoint(null);
+      }
+      if (e.key === 'Shift') {
+        setShiftHeld(false);
+        setConstrainedAxis(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Get or create layer canvas
   const getLayerCanvas = useCallback((layerId: string): HTMLCanvasElement => {
@@ -1236,9 +1286,63 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     ctx.putImageData(targetData, tgtX, tgtY);
   }, []);
 
+  // Handle context menu (right-click)
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+
+    // Determine context menu type based on active tool
+    let menuType: 'brush' | 'text' | 'filter' | 'canvas' | null = null;
+
+    if (activeTool === 'brush' || activeTool === 'eraser') {
+      menuType = 'brush';
+    } else if (activeTool === 'text') {
+      menuType = 'text';
+    } else if (['blur', 'sharpen', 'smudge', 'dodge', 'burn', 'sponge'].includes(activeTool)) {
+      menuType = 'filter';
+    } else {
+      menuType = 'canvas';
+    }
+
+    setContextMenu({
+      type: menuType,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }, [activeTool]);
+
   // Pointer event handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
+
+    // Close context menu on any click
+    if (contextMenu) {
+      setContextMenu(null);
+    }
+
+    // Set stroke start point for shift constraint
+    if (activeTool === 'brush' || activeTool === 'eraser') {
+      setStrokeStartPoint({ x, y });
+      setConstrainedAxis(null);
+    }
+
+    // Handle guide creation with Ctrl+Shift+click
+    if (showRulers && e.ctrlKey && e.shiftKey) {
+      if (!guideStartPoint) {
+        setGuideStartPoint({ x, y });
+        setIsCreatingGuide(true);
+      } else {
+        // Create guide line from guideStartPoint to current point
+        const newGuide = {
+          id: `guide-${Date.now()}`,
+          type: Math.abs(x - guideStartPoint.x) > Math.abs(y - guideStartPoint.y) ? 'horizontal' as const : 'vertical' as const,
+          position: Math.abs(x - guideStartPoint.x) > Math.abs(y - guideStartPoint.y) ? guideStartPoint.y : guideStartPoint.x,
+        };
+        setGuides(prev => [...prev, newGuide]);
+        setGuideStartPoint(null);
+        setIsCreatingGuide(false);
+      }
+      return;
+    }
 
     // Handle hand tool or space+click panning
     if (activeTool === 'hand' || e.buttons === 4) {
@@ -1491,6 +1595,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     cloneSource,
     cloneOffset,
     applyCloneAtPoint,
+    contextMenu,
+    showRulers,
+    guideStartPoint,
   ]);
 
   // Magic wand selection algorithm
@@ -1590,7 +1697,28 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    const { x, y } = screenToCanvas(e.clientX, e.clientY);
+    let { x, y } = screenToCanvas(e.clientX, e.clientY);
+
+    // Track mouse position for rulers
+    setMouseCanvasPos({ x, y });
+
+    // Apply shift constraint for straight lines when drawing
+    if (shiftHeld && isDrawing && strokeStartPoint) {
+      const dx = Math.abs(x - strokeStartPoint.x);
+      const dy = Math.abs(y - strokeStartPoint.y);
+
+      // Determine axis on first significant movement
+      if (!constrainedAxis && (dx > 5 || dy > 5)) {
+        setConstrainedAxis(dx > dy ? 'x' : 'y');
+      }
+
+      // Apply constraint
+      if (constrainedAxis === 'x') {
+        y = strokeStartPoint.y;
+      } else if (constrainedAxis === 'y') {
+        x = strokeStartPoint.x;
+      }
+    }
 
     // Update brush preview position
     if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' ||
@@ -1809,6 +1937,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     applyCloneAtPoint,
     isSelecting,
     selectionStart,
+    shiftHeld,
+    strokeStartPoint,
+    constrainedAxis,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -1830,6 +1961,10 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     if (isDrawing) {
       setIsDrawing(false);
       pushHistory('Brush stroke');
+
+      // Reset stroke start point and constraint
+      setStrokeStartPoint(null);
+      setConstrainedAxis(null);
 
       // Save layer canvas data
       if (activeLayerId) {
@@ -2036,6 +2171,11 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     });
   }, [addLayer, updateLayer, pushHistory]);
 
+  // Clear all guides
+  const clearGuides = useCallback(() => {
+    setGuides([]);
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -2048,6 +2188,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onContextMenu={handleContextMenu}
       style={{
         touchAction: 'none',
         cursor: getCursorForTool(activeTool, hoveredHandle),
@@ -2276,6 +2417,227 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             <div className="text-white/60 text-sm">Image will be added as new layer</div>
           </div>
         </div>
+      )}
+
+      {/* Rulers (shown when Ctrl is held) */}
+      {showRulers && (
+        <>
+          {/* Top ruler */}
+          <div className="absolute top-0 left-[30px] right-0 h-[30px] bg-[#2d2d2f] border-b border-[#3a3a3c] z-50 flex items-end overflow-hidden">
+            {Array.from({ length: Math.ceil(CANVAS_SIZE / 50) + 1 }).map((_, i) => {
+              const pos = i * 50;
+              const screenX = (pos - CANVAS_SIZE / 2) * zoom + pan.x + window.innerWidth / 2 - 30;
+              return (
+                <div
+                  key={`h-${i}`}
+                  className="absolute bottom-0 flex flex-col items-center"
+                  style={{ left: screenX }}
+                >
+                  <span className="text-[8px] text-white/50 mb-0.5">{pos}</span>
+                  <div className="w-px h-2 bg-white/30" />
+                </div>
+              );
+            })}
+            {/* Cursor position indicator */}
+            {mouseCanvasPos && (
+              <div
+                className="absolute bottom-0 w-px h-full bg-cyan-400/50"
+                style={{ left: (mouseCanvasPos.x - CANVAS_SIZE / 2) * zoom + pan.x + window.innerWidth / 2 - 30 }}
+              />
+            )}
+          </div>
+
+          {/* Left ruler */}
+          <div className="absolute top-[30px] left-0 bottom-0 w-[30px] bg-[#2d2d2f] border-r border-[#3a3a3c] z-50 flex flex-col items-end overflow-hidden">
+            {Array.from({ length: Math.ceil(CANVAS_SIZE / 50) + 1 }).map((_, i) => {
+              const pos = i * 50;
+              const screenY = (pos - CANVAS_SIZE / 2) * zoom + pan.y + window.innerHeight / 2 - 30;
+              return (
+                <div
+                  key={`v-${i}`}
+                  className="absolute right-0 flex items-center"
+                  style={{ top: screenY }}
+                >
+                  <span className="text-[8px] text-white/50 mr-0.5 transform -rotate-90 origin-center">{pos}</span>
+                  <div className="h-px w-2 bg-white/30" />
+                </div>
+              );
+            })}
+            {/* Cursor position indicator */}
+            {mouseCanvasPos && (
+              <div
+                className="absolute right-0 h-px w-full bg-cyan-400/50"
+                style={{ top: (mouseCanvasPos.y - CANVAS_SIZE / 2) * zoom + pan.y + window.innerHeight / 2 - 30 }}
+              />
+            )}
+          </div>
+
+          {/* Crosshair at cursor */}
+          {mouseCanvasPos && (
+            <>
+              <div
+                className="absolute pointer-events-none z-40 bg-cyan-400/30"
+                style={{
+                  left: 0,
+                  right: 0,
+                  top: `calc(50% + ${(mouseCanvasPos.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`,
+                  height: 1,
+                }}
+              />
+              <div
+                className="absolute pointer-events-none z-40 bg-cyan-400/30"
+                style={{
+                  top: 0,
+                  bottom: 0,
+                  left: `calc(50% + ${(mouseCanvasPos.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`,
+                  width: 1,
+                }}
+              />
+            </>
+          )}
+
+          {/* Guide creation indicator */}
+          {guideStartPoint && (
+            <div
+              className="absolute w-3 h-3 rounded-full bg-cyan-400 border-2 border-white pointer-events-none z-50"
+              style={{
+                left: `calc(50% + ${(guideStartPoint.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`,
+                top: `calc(50% + ${(guideStartPoint.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`,
+                transform: 'translate(-50%, -50%)',
+              }}
+            />
+          )}
+
+          {/* Info tooltip */}
+          <div className="absolute top-[40px] left-[40px] bg-black/80 px-2 py-1 rounded text-xs text-white/80 z-50">
+            {mouseCanvasPos ? `X: ${Math.round(mouseCanvasPos.x)}, Y: ${Math.round(mouseCanvasPos.y)}` : ''}
+            {guideStartPoint && ' | Ctrl+Shift+Click to place guide'}
+          </div>
+
+          {/* Clear guides button */}
+          {guides.length > 0 && (
+            <button
+              onClick={clearGuides}
+              className="absolute top-[40px] right-[20px] bg-red-500/80 hover:bg-red-500 px-2 py-1 rounded text-xs text-white z-50"
+            >
+              Clear Guides ({guides.length})
+            </button>
+          )}
+        </>
+      )}
+
+      {/* Guides overlay */}
+      {guides.length > 0 && (
+        <svg className="absolute inset-0 pointer-events-none z-30" width="100%" height="100%">
+          {guides.map((guide) => (
+            guide.type === 'horizontal' ? (
+              <line
+                key={guide.id}
+                x1="0"
+                y1={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                x2="100%"
+                y2={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                stroke="cyan"
+                strokeWidth="1"
+                strokeDasharray="4 2"
+              />
+            ) : (
+              <line
+                key={guide.id}
+                x1={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                y1="0"
+                x2={`calc(50% + ${(guide.position - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                y2="100%"
+                stroke="cyan"
+                strokeWidth="1"
+                strokeDasharray="4 2"
+              />
+            )
+          ))}
+        </svg>
+      )}
+
+      {/* Context menus */}
+      {contextMenu?.type === 'brush' && (
+        <BrushContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          brushSize={currentBrush.size}
+          brushOpacity={currentBrush.opacity}
+          brushHardness={currentBrush.hardness}
+          primaryColor={primaryColor}
+          secondaryColor={secondaryColor}
+          onBrushSizeChange={(size) => useStudioEditor.getState().setCurrentBrush({ ...currentBrush, size })}
+          onBrushOpacityChange={(opacity) => useStudioEditor.getState().setCurrentBrush({ ...currentBrush, opacity })}
+          onBrushHardnessChange={(hardness) => useStudioEditor.getState().setCurrentBrush({ ...currentBrush, hardness })}
+          onPrimaryColorChange={(color) => useStudioEditor.getState().setPrimaryColor(color)}
+          onSecondaryColorChange={(color) => useStudioEditor.getState().setSecondaryColor(color)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {contextMenu?.type === 'filter' && (
+        <FilterContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          strength={currentBrush.opacity}
+          brushSize={currentBrush.size}
+          onStrengthChange={(opacity) => useStudioEditor.getState().setCurrentBrush({ ...currentBrush, opacity })}
+          onBrushSizeChange={(size) => useStudioEditor.getState().setCurrentBrush({ ...currentBrush, size })}
+          onClose={() => setContextMenu(null)}
+          toolName={activeTool}
+        />
+      )}
+
+      {contextMenu?.type === 'canvas' && (
+        <ContextMenu
+          items={[
+            { id: 'select-all', label: 'Select All', shortcut: 'Ctrl+A', onClick: () => {
+              setSelection({ type: 'rect', bounds: { x: 0, y: 0, width: CANVAS_SIZE, height: CANVAS_SIZE } });
+            }},
+            { id: 'deselect', label: 'Deselect', shortcut: 'Ctrl+D', onClick: () => setSelection(null) },
+            { id: 'sep1', label: '', separator: true },
+            { id: 'paste', label: 'Paste', shortcut: 'Ctrl+V' },
+            { id: 'sep2', label: '', separator: true },
+            { id: 'fill', label: 'Fill with Primary Color', onClick: () => {
+              if (activeLayerId) {
+                const layerCanvas = layerCanvasesRef.current.get(activeLayerId);
+                if (layerCanvas) {
+                  const ctx = layerCanvas.getContext('2d');
+                  if (ctx) {
+                    ctx.fillStyle = primaryColor;
+                    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+                    compositeCanvas();
+                    updateLayer(activeLayerId, { imageData: layerCanvas.toDataURL() });
+                    pushHistory('Fill');
+                  }
+                }
+              }
+            }},
+            { id: 'clear', label: 'Clear Layer', onClick: () => {
+              if (activeLayerId) {
+                const layerCanvas = layerCanvasesRef.current.get(activeLayerId);
+                if (layerCanvas) {
+                  const ctx = layerCanvas.getContext('2d');
+                  if (ctx) {
+                    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+                    compositeCanvas();
+                    updateLayer(activeLayerId, { imageData: layerCanvas.toDataURL() });
+                    pushHistory('Clear');
+                  }
+                }
+              }
+            }},
+            { id: 'sep3', label: '', separator: true },
+            { id: 'zoom-in', label: 'Zoom In', shortcut: 'Ctrl++', onClick: () => setZoom(zoom * 1.25) },
+            { id: 'zoom-out', label: 'Zoom Out', shortcut: 'Ctrl+-', onClick: () => setZoom(zoom * 0.8) },
+            { id: 'zoom-fit', label: 'Fit to Screen', onClick: () => { setZoom(0.5); setPanLocal({ x: 0, y: 0 }); } },
+            { id: 'zoom-100', label: 'Actual Size (100%)', onClick: () => setZoom(1) },
+          ]}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );
