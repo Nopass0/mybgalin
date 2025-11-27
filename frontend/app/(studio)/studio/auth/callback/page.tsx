@@ -49,14 +49,13 @@ function SteamAuthCallbackContent() {
 
         const data = await response.json();
         setUser(data.user);
-        await loadProjects();
 
         setStatus('success');
 
-        // Redirect to studio after short delay
+        // Force page refresh to ensure state is fully updated
         setTimeout(() => {
-          router.push('/studio');
-        }, 1500);
+          window.location.href = '/studio';
+        }, 1000);
       } catch (err) {
         setStatus('error');
         setErrorMessage(err instanceof Error ? err.message : 'Authentication failed');
