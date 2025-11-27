@@ -806,6 +806,219 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     ctx.restore();
   }, [currentBrush, primaryColor, activeTool]);
 
+  // Apply blur effect at a point
+  const applyBlurAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    strength: number
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+    const sx = Math.max(0, Math.floor(x - halfSize));
+    const sy = Math.max(0, Math.floor(y - halfSize));
+    const sw = Math.min(size, CANVAS_SIZE - sx);
+    const sh = Math.min(size, CANVAS_SIZE - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    // Get the region to blur
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const data = imageData.data;
+
+    // Simple box blur
+    const blurRadius = Math.ceil(strength * 3);
+    const tempData = new Uint8ClampedArray(data);
+
+    for (let py = 0; py < sh; py++) {
+      for (let px = 0; px < sw; px++) {
+        // Check if within circular brush
+        const dx = px - halfSize;
+        const dy = py - halfSize;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+
+        let r = 0, g = 0, b = 0, a = 0, count = 0;
+
+        // Average surrounding pixels
+        for (let by = -blurRadius; by <= blurRadius; by++) {
+          for (let bx = -blurRadius; bx <= blurRadius; bx++) {
+            const nx = px + bx;
+            const ny = py + by;
+            if (nx >= 0 && nx < sw && ny >= 0 && ny < sh) {
+              const idx = (ny * sw + nx) * 4;
+              r += tempData[idx];
+              g += tempData[idx + 1];
+              b += tempData[idx + 2];
+              a += tempData[idx + 3];
+              count++;
+            }
+          }
+        }
+
+        if (count > 0) {
+          const idx = (py * sw + px) * 4;
+          // Blend based on distance from center (falloff)
+          const falloff = 1 - (dist / radius);
+          const blend = falloff * strength;
+          data[idx] = Math.round(data[idx] * (1 - blend) + (r / count) * blend);
+          data[idx + 1] = Math.round(data[idx + 1] * (1 - blend) + (g / count) * blend);
+          data[idx + 2] = Math.round(data[idx + 2] * (1 - blend) + (b / count) * blend);
+          data[idx + 3] = Math.round(data[idx + 3] * (1 - blend) + (a / count) * blend);
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
+  }, []);
+
+  // Apply sharpen effect at a point
+  const applySharpenAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    strength: number
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+    const sx = Math.max(0, Math.floor(x - halfSize));
+    const sy = Math.max(0, Math.floor(y - halfSize));
+    const sw = Math.min(size, CANVAS_SIZE - sx);
+    const sh = Math.min(size, CANVAS_SIZE - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    // Get the region to sharpen
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const data = imageData.data;
+    const tempData = new Uint8ClampedArray(data);
+
+    // Unsharp mask kernel
+    const amount = strength * 2;
+
+    for (let py = 1; py < sh - 1; py++) {
+      for (let px = 1; px < sw - 1; px++) {
+        // Check if within circular brush
+        const dx = px - halfSize;
+        const dy = py - halfSize;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+
+        const idx = (py * sw + px) * 4;
+
+        // Get center and surrounding pixels for sharpening
+        const centerR = tempData[idx];
+        const centerG = tempData[idx + 1];
+        const centerB = tempData[idx + 2];
+
+        // Average of neighbors
+        let avgR = 0, avgG = 0, avgB = 0;
+        const neighbors = [
+          [-1, -1], [0, -1], [1, -1],
+          [-1, 0], [1, 0],
+          [-1, 1], [0, 1], [1, 1]
+        ];
+
+        for (const [ox, oy] of neighbors) {
+          const nidx = ((py + oy) * sw + (px + ox)) * 4;
+          avgR += tempData[nidx];
+          avgG += tempData[nidx + 1];
+          avgB += tempData[nidx + 2];
+        }
+        avgR /= 8;
+        avgG /= 8;
+        avgB /= 8;
+
+        // Apply unsharp mask with falloff
+        const falloff = 1 - (dist / radius);
+        const blend = falloff * amount;
+
+        data[idx] = Math.max(0, Math.min(255, centerR + (centerR - avgR) * blend));
+        data[idx + 1] = Math.max(0, Math.min(255, centerG + (centerG - avgG) * blend));
+        data[idx + 2] = Math.max(0, Math.min(255, centerB + (centerB - avgB) * blend));
+      }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
+  }, []);
+
+  // Apply smudge effect
+  const applySmudgeAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    radius: number,
+    strength: number,
+    smudgeColorRef: React.MutableRefObject<{ r: number; g: number; b: number; a: number } | null>
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+
+    // Get color at start point if not already captured
+    if (!smudgeColorRef.current) {
+      const sx = Math.floor(x1);
+      const sy = Math.floor(y1);
+      if (sx >= 0 && sx < CANVAS_SIZE && sy >= 0 && sy < CANVAS_SIZE) {
+        const pixel = ctx.getImageData(sx, sy, 1, 1).data;
+        smudgeColorRef.current = { r: pixel[0], g: pixel[1], b: pixel[2], a: pixel[3] };
+      }
+    }
+
+    if (!smudgeColorRef.current) return;
+
+    // Draw smudged color at current position
+    const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    const steps = Math.ceil(distance / 2);
+
+    for (let i = 0; i <= steps; i++) {
+      const t = steps === 0 ? 1 : i / steps;
+      const cx = x1 + (x2 - x1) * t;
+      const cy = y1 + (y2 - y1) * t;
+
+      const sx = Math.max(0, Math.floor(cx - halfSize));
+      const sy = Math.max(0, Math.floor(cy - halfSize));
+      const sw = Math.min(size, CANVAS_SIZE - sx);
+      const sh = Math.min(size, CANVAS_SIZE - sy);
+
+      if (sw <= 0 || sh <= 0) continue;
+
+      const imageData = ctx.getImageData(sx, sy, sw, sh);
+      const data = imageData.data;
+
+      for (let py = 0; py < sh; py++) {
+        for (let px = 0; px < sw; px++) {
+          const dx = px - halfSize;
+          const dy = py - halfSize;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > radius) continue;
+
+          const idx = (py * sw + px) * 4;
+          const falloff = 1 - (dist / radius);
+          const blend = falloff * strength * 0.3;
+
+          // Blend smudge color with existing
+          data[idx] = Math.round(data[idx] * (1 - blend) + smudgeColorRef.current!.r * blend);
+          data[idx + 1] = Math.round(data[idx + 1] * (1 - blend) + smudgeColorRef.current!.g * blend);
+          data[idx + 2] = Math.round(data[idx + 2] * (1 - blend) + smudgeColorRef.current!.b * blend);
+
+          // Pick up new color as we move
+          smudgeColorRef.current!.r = data[idx];
+          smudgeColorRef.current!.g = data[idx + 1];
+          smudgeColorRef.current!.b = data[idx + 2];
+        }
+      }
+
+      ctx.putImageData(imageData, sx, sy);
+    }
+  }, []);
+
+  // Smudge color reference
+  const smudgeColorRef = useRef<{ r: number; g: number; b: number; a: number } | null>(null);
+
   // Pointer event handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
@@ -901,6 +1114,47 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       setGradientEnd({ x, y });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
+
+    // Handle blur/sharpen/smudge tools
+    if (activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') {
+      if (!activeLayerId) return;
+
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (!activeLayer || activeLayer.locked) return;
+
+      setIsDrawing(true);
+      setLastPoint({ x, y });
+
+      // Reset smudge color on new stroke
+      if (activeTool === 'smudge') {
+        smudgeColorRef.current = null;
+      }
+
+      // Get layer canvas and apply initial effect
+      const layerCanvas = getLayerCanvas(activeLayerId);
+      const ctx = layerCanvas.getContext('2d');
+      if (ctx) {
+        const radius = currentBrush.size / 2;
+        const strength = currentBrush.opacity / 100;
+
+        if (activeTool === 'blur') {
+          applyBlurAtPoint(ctx, x, y, radius, strength);
+        } else if (activeTool === 'sharpen') {
+          applySharpenAtPoint(ctx, x, y, radius, strength);
+        } else if (activeTool === 'smudge') {
+          // Get initial color for smudge
+          const px = Math.floor(x);
+          const py = Math.floor(y);
+          if (px >= 0 && px < CANVAS_SIZE && py >= 0 && py < CANVAS_SIZE) {
+            const pixel = ctx.getImageData(px, py, 1, 1).data;
+            smudgeColorRef.current = { r: pixel[0], g: pixel[1], b: pixel[2], a: pixel[3] };
+          }
+        }
+        compositeCanvas();
+      }
+
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -913,13 +1167,17 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     primaryColor,
     getLayerTransform,
     getHandleAtPoint,
+    currentBrush.size,
+    currentBrush.opacity,
+    applyBlurAtPoint,
+    applySharpenAtPoint,
   ]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
 
     // Update brush preview position
-    if (activeTool === 'brush' || activeTool === 'eraser') {
+    if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') {
       setBrushPreview({ x: e.clientX, y: e.clientY });
     }
 
@@ -1014,9 +1272,35 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const layerCanvas = getLayerCanvas(activeLayerId);
       const ctx = layerCanvas.getContext('2d');
       if (ctx) {
-        updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
-        drawStroke(ctx, lastPoint.x, lastPoint.y, x, y, e.pressure || 0.5);
-        compositeCanvas();
+        // Handle blur/sharpen/smudge tools
+        if (activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') {
+          const radius = currentBrush.size / 2;
+          const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
+
+          // Interpolate along the stroke
+          const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2));
+          const steps = Math.max(1, Math.ceil(distance / (radius * 0.5)));
+
+          for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const px = lastPoint.x + (x - lastPoint.x) * t;
+            const py = lastPoint.y + (y - lastPoint.y) * t;
+
+            if (activeTool === 'blur') {
+              applyBlurAtPoint(ctx, px, py, radius, strength);
+            } else if (activeTool === 'sharpen') {
+              applySharpenAtPoint(ctx, px, py, radius, strength);
+            } else if (activeTool === 'smudge') {
+              applySmudgeAtPoint(ctx, lastPoint.x, lastPoint.y, px, py, radius, strength, smudgeColorRef);
+            }
+          }
+          compositeCanvas();
+        } else {
+          // Normal brush/eraser
+          updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
+          drawStroke(ctx, lastPoint.x, lastPoint.y, x, y, e.pressure || 0.5);
+          compositeCanvas();
+        }
       }
       setLastPoint({ x, y });
     }
@@ -1043,6 +1327,11 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     updateLayer,
     isDrawingGradient,
     gradientStart,
+    currentBrush.size,
+    currentBrush.opacity,
+    applyBlurAtPoint,
+    applySharpenAtPoint,
+    applySmudgeAtPoint,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -1254,7 +1543,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       </div>
 
       {/* Brush cursor preview */}
-      {brushPreview && (activeTool === 'brush' || activeTool === 'eraser') && (
+      {brushPreview && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') && (
         <div
           className="pointer-events-none fixed rounded-full border border-white/50 mix-blend-difference"
           style={{
@@ -1455,6 +1744,9 @@ function getCursorForTool(tool: string, hoveredHandle?: HandleType | null): stri
       return 'zoom-in';
     case 'brush':
     case 'eraser':
+    case 'blur':
+    case 'sharpen':
+    case 'smudge':
       return 'none';
     default:
       return 'crosshair';
