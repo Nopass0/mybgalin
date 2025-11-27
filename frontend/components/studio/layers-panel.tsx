@@ -63,6 +63,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { LayerEffectsPanel } from './layer-effects-panel';
 import { cn } from '@/lib/utils';
 
 const blendModes: { value: BlendMode; label: string }[] = [
@@ -707,6 +708,14 @@ export function StudioLayersPanel() {
             </span>
           </div>
         </div>
+      )}
+
+      {/* Layer Effects */}
+      {activeLayer && (
+        <LayerEffectsPanel
+          layer={activeLayer}
+          onUpdateLayer={(updates) => updateLayer(activeLayer.id, updates)}
+        />
       )}
 
       {/* Layers List */}
