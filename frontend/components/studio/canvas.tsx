@@ -1655,9 +1655,57 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const layerCanvas = getLayerCanvas(activeLayerId);
       const ctx = layerCanvas.getContext('2d');
       if (ctx) {
-        floodFill(ctx, Math.floor(x), Math.floor(y), primaryColor);
-        compositeCanvas();
-        pushHistory('Fill');
+        // If there's a selection, fill only within the selection
+        if (selection) {
+          ctx.save();
+          ctx.beginPath();
+
+          if (selection.type === 'rect' && selection.bounds) {
+            ctx.rect(selection.bounds.x, selection.bounds.y, selection.bounds.width, selection.bounds.height);
+          } else if (selection.type === 'ellipse' && selection.bounds) {
+            const { x: ex, y: ey, width: ew, height: eh } = selection.bounds;
+            ctx.ellipse(ex + ew / 2, ey + eh / 2, ew / 2, eh / 2, 0, 0, Math.PI * 2);
+          } else if (selection.type === 'lasso' && selection.path && selection.path.length > 2) {
+            ctx.moveTo(selection.path[0].x, selection.path[0].y);
+            for (let i = 1; i < selection.path.length; i++) {
+              ctx.lineTo(selection.path[i].x, selection.path[i].y);
+            }
+            ctx.closePath();
+          } else if (selection.type === 'magic' && selection.maskData) {
+            // For magic wand, use the mask as clipping
+            // Fill with mask data
+            ctx.fillStyle = primaryColor;
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = CANVAS_SIZE;
+            tempCanvas.height = CANVAS_SIZE;
+            const tempCtx = tempCanvas.getContext('2d');
+            if (tempCtx) {
+              tempCtx.putImageData(selection.maskData, 0, 0);
+              // Use the mask as composite
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+              ctx.globalCompositeOperation = 'destination-in';
+              ctx.drawImage(tempCanvas, 0, 0);
+              ctx.globalCompositeOperation = 'source-over';
+            }
+            ctx.restore();
+            compositeCanvas();
+            pushHistory('Fill selection');
+            return;
+          }
+
+          ctx.clip();
+          ctx.fillStyle = primaryColor;
+          ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          ctx.restore();
+          compositeCanvas();
+          pushHistory('Fill selection');
+        } else {
+          // No selection - use flood fill
+          floodFill(ctx, Math.floor(x), Math.floor(y), primaryColor);
+          compositeCanvas();
+          pushHistory('Fill');
+        }
       }
     }
 
