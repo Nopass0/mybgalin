@@ -36,9 +36,8 @@ function SteamAuthCallbackContent() {
         // Store token
         localStorage.setItem('studio_token', token);
 
-        // Fetch user info
-        const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-        const response = await fetch(`${API_BASE}/studio/auth/me`, {
+        // Fetch user info - use relative path for Next.js rewrites
+        const response = await fetch(`/api/studio/auth/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
