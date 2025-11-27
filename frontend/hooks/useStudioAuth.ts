@@ -21,7 +21,10 @@ interface StudioAuthState {
   updateProject: (project: StudioProject) => Promise<void>;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+// For fetch requests (proxied through Next.js rewrites)
+const API_BASE = '/api';
+// For redirects (need direct backend URL since window.location doesn't go through rewrites)
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 export const useStudioAuth = create<StudioAuthState>()(
   persist(
@@ -32,9 +35,9 @@ export const useStudioAuth = create<StudioAuthState>()(
       projects: [],
 
       login: () => {
-        // Redirect to Steam OpenID login
+        // Redirect to Steam OpenID login - must use direct backend URL for page redirects
         const returnUrl = encodeURIComponent(window.location.origin + '/studio/auth/callback');
-        window.location.href = `${API_BASE}/studio/auth/steam?return_url=${returnUrl}`;
+        window.location.href = `${BACKEND_URL}/api/studio/auth/steam?return_url=${returnUrl}`;
       },
 
       logout: () => {

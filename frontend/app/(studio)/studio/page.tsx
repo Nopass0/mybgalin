@@ -150,24 +150,43 @@ export default function StudioPage() {
           {/* Steam Login */}
           <motion.button
             onClick={login}
-            className="flex items-center gap-3 px-8 py-4 bg-[#1b2838] hover:bg-[#2a475e] rounded-xl transition-colors group"
-            whileHover={{ scale: 1.02 }}
+            className="relative flex items-center gap-5 px-10 py-5 bg-gradient-to-br from-[#171a21] via-[#1b2838] to-[#2a475e] rounded-2xl transition-all shadow-2xl shadow-black/50 border border-[#66c0f4]/30 group overflow-hidden"
+            whileHover={{ scale: 1.05, y: -2 }}
             whileTap={{ scale: 0.98 }}
           >
-            <svg
-              className="w-8 h-8"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 4.5C13.93 4.5 15.5 6.07 15.5 8C15.5 9.93 13.93 11.5 12 11.5C10.07 11.5 8.5 9.93 8.5 8C8.5 6.07 10.07 4.5 12 4.5ZM6.5 12L9.5 14.5L12 12L14.5 14.5L17.5 12L15 16.5H9L6.5 12Z"
-                fill="#66c0f4"
-              />
-            </svg>
-            <span className="text-white font-medium text-lg">
-              Sign in with Steam
-            </span>
+            {/* Animated background glow */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#66c0f4]/0 via-[#66c0f4]/10 to-[#66c0f4]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+
+            {/* Steam Logo from CDN */}
+            <img
+              src="https://community.cloudflare.steamstatic.com/public/shared/images/responsive/steam_logo.png"
+              alt="Steam"
+              className="w-10 h-10 object-contain group-hover:scale-110 transition-transform duration-300 drop-shadow-lg"
+            />
+
+            <div className="flex flex-col items-start z-10">
+              <span className="text-white font-bold text-xl tracking-wide">
+                Sign in with Steam
+              </span>
+              <span className="text-[#66c0f4]/80 text-sm font-medium">
+                Secure • Fast • Easy
+              </span>
+            </div>
+
+            {/* Arrow indicator */}
+            <div className="ml-auto pl-4 z-10">
+              <div className="w-10 h-10 rounded-full bg-[#66c0f4]/20 flex items-center justify-center group-hover:bg-[#66c0f4]/30 transition-colors">
+                <svg
+                  className="w-5 h-5 text-[#66c0f4] group-hover:translate-x-1 transition-transform"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
           </motion.button>
 
           {/* Back to site */}
