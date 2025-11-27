@@ -1244,6 +1244,130 @@ export function StudioLayersPanel() {
           <TooltipContent>Delete Layer</TooltipContent>
         </Tooltip>
       </div>
+
+      {/* Layer context menu */}
+      {layerContextMenu && (
+        <div
+          className="fixed z-50 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-48"
+          style={{ left: layerContextMenu.x, top: layerContextMenu.y }}
+          onClick={() => setLayerContextMenu(null)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              const layer = layers.find(l => l.id === layerContextMenu.layerId);
+              if (layer) {
+                duplicateLayer(layerContextMenu.layerId);
+              }
+            }}
+          >
+            <Copy className="w-4 h-4" />
+            Duplicate Layer
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              const layer = layers.find(l => l.id === layerContextMenu.layerId);
+              if (layer) {
+                updateLayer(layerContextMenu.layerId, { locked: !layer.locked });
+              }
+            }}
+          >
+            {layers.find(l => l.id === layerContextMenu.layerId)?.locked ? (
+              <>
+                <Unlock className="w-4 h-4" />
+                Unlock Layer
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4" />
+                Lock Layer
+              </>
+            )}
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              const layer = layers.find(l => l.id === layerContextMenu.layerId);
+              if (layer) {
+                updateLayer(layerContextMenu.layerId, { visible: !layer.visible });
+              }
+            }}
+          >
+            {layers.find(l => l.id === layerContextMenu.layerId)?.visible !== false ? (
+              <>
+                <EyeOff className="w-4 h-4" />
+                Hide Layer
+              </>
+            ) : (
+              <>
+                <Eye className="w-4 h-4" />
+                Show Layer
+              </>
+            )}
+          </button>
+          <div className="h-px bg-zinc-700 my-1" />
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => moveLayer(layerContextMenu.layerId, 'up')}
+          >
+            <ChevronUp className="w-4 h-4" />
+            Move Up
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+            onClick={() => moveLayer(layerContextMenu.layerId, 'down')}
+          >
+            <ChevronDown className="w-4 h-4" />
+            Move Down
+          </button>
+          <div className="h-px bg-zinc-700 my-1" />
+          {selectedLayerIds.length > 1 && (
+            <>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+                onClick={groupSelectedLayers}
+              >
+                <FolderClosed className="w-4 h-4" />
+                Group Selected (Ctrl+G)
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+                onClick={mergeSelectedLayers}
+              >
+                <Merge className="w-4 h-4" />
+                Merge Selected (Ctrl+E)
+              </button>
+              <div className="h-px bg-zinc-700 my-1" />
+            </>
+          )}
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-zinc-800 transition-colors"
+            onClick={() => {
+              if (layers.length > 1) {
+                removeLayer(layerContextMenu.layerId);
+              }
+            }}
+            disabled={layers.length <= 1}
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete Layer
+          </button>
+        </div>
+      )}
+
+      {/* Click outside to close context menu */}
+      {layerContextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setLayerContextMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setLayerContextMenu(null);
+          }}
+        />
+      )}
     </div>
   );
 }

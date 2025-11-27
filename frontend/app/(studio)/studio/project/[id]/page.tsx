@@ -134,41 +134,65 @@ export default function ProjectEditorPage() {
   });
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Track if project was already loaded to prevent duplicate initialization
+  const projectLoadedRef = useRef<string | null>(null);
+
   // Load project
   useEffect(() => {
     if (!authLoading && isAuthenticated && projects.length > 0) {
       const foundProject = projects.find((p) => p.id === projectId);
       if (foundProject) {
+        // Prevent re-initialization if project was already loaded
+        if (projectLoadedRef.current === projectId) {
+          setIsLoading(false);
+          return;
+        }
+        projectLoadedRef.current = projectId;
+
         setProject(foundProject);
 
-        // Initialize layers if empty
-        if (!foundProject.data?.layers || foundProject.data.layers.length === 0) {
-          const bgLayer = addLayer('raster', 'Background');
-          pushHistory('Initial state');
+        // Parse project data if it's a string (can happen from backend)
+        let projectData = foundProject.data;
+        if (typeof projectData === 'string') {
+          try {
+            projectData = JSON.parse(projectData);
+          } catch (e) {
+            console.error('[ProjectLoader] Failed to parse project data:', e);
+            projectData = undefined;
+          }
+        }
+
+        // Initialize layers - only add background if project data has no layers
+        if (!projectData?.layers || projectData.layers.length === 0) {
+          // Only add background if there are no layers in the store either
+          if (layers.length === 0) {
+            addLayer('raster', 'Background');
+            pushHistory('Initial state');
+          }
         } else {
-          setLayers(foundProject.data.layers);
+          setLayers(projectData.layers);
         }
 
         // Load materials from project data
-        if (foundProject.data?.materials) {
-          setSmartMaterials(foundProject.data.materials);
+        if (projectData?.materials) {
+          setSmartMaterials(projectData.materials);
         }
 
         // Load smart masks from project data
-        if (foundProject.data?.smartMasks) {
-          setSmartMasks(foundProject.data.smartMasks);
+        if (projectData?.smartMasks) {
+          setSmartMasks(projectData.smartMasks);
         }
 
         // Load environment settings from project data
-        if (foundProject.data?.environment) {
-          setEnvironmentSettings(foundProject.data.environment);
+        if (projectData?.environment) {
+          setEnvironmentSettings(projectData.environment);
         }
       }
       setIsLoading(false);
     } else if (!authLoading && !isAuthenticated) {
       router.push('/studio');
     }
-  }, [authLoading, isAuthenticated, projects, projectId, setSmartMaterials, setSmartMasks, setEnvironmentSettings]);
+  }, [authLoading, isAuthenticated, projects, projectId, setSmartMaterials, setSmartMasks, setEnvironmentSettings, layers.length]);
 
   // Manual save handler
   const handleSave = useCallback(async () => {

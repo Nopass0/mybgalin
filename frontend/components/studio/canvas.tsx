@@ -52,6 +52,24 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const layerCanvasesRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+  // Track which imageData has been loaded into each layer canvas (to detect changes)
+  const layerImageDataRef = useRef<Map<string, string>>(new Map());
+  // Cache for loaded mask images (key: imageData string, value: loaded Image)
+  const maskImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  // Flag to trigger re-composite after async image loads
+  const [imageLoadCounter, setImageLoadCounter] = useState(0);
+
+  // GPU optimization: batch stroke points for efficient drawing
+  const pendingStrokesRef = useRef<Array<{
+    x: number;
+    y: number;
+    pressure: number;
+    timestamp: number;
+  }>>([]);
+  // Animation frame ID for batched compositing
+  const compositeRAFRef = useRef<number | null>(null);
+  // Track if composite is pending
+  const compositePendingRef = useRef(false);
 
   const {
     layers,
@@ -149,6 +167,58 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     angle: number;
     spread: number;
   }>>([]);
+
+  // Snap to guides setting
+  const [snapToGuides, setSnapToGuides] = useState(true);
+  const SNAP_THRESHOLD = 10; // pixels
+
+  // Snap a point to nearby guides
+  const snapPointToGuides = useCallback((x: number, y: number): { x: number; y: number; snapped: boolean } => {
+    if (!snapToGuides || guides.length === 0) {
+      return { x, y, snapped: false };
+    }
+
+    let snappedX = x;
+    let snappedY = y;
+    let didSnap = false;
+
+    for (const guide of guides) {
+      if (guide.type === 'horizontal' && guide.position !== undefined) {
+        // Snap to horizontal guide
+        if (Math.abs(y - guide.position) < SNAP_THRESHOLD) {
+          snappedY = guide.position;
+          didSnap = true;
+        }
+      } else if (guide.type === 'vertical' && guide.position !== undefined) {
+        // Snap to vertical guide
+        if (Math.abs(x - guide.position) < SNAP_THRESHOLD) {
+          snappedX = guide.position;
+          didSnap = true;
+        }
+      } else if (guide.type === 'line' && guide.start && guide.end) {
+        // Snap to line guide - find closest point on line
+        const dx = guide.end.x - guide.start.x;
+        const dy = guide.end.y - guide.start.y;
+        const lengthSq = dx * dx + dy * dy;
+
+        if (lengthSq > 0) {
+          // Project point onto line
+          const t = Math.max(0, Math.min(1, ((x - guide.start.x) * dx + (y - guide.start.y) * dy) / lengthSq));
+          const closestX = guide.start.x + t * dx;
+          const closestY = guide.start.y + t * dy;
+          const dist = Math.sqrt(Math.pow(x - closestX, 2) + Math.pow(y - closestY, 2));
+
+          if (dist < SNAP_THRESHOLD) {
+            snappedX = closestX;
+            snappedY = closestY;
+            didSnap = true;
+          }
+        }
+      }
+    }
+
+    return { x: snappedX, y: snappedY, snapped: didSnap };
+  }, [snapToGuides, guides]);
 
   // Initialize offscreen canvas
   useEffect(() => {
@@ -636,19 +706,33 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       // Apply mask if exists
       if (layer.mask?.enabled && layer.mask.imageData) {
-        // Create temporary canvas for masked result
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = CANVAS_SIZE;
-        tempCanvas.height = CANVAS_SIZE;
-        const tempCtx = tempCanvas.getContext('2d');
-        if (tempCtx) {
-          tempCtx.drawImage(layerCanvas, 0, 0);
-          tempCtx.globalCompositeOperation = 'destination-in';
-          // Draw mask
-          const maskImg = new Image();
-          maskImg.src = layer.mask.imageData;
-          tempCtx.drawImage(maskImg, 0, 0);
-          ctx.drawImage(tempCanvas, 0, 0);
+        // Check if mask image is cached
+        let maskImg = maskImageCacheRef.current.get(layer.mask.imageData);
+
+        if (!maskImg || !maskImg.complete) {
+          // Need to load mask image asynchronously
+          if (!maskImg) {
+            maskImg = new Image();
+            maskImg.src = layer.mask.imageData;
+            maskImageCacheRef.current.set(layer.mask.imageData, maskImg);
+            maskImg.onload = () => {
+              setImageLoadCounter(c => c + 1); // Trigger re-composite
+            };
+          }
+          // For now, draw layer without mask (will be applied after image loads)
+          ctx.drawImage(layerCanvas, 0, 0);
+        } else {
+          // Mask image is loaded, apply it
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = CANVAS_SIZE;
+          tempCanvas.height = CANVAS_SIZE;
+          const tempCtx = tempCanvas.getContext('2d');
+          if (tempCtx) {
+            tempCtx.drawImage(layerCanvas, 0, 0);
+            tempCtx.globalCompositeOperation = 'destination-in';
+            tempCtx.drawImage(maskImg, 0, 0);
+            ctx.drawImage(tempCanvas, 0, 0);
+          }
         }
       } else {
         ctx.drawImage(layerCanvas, 0, 0);
@@ -690,6 +774,26 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
     }
   }, [layers, showGrid, activeTool, activeLayerId, applyLayerEffects]);
+
+  // Batched composite using requestAnimationFrame for GPU-optimized rendering
+  const scheduleComposite = useCallback(() => {
+    if (compositePendingRef.current) return;
+
+    compositePendingRef.current = true;
+    compositeRAFRef.current = requestAnimationFrame(() => {
+      compositeCanvas();
+      compositePendingRef.current = false;
+    });
+  }, [compositeCanvas]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (compositeRAFRef.current) {
+        cancelAnimationFrame(compositeRAFRef.current);
+      }
+    };
+  }, []);
 
   // Draw transform handles around the layer
   const drawTransformHandles = useCallback((ctx: CanvasRenderingContext2D, transform: Transform) => {
@@ -808,6 +912,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
   // Initialize layer canvases from imageData and render text/shape layers
   useEffect(() => {
+    let isMounted = true;
+    let loadedAny = false;
+
     const initializeLayerCanvases = async () => {
       for (const layer of layers) {
         const layerCanvas = getLayerCanvas(layer.id);
@@ -816,12 +923,22 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
         // For raster layers, load from imageData if available
         if (layer.imageData && layer.type === 'raster') {
+          // Check if this imageData is already loaded
+          const currentLoaded = layerImageDataRef.current.get(layer.id);
+          if (currentLoaded === layer.imageData) continue; // Already loaded
+
           const img = new window.Image();
           img.src = layer.imageData;
           await new Promise<void>((resolve) => {
             img.onload = () => {
+              if (!isMounted) {
+                resolve();
+                return;
+              }
               ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
               ctx.drawImage(img, 0, 0);
+              layerImageDataRef.current.set(layer.id, layer.imageData!);
+              loadedAny = true;
               resolve();
             };
             img.onerror = () => resolve();
@@ -871,16 +988,24 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
           ctx.restore();
         }
       }
+      // Trigger re-composite if any images were loaded
+      if (loadedAny && isMounted) {
+        setImageLoadCounter(c => c + 1);
+      }
       compositeCanvas();
     };
 
     initializeLayerCanvases();
+
+    return () => {
+      isMounted = false;
+    };
   }, [layers, getLayerCanvas, compositeCanvas]);
 
-  // Render on layer changes
+  // Render on layer changes or after images load
   useEffect(() => {
     compositeCanvas();
-  }, [layers, compositeCanvas]);
+  }, [layers, compositeCanvas, imageLoadCounter]);
 
   // Convert screen coordinates to canvas coordinates
   const screenToCanvas = useCallback((clientX: number, clientY: number) => {
@@ -1632,8 +1757,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const activeLayer = layers.find((l) => l.id === activeLayerId);
       if (!activeLayer || activeLayer.locked) return;
 
+      // Apply snapping to guides
+      const snapped = snapPointToGuides(x, y);
+      const drawX = snapped.x;
+      const drawY = snapped.y;
+
       setIsDrawing(true);
-      setLastPoint({ x, y });
+      setLastPoint({ x: drawX, y: drawY });
 
       // Get or create layer canvas
       const layerCanvas = getLayerCanvas(activeLayerId);
@@ -1641,7 +1771,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       if (ctx) {
         // Draw initial point
         updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
-        drawStroke(ctx, x, y, x, y, e.pressure || 0.5);
+        drawStroke(ctx, drawX, drawY, drawX, drawY, e.pressure || 0.5);
         compositeCanvas();
       }
 
@@ -1917,6 +2047,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     showRulers,
     guideStartPoint,
     warpMode,
+    snapPointToGuides,
   ]);
 
   // Magic wand selection algorithm
@@ -2037,6 +2168,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       } else if (constrainedAxis === 'y') {
         x = strokeStartPoint.x;
       }
+    }
+
+    // Apply guide snapping for brush tools during drawing
+    if (isDrawing && (activeTool === 'brush' || activeTool === 'eraser')) {
+      const snapped = snapPointToGuides(x, y);
+      x = snapped.x;
+      y = snapped.y;
     }
 
     // Update brush preview position
@@ -2166,7 +2304,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
               applySpongeAtPoint(ctx, px, py, radius, strength, e.shiftKey);
             }
           }
-          compositeCanvas();
+          scheduleComposite(); // GPU-batched rendering
         } else if (activeTool === 'clone' && cloneSource && cloneOffset) {
           // Handle clone stamp tool
           const radius = currentBrush.size / 2;
@@ -2189,13 +2327,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
               applyCloneAtPoint(ctx, sourceCanvas, px, py, sourceX, sourceY, radius, opacity);
             }
-            compositeCanvas();
+            scheduleComposite(); // GPU-batched rendering
           }
         } else {
           // Normal brush/eraser
           updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
           drawStroke(ctx, lastPoint.x, lastPoint.y, x, y, e.pressure || 0.5);
-          compositeCanvas();
+          scheduleComposite(); // GPU-batched rendering
         }
       }
       setLastPoint({ x, y });
@@ -2237,7 +2375,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
 
         applyWarpAtPoint(ctx, x, y, deltaX, deltaY, radius, strength, warpMode);
-        compositeCanvas();
+        scheduleComposite(); // GPU-batched rendering
       }
       setLastPoint({ x, y });
     }
@@ -2278,6 +2416,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     isWarping,
     warpMode,
     applyWarpAtPoint,
+    snapPointToGuides,
+    scheduleComposite,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -2575,6 +2715,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         }}
       >
         <canvas
+          id="main-canvas"
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
