@@ -150,24 +150,42 @@ export default function StudioPage() {
           {/* Steam Login */}
           <motion.button
             onClick={login}
-            className="flex items-center gap-3 px-8 py-4 bg-[#1b2838] hover:bg-[#2a475e] rounded-xl transition-colors group"
-            whileHover={{ scale: 1.02 }}
+            className="flex items-center gap-4 px-8 py-4 bg-gradient-to-r from-[#1b2838] to-[#171a21] hover:from-[#2a475e] hover:to-[#1b2838] rounded-xl transition-all shadow-lg shadow-black/30 border border-[#2a475e]/50 group"
+            whileHover={{ scale: 1.03, boxShadow: '0 8px 32px rgba(102, 192, 244, 0.15)' }}
             whileTap={{ scale: 0.98 }}
           >
+            {/* Official Steam Logo SVG */}
             <svg
-              className="w-8 h-8"
-              viewBox="0 0 24 24"
-              fill="none"
+              className="w-8 h-8 group-hover:scale-110 transition-transform"
+              viewBox="0 0 256 259"
               xmlns="http://www.w3.org/2000/svg"
+              preserveAspectRatio="xMidYMid"
             >
               <path
-                d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 4.5C13.93 4.5 15.5 6.07 15.5 8C15.5 9.93 13.93 11.5 12 11.5C10.07 11.5 8.5 9.93 8.5 8C8.5 6.07 10.07 4.5 12 4.5ZM6.5 12L9.5 14.5L12 12L14.5 14.5L17.5 12L15 16.5H9L6.5 12Z"
-                fill="#66c0f4"
+                d="M127.779 0C60.42 0 5.24 52.412 0 119.014l68.724 28.674a35.821 35.821 0 0 1 20.426-6.366c.682 0 1.356.019 2.02.057l30.566-44.71v-.626c0-26.903 21.69-48.796 48.353-48.796 26.68 0 48.378 21.893 48.378 48.842 0 26.948-21.698 48.858-48.378 48.858l-.562-.005-43.813 31.56c0 .542.03 1.088.03 1.643 0 20.18-16.27 36.591-36.294 36.591-17.612 0-32.336-12.627-35.618-29.349L1.548 163.148C17.932 218.152 68.539 258.8 127.78 258.8c71.201 0 128.934-58.203 128.934-130.003C256.713 57.993 198.98 0 127.779 0"
+                fill="#ffffff"
+              />
+              <path
+                d="M80.392 214.272l-15.593-6.508c2.76 5.766 7.428 10.643 13.568 13.32 13.273 5.784 28.695-.27 34.408-13.508 2.765-6.407 2.778-13.478.038-19.903-2.74-6.426-7.906-11.388-14.554-13.988a26.783 26.783 0 0 0-14.06-1.47l16.116 6.728c9.79 4.153 14.428 15.426 10.348 25.178-4.084 9.748-15.256 14.476-25.056 10.344l-.215-.193zM202.305 144.054c0-17.917-14.449-32.48-32.263-32.48-17.814 0-32.273 14.563-32.273 32.48 0 17.918 14.459 32.482 32.273 32.482 17.814 0 32.263-14.564 32.263-32.482zm-56.407.042c0-13.454 10.788-24.364 24.101-24.364 13.313 0 24.106 10.91 24.106 24.364 0 13.45-10.793 24.362-24.106 24.362-13.313 0-24.101-10.912-24.101-24.362z"
+                fill="#ffffff"
               />
             </svg>
-            <span className="text-white font-medium text-lg">
-              Sign in with Steam
-            </span>
+            <div className="flex flex-col items-start">
+              <span className="text-white font-semibold text-lg">
+                Sign in with Steam
+              </span>
+              <span className="text-[#66c0f4] text-xs">
+                Secure authentication
+              </span>
+            </div>
+            <svg
+              className="w-5 h-5 text-[#66c0f4] ml-2 group-hover:translate-x-1 transition-transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </motion.button>
 
           {/* Back to site */}
