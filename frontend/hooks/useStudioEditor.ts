@@ -102,6 +102,10 @@ interface EditorState {
   setNormalMapMode: (enabled: boolean) => void;
   normalMapStrength: number;
   setNormalMapStrength: (strength: number) => void;
+
+  // Canvas dimensions (computed from project)
+  canvasWidth: number;
+  canvasHeight: number;
 }
 
 const defaultBrush: CustomBrush = {
@@ -460,4 +464,14 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
   setNormalMapMode: (normalMapMode) => set({ normalMapMode }),
   normalMapStrength: 1,
   setNormalMapStrength: (normalMapStrength) => set({ normalMapStrength }),
+
+  // Canvas dimensions (computed from project)
+  get canvasWidth() {
+    const project = get().project;
+    return project?.data?.width || 1024;
+  },
+  get canvasHeight() {
+    const project = get().project;
+    return project?.data?.height || 1024;
+  },
 }));

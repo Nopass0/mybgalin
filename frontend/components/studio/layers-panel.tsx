@@ -29,9 +29,18 @@ import {
   Merge,
   Grid2x2,
   Wand2,
+  Loader2,
 } from 'lucide-react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import { Layer, BlendMode, LayerType } from '@/types/studio';
+import {
+  compositeLayers,
+  canvasToDataUrl,
+  rasterizeText,
+  rasterizeShape,
+  generateNormalMap,
+  convertToGrayscale,
+} from '@/lib/canvasUtils';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import {
@@ -105,12 +114,19 @@ export function StudioLayersPanel() {
     addLayerMask,
     removeLayerMask,
     updateLayer,
+    canvasWidth,
+    canvasHeight,
   } = useStudioEditor();
 
   const [expandedLayers, setExpandedLayers] = useState<Set<string>>(new Set());
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const activeLayer = layers.find((l) => l.id === activeLayerId);
+
+  // Get canvas dimensions with defaults
+  const width = canvasWidth || 1024;
+  const height = canvasHeight || 1024;
 
   const handleReorder = (newOrder: Layer[]) => {
     setLayers(newOrder);
@@ -233,142 +249,236 @@ export function StudioLayersPanel() {
   }, [layers, updateLayer]);
 
   // Merge layer down (merge with layer below)
-  const mergeLayerDown = useCallback((layerId: string) => {
+  const mergeLayerDown = useCallback(async (layerId: string) => {
     const layerIndex = layers.findIndex(l => l.id === layerId);
     if (layerIndex === -1 || layerIndex >= layers.length - 1) return;
+    if (isProcessing) return;
 
-    const currentLayer = layers[layerIndex];
-    const belowLayer = layers[layerIndex + 1];
+    setIsProcessing(true);
 
-    // Create merged layer
-    const mergedLayer: Layer = {
-      id: `merged-${Date.now()}`,
-      name: `${currentLayer.name} + ${belowLayer.name}`,
-      type: 'raster',
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      // TODO: Merge the actual image data
-      imageData: currentLayer.imageData || belowLayer.imageData,
-    };
+    try {
+      const currentLayer = layers[layerIndex];
+      const belowLayer = layers[layerIndex + 1];
 
-    // Remove both layers and add merged
-    const newLayers = layers.filter((_, i) => i !== layerIndex && i !== layerIndex + 1);
-    newLayers.splice(layerIndex, 0, mergedLayer);
+      // Composite the two layers together
+      const canvas = await compositeLayers([currentLayer, belowLayer], width, height);
+      const mergedImageData = canvasToDataUrl(canvas);
 
-    setLayers(newLayers);
-    setActiveLayer(mergedLayer.id);
-  }, [layers, setLayers, setActiveLayer]);
+      // Create merged layer
+      const mergedLayer: Layer = {
+        id: `merged-${Date.now()}`,
+        name: `${currentLayer.name} + ${belowLayer.name}`,
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: mergedImageData,
+      };
+
+      // Remove both layers and add merged
+      const newLayers = layers.filter((_, i) => i !== layerIndex && i !== layerIndex + 1);
+      newLayers.splice(layerIndex, 0, mergedLayer);
+
+      setLayers(newLayers);
+      setActiveLayer(mergedLayer.id);
+    } catch (error) {
+      console.error('Failed to merge layers:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, width, height, isProcessing]);
 
   // Merge all visible layers
-  const mergeVisibleLayers = useCallback(() => {
+  const mergeVisibleLayers = useCallback(async () => {
     const visibleLayers = layers.filter(l => l.visible);
     if (visibleLayers.length < 2) return;
+    if (isProcessing) return;
 
-    // Create merged layer
-    const mergedLayer: Layer = {
-      id: `merged-${Date.now()}`,
-      name: 'Merged Visible',
-      type: 'raster',
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      // TODO: Merge the actual image data
-    };
+    setIsProcessing(true);
 
-    // Keep hidden layers, add merged layer at top
-    const hiddenLayers = layers.filter(l => !l.visible);
-    const newLayers = [mergedLayer, ...hiddenLayers];
+    try {
+      // Composite all visible layers
+      const canvas = await compositeLayers(visibleLayers, width, height);
+      const mergedImageData = canvasToDataUrl(canvas);
 
-    setLayers(newLayers);
-    setActiveLayer(mergedLayer.id);
-  }, [layers, setLayers, setActiveLayer]);
+      // Create merged layer
+      const mergedLayer: Layer = {
+        id: `merged-${Date.now()}`,
+        name: 'Merged Visible',
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: mergedImageData,
+      };
+
+      // Keep hidden layers, add merged layer at top
+      const hiddenLayers = layers.filter(l => !l.visible);
+      const newLayers = [mergedLayer, ...hiddenLayers];
+
+      setLayers(newLayers);
+      setActiveLayer(mergedLayer.id);
+    } catch (error) {
+      console.error('Failed to merge visible layers:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, width, height, isProcessing]);
 
   // Flatten all layers
-  const flattenLayers = useCallback(() => {
+  const flattenLayers = useCallback(async () => {
     if (layers.length < 2) return;
+    if (isProcessing) return;
 
-    const flattenedLayer: Layer = {
-      id: `flattened-${Date.now()}`,
-      name: 'Flattened',
-      type: 'raster',
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      // TODO: Flatten all layers into one image
-    };
+    setIsProcessing(true);
 
-    setLayers([flattenedLayer]);
-    setActiveLayer(flattenedLayer.id);
-  }, [layers, setLayers, setActiveLayer]);
+    try {
+      // Composite all layers with white background
+      const canvas = await compositeLayers(layers, width, height, '#ffffff');
+      const flattenedImageData = canvasToDataUrl(canvas);
+
+      const flattenedLayer: Layer = {
+        id: `flattened-${Date.now()}`,
+        name: 'Flattened',
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: flattenedImageData,
+      };
+
+      setLayers([flattenedLayer]);
+      setActiveLayer(flattenedLayer.id);
+    } catch (error) {
+      console.error('Failed to flatten layers:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, width, height, isProcessing]);
 
   // Rasterize layer (convert vector/text/shape to raster)
-  const rasterizeLayer = useCallback((layerId: string) => {
+  const rasterizeLayer = useCallback(async (layerId: string) => {
     const layer = layers.find(l => l.id === layerId);
     if (!layer || layer.type === 'raster') return;
+    if (isProcessing) return;
 
-    // Convert to raster layer
-    updateLayer(layerId, {
-      type: 'raster',
-      name: `${layer.name} (Rasterized)`,
-      // Text/shape content is removed after rasterization
-      textContent: undefined,
-      shapeContent: undefined,
-      // TODO: Render the vector/text/shape to imageData
-    });
-  }, [layers, updateLayer]);
+    setIsProcessing(true);
+
+    try {
+      let imageData: string | undefined;
+
+      // Render based on layer type
+      if (layer.type === 'text' && layer.textContent) {
+        imageData = await rasterizeText(layer.textContent, width, height);
+      } else if (layer.type === 'shape' && layer.shapeContent) {
+        imageData = rasterizeShape(layer.shapeContent, width, height);
+      } else if (layer.imageData) {
+        // Already has image data, just use it
+        imageData = layer.imageData;
+      }
+
+      // Convert to raster layer
+      updateLayer(layerId, {
+        type: 'raster',
+        name: `${layer.name} (Rasterized)`,
+        imageData,
+        // Clear non-raster content
+        textContent: undefined,
+        shapeContent: undefined,
+      });
+    } catch (error) {
+      console.error('Failed to rasterize layer:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, updateLayer, width, height, isProcessing]);
 
   // Generate normal map from layer
-  const generateNormalMap = useCallback((layerId: string) => {
+  const handleGenerateNormalMap = useCallback(async (layerId: string) => {
     const layer = layers.find(l => l.id === layerId);
-    if (!layer) return;
+    if (!layer || !layer.imageData) return;
+    if (isProcessing) return;
 
-    const normalMapLayer: Layer = {
-      id: `normal-${Date.now()}`,
-      name: `${layer.name} Normal`,
-      type: 'normal',
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      // TODO: Generate normal map from height/grayscale
-    };
+    setIsProcessing(true);
 
-    // Insert after the source layer
-    const layerIndex = layers.findIndex(l => l.id === layerId);
-    const newLayers = [...layers];
-    newLayers.splice(layerIndex, 0, normalMapLayer);
+    try {
+      // Generate normal map from the layer's image
+      const normalMapImageData = await generateNormalMap(layer.imageData, {
+        strength: 2,
+        blurRadius: 1,
+        invert: false,
+        detailScale: 1,
+        method: 'sobel',
+      });
 
-    setLayers(newLayers);
-    setActiveLayer(normalMapLayer.id);
-  }, [layers, setLayers, setActiveLayer]);
+      const normalMapLayer: Layer = {
+        id: `normal-${Date.now()}`,
+        name: `${layer.name} Normal`,
+        type: 'normal',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: normalMapImageData,
+      };
+
+      // Insert after the source layer
+      const layerIndex = layers.findIndex(l => l.id === layerId);
+      const newLayers = [...layers];
+      newLayers.splice(layerIndex, 0, normalMapLayer);
+
+      setLayers(newLayers);
+      setActiveLayer(normalMapLayer.id);
+    } catch (error) {
+      console.error('Failed to generate normal map:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, isProcessing]);
 
   // Convert to grayscale (for roughness/metalness)
-  const convertToGrayscale = useCallback((layerId: string, mapType: 'roughness' | 'metalness') => {
+  const handleConvertToGrayscale = useCallback(async (layerId: string, mapType: 'roughness' | 'metalness') => {
     const layer = layers.find(l => l.id === layerId);
-    if (!layer) return;
+    if (!layer || !layer.imageData) return;
+    if (isProcessing) return;
 
-    const newLayer: Layer = {
-      id: `${mapType}-${Date.now()}`,
-      name: `${layer.name} ${mapType.charAt(0).toUpperCase() + mapType.slice(1)}`,
-      type: mapType,
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      // TODO: Convert to grayscale
-    };
+    setIsProcessing(true);
 
-    const layerIndex = layers.findIndex(l => l.id === layerId);
-    const newLayers = [...layers];
-    newLayers.splice(layerIndex, 0, newLayer);
+    try {
+      // Convert to grayscale
+      const grayscaleImageData = await convertToGrayscale(
+        layer.imageData,
+        false, // don't invert
+        1,     // contrast
+        0      // brightness
+      );
 
-    setLayers(newLayers);
-    setActiveLayer(newLayer.id);
-  }, [layers, setLayers, setActiveLayer]);
+      const newLayer: Layer = {
+        id: `${mapType}-${Date.now()}`,
+        name: `${layer.name} ${mapType.charAt(0).toUpperCase() + mapType.slice(1)}`,
+        type: mapType,
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: grayscaleImageData,
+      };
+
+      const layerIndex = layers.findIndex(l => l.id === layerId);
+      const newLayers = [...layers];
+      newLayers.splice(layerIndex, 0, newLayer);
+
+      setLayers(newLayers);
+      setActiveLayer(newLayer.id);
+    } catch (error) {
+      console.error('Failed to convert to grayscale:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, isProcessing]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 border-t border-white/10">
@@ -732,21 +842,21 @@ export function StudioLayersPanel() {
                           {layer.type === 'raster' && (
                             <>
                               <DropdownMenuItem
-                                onClick={() => generateNormalMap(layer.id)}
+                                onClick={() => handleGenerateNormalMap(layer.id)}
                                 className="text-white hover:bg-white/10 text-xs"
                               >
                                 <Wand2 className="w-3 h-3 mr-2" />
                                 Generate Normal Map
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => convertToGrayscale(layer.id, 'roughness')}
+                                onClick={() => handleConvertToGrayscale(layer.id, 'roughness')}
                                 className="text-white hover:bg-white/10 text-xs"
                               >
                                 <CircleDot className="w-3 h-3 mr-2" />
                                 To Roughness Map
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => convertToGrayscale(layer.id, 'metalness')}
+                                onClick={() => handleConvertToGrayscale(layer.id, 'metalness')}
                                 className="text-white hover:bg-white/10 text-xs"
                               >
                                 <Sparkles className="w-3 h-3 mr-2" />
