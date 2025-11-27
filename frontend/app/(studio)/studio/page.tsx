@@ -157,12 +157,22 @@ export default function StudioPage() {
             {/* Animated background glow */}
             <div className="absolute inset-0 bg-gradient-to-r from-[#66c0f4]/0 via-[#66c0f4]/10 to-[#66c0f4]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
 
-            {/* Steam Logo from CDN */}
-            <img
-              src="https://community.cloudflare.steamstatic.com/public/shared/images/responsive/steam_logo.png"
-              alt="Steam"
-              className="w-10 h-10 object-contain group-hover:scale-110 transition-transform duration-300 drop-shadow-lg"
-            />
+            {/* Steam Logo SVG */}
+            <svg
+              className="w-10 h-10 group-hover:scale-110 transition-transform duration-300 drop-shadow-lg z-10"
+              viewBox="0 0 256 259"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M127.8 0C60.4 0 5.2 52.4 0 119l68.7 28.7c5.7-4 12.6-6.4 20.4-6.4.7 0 1.4 0 2 .1l30.6-44.7v-.6c0-26.9 21.7-48.8 48.4-48.8 26.7 0 48.4 21.9 48.4 48.8 0 27-21.7 48.9-48.4 48.9h-.6l-43.8 31.6c0 .5 0 1.1 0 1.6 0 20.2-16.3 36.6-36.3 36.6-17.6 0-32.3-12.6-35.6-29.3L1.5 163.1C17.9 218.2 68.5 258.8 127.8 258.8c71.2 0 128.9-58.2 128.9-130S199 0 127.8 0"
+                fill="#ffffff"
+              />
+              <path
+                d="M80.4 214.3l-15.6-6.5c2.8 5.8 7.4 10.6 13.6 13.3 13.3 5.8 28.7-.3 34.4-13.5 2.8-6.4 2.8-13.5 0-19.9-2.7-6.4-7.9-11.4-14.5-14a26.8 26.8 0 00-14.1-1.5l16.1 6.7c9.8 4.2 14.4 15.4 10.3 25.2-4.1 9.7-15.3 14.5-25.1 10.3l-.1-.1zm121.9-70.2c0-17.9-14.4-32.5-32.3-32.5-17.8 0-32.3 14.6-32.3 32.5s14.5 32.5 32.3 32.5c17.9 0 32.3-14.6 32.3-32.5zm-56.4 0c0-13.5 10.8-24.4 24.1-24.4 13.3 0 24.1 10.9 24.1 24.4 0 13.4-10.8 24.4-24.1 24.4-13.3 0-24.1-11-24.1-24.4z"
+                fill="#ffffff"
+              />
+            </svg>
 
             <div className="flex flex-col items-start z-10">
               <span className="text-white font-bold text-xl tracking-wide">
