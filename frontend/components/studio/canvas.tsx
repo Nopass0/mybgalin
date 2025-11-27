@@ -1019,6 +1019,143 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   // Smudge color reference
   const smudgeColorRef = useRef<{ r: number; g: number; b: number; a: number } | null>(null);
 
+  // Apply dodge (lighten) effect at a point
+  const applyDodgeAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    strength: number
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+    const sx = Math.max(0, Math.floor(x - halfSize));
+    const sy = Math.max(0, Math.floor(y - halfSize));
+    const sw = Math.min(size, CANVAS_SIZE - sx);
+    const sh = Math.min(size, CANVAS_SIZE - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const data = imageData.data;
+
+    for (let py = 0; py < sh; py++) {
+      for (let px = 0; px < sw; px++) {
+        const dx = px - halfSize;
+        const dy = py - halfSize;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+
+        const idx = (py * sw + px) * 4;
+        const falloff = 1 - (dist / radius);
+        const amount = falloff * strength * 0.2;
+
+        // Lighten the pixel (dodge)
+        data[idx] = Math.min(255, data[idx] + (255 - data[idx]) * amount);
+        data[idx + 1] = Math.min(255, data[idx + 1] + (255 - data[idx + 1]) * amount);
+        data[idx + 2] = Math.min(255, data[idx + 2] + (255 - data[idx + 2]) * amount);
+      }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
+  }, []);
+
+  // Apply burn (darken) effect at a point
+  const applyBurnAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    strength: number
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+    const sx = Math.max(0, Math.floor(x - halfSize));
+    const sy = Math.max(0, Math.floor(y - halfSize));
+    const sw = Math.min(size, CANVAS_SIZE - sx);
+    const sh = Math.min(size, CANVAS_SIZE - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const data = imageData.data;
+
+    for (let py = 0; py < sh; py++) {
+      for (let px = 0; px < sw; px++) {
+        const dx = px - halfSize;
+        const dy = py - halfSize;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+
+        const idx = (py * sw + px) * 4;
+        const falloff = 1 - (dist / radius);
+        const amount = falloff * strength * 0.2;
+
+        // Darken the pixel (burn)
+        data[idx] = Math.max(0, data[idx] * (1 - amount));
+        data[idx + 1] = Math.max(0, data[idx + 1] * (1 - amount));
+        data[idx + 2] = Math.max(0, data[idx + 2] * (1 - amount));
+      }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
+  }, []);
+
+  // Apply sponge (saturation adjust) effect at a point
+  const applySpongeAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    strength: number,
+    saturate: boolean // true = saturate, false = desaturate
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+    const sx = Math.max(0, Math.floor(x - halfSize));
+    const sy = Math.max(0, Math.floor(y - halfSize));
+    const sw = Math.min(size, CANVAS_SIZE - sx);
+    const sh = Math.min(size, CANVAS_SIZE - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const data = imageData.data;
+
+    for (let py = 0; py < sh; py++) {
+      for (let px = 0; px < sw; px++) {
+        const dx = px - halfSize;
+        const dy = py - halfSize;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+
+        const idx = (py * sw + px) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        // Calculate luminance
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const falloff = 1 - (dist / radius);
+        const amount = falloff * strength * 0.15;
+
+        if (saturate) {
+          // Increase saturation by moving away from luminance
+          data[idx] = Math.min(255, r + (r - lum) * amount);
+          data[idx + 1] = Math.min(255, g + (g - lum) * amount);
+          data[idx + 2] = Math.min(255, b + (b - lum) * amount);
+        } else {
+          // Decrease saturation by moving toward luminance
+          data[idx] = r + (lum - r) * amount;
+          data[idx + 1] = g + (lum - g) * amount;
+          data[idx + 2] = b + (lum - b) * amount;
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
+  }, []);
+
   // Pointer event handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
@@ -1115,8 +1252,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
 
-    // Handle blur/sharpen/smudge tools
-    if (activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') {
+    // Handle blur/sharpen/smudge/dodge/burn/sponge tools
+    if (activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge' ||
+        activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') {
       if (!activeLayerId) return;
 
       const activeLayer = layers.find((l) => l.id === activeLayerId);
@@ -1149,6 +1287,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             const pixel = ctx.getImageData(px, py, 1, 1).data;
             smudgeColorRef.current = { r: pixel[0], g: pixel[1], b: pixel[2], a: pixel[3] };
           }
+        } else if (activeTool === 'dodge') {
+          applyDodgeAtPoint(ctx, x, y, radius, strength);
+        } else if (activeTool === 'burn') {
+          applyBurnAtPoint(ctx, x, y, radius, strength);
+        } else if (activeTool === 'sponge') {
+          // Default to desaturate, shift key for saturate
+          applySpongeAtPoint(ctx, x, y, radius, strength, e.shiftKey);
         }
         compositeCanvas();
       }
@@ -1171,13 +1316,17 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     currentBrush.opacity,
     applyBlurAtPoint,
     applySharpenAtPoint,
+    applyDodgeAtPoint,
+    applyBurnAtPoint,
+    applySpongeAtPoint,
   ]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
 
     // Update brush preview position
-    if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') {
+    if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' ||
+        activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') {
       setBrushPreview({ x: e.clientX, y: e.clientY });
     }
 
@@ -1272,8 +1421,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const layerCanvas = getLayerCanvas(activeLayerId);
       const ctx = layerCanvas.getContext('2d');
       if (ctx) {
-        // Handle blur/sharpen/smudge tools
-        if (activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') {
+        // Handle blur/sharpen/smudge/dodge/burn/sponge tools
+        if (activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge' ||
+            activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') {
           const radius = currentBrush.size / 2;
           const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
 
@@ -1292,6 +1442,12 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
               applySharpenAtPoint(ctx, px, py, radius, strength);
             } else if (activeTool === 'smudge') {
               applySmudgeAtPoint(ctx, lastPoint.x, lastPoint.y, px, py, radius, strength, smudgeColorRef);
+            } else if (activeTool === 'dodge') {
+              applyDodgeAtPoint(ctx, px, py, radius, strength);
+            } else if (activeTool === 'burn') {
+              applyBurnAtPoint(ctx, px, py, radius, strength);
+            } else if (activeTool === 'sponge') {
+              applySpongeAtPoint(ctx, px, py, radius, strength, e.shiftKey);
             }
           }
           compositeCanvas();
@@ -1332,6 +1488,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     applyBlurAtPoint,
     applySharpenAtPoint,
     applySmudgeAtPoint,
+    applyDodgeAtPoint,
+    applyBurnAtPoint,
+    applySpongeAtPoint,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -1543,7 +1702,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       </div>
 
       {/* Brush cursor preview */}
-      {brushPreview && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' || activeTool === 'smudge') && (
+      {brushPreview && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' ||
+                        activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') && (
         <div
           className="pointer-events-none fixed rounded-full border border-white/50 mix-blend-difference"
           style={{
@@ -1747,6 +1907,9 @@ function getCursorForTool(tool: string, hoveredHandle?: HandleType | null): stri
     case 'blur':
     case 'sharpen':
     case 'smudge':
+    case 'dodge':
+    case 'burn':
+    case 'sponge':
       return 'none';
     default:
       return 'crosshair';
