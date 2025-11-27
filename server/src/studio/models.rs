@@ -105,25 +105,44 @@ impl From<StudioUser> for StudioUserResponse {
     }
 }
 
-// Steam OpenID response
-#[derive(Debug, Deserialize)]
+// Steam OpenID response - parsed from query string manually
+#[derive(Debug, Clone, Default)]
 pub struct SteamOpenIdResponse {
-    #[serde(rename = "openid.claimed_id")]
     pub claimed_id: Option<String>,
-    #[serde(rename = "openid.identity")]
     pub identity: Option<String>,
-    #[serde(rename = "openid.return_to")]
     pub return_to: Option<String>,
-    #[serde(rename = "openid.response_nonce")]
     pub response_nonce: Option<String>,
-    #[serde(rename = "openid.assoc_handle")]
     pub assoc_handle: Option<String>,
-    #[serde(rename = "openid.signed")]
     pub signed: Option<String>,
-    #[serde(rename = "openid.sig")]
     pub sig: Option<String>,
-    #[serde(rename = "openid.op_endpoint")]
     pub op_endpoint: Option<String>,
+}
+
+impl SteamOpenIdResponse {
+    /// Parse Steam OpenID response from query string
+    pub fn from_query_string(query: &str) -> Self {
+        let mut response = Self::default();
+
+        for pair in query.split('&') {
+            let mut parts = pair.splitn(2, '=');
+            if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
+                let decoded = urlencoding::decode(value).unwrap_or_default().to_string();
+                match key {
+                    "openid.claimed_id" => response.claimed_id = Some(decoded),
+                    "openid.identity" => response.identity = Some(decoded),
+                    "openid.return_to" => response.return_to = Some(decoded),
+                    "openid.response_nonce" => response.response_nonce = Some(decoded),
+                    "openid.assoc_handle" => response.assoc_handle = Some(decoded),
+                    "openid.signed" => response.signed = Some(decoded),
+                    "openid.sig" => response.sig = Some(decoded),
+                    "openid.op_endpoint" => response.op_endpoint = Some(decoded),
+                    _ => {}
+                }
+            }
+        }
+
+        response
+    }
 }
 
 // Steam API response for player summary

@@ -71,11 +71,17 @@ pub async fn steam_auth(return_url: Option<String>) -> rocket::response::Redirec
 }
 
 /// Steam OpenID callback
-#[get("/studio/auth/steam/callback?<openid..>")]
+#[get("/studio/auth/steam/callback?<query_string>")]
 pub async fn steam_auth_callback(
-    openid: crate::studio::SteamOpenIdResponse,
+    query_string: Option<String>,
     pool: &State<SqlitePool>,
+    origin: &rocket::http::uri::Origin<'_>,
 ) -> rocket::response::Redirect {
+    // Parse OpenID response from raw query string
+    let raw_query = origin.query().map(|q| q.as_str()).unwrap_or("");
+    let openid = crate::studio::SteamOpenIdResponse::from_query_string(raw_query);
+    let _ = query_string; // suppress unused warning
+
     let return_url = openid
         .return_to
         .as_ref()

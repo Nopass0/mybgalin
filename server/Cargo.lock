@@ -1939,6 +1939,8 @@ dependencies = [
  "sqlx",
  "tokio",
  "tokio-cron-scheduler",
+ "url",
+ "urlencoding",
  "uuid",
 ]
 
