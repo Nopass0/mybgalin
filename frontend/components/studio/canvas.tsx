@@ -71,6 +71,54 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   // Track if composite is pending
   const compositePendingRef = useRef(false);
 
+  // GPU optimization: Pre-computed brush texture cache
+  const brushTextureCache = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+  // Create or get cached brush texture for soft brushes
+  const getBrushTexture = useCallback((size: number, hardness: number, color: string): HTMLCanvasElement => {
+    const key = `${Math.round(size)}-${Math.round(hardness)}-${color}`;
+    let texture = brushTextureCache.current.get(key);
+
+    if (!texture) {
+      texture = document.createElement('canvas');
+      const texSize = Math.max(4, Math.ceil(size));
+      texture.width = texSize;
+      texture.height = texSize;
+      const ctx = texture.getContext('2d')!;
+
+      const center = texSize / 2;
+      const radius = texSize / 2;
+
+      if (hardness >= 99) {
+        // Hard edge
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      } else {
+        // Soft edge with gradient
+        const gradient = ctx.createRadialGradient(center, center, 0, center, center, radius);
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(hardness / 100, color);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // Limit cache size
+      if (brushTextureCache.current.size > 100) {
+        const firstKey = brushTextureCache.current.keys().next().value;
+        if (firstKey) brushTextureCache.current.delete(firstKey);
+      }
+
+      brushTextureCache.current.set(key, texture);
+    }
+
+    return texture;
+  }, []);
+
   const {
     layers,
     activeLayerId,
@@ -170,7 +218,6 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
   // Snap to guides setting
   const [snapToGuides, setSnapToGuides] = useState(true);
-  const SNAP_THRESHOLD = 10; // pixels
 
   // Snap a point to nearby guides
   const snapPointToGuides = useCallback((x: number, y: number): { x: number; y: number; snapped: boolean } => {
@@ -178,39 +225,47 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       return { x, y, snapped: false };
     }
 
+    // Threshold in canvas pixels - larger for better UX
+    const SNAP_THRESHOLD = 15;
     let snappedX = x;
     let snappedY = y;
     let didSnap = false;
+    let closestDist = SNAP_THRESHOLD;
 
     for (const guide of guides) {
       if (guide.type === 'horizontal' && guide.position !== undefined) {
         // Snap to horizontal guide
-        if (Math.abs(y - guide.position) < SNAP_THRESHOLD) {
+        const dist = Math.abs(y - guide.position);
+        if (dist < closestDist) {
           snappedY = guide.position;
+          closestDist = dist;
           didSnap = true;
         }
       } else if (guide.type === 'vertical' && guide.position !== undefined) {
         // Snap to vertical guide
-        if (Math.abs(x - guide.position) < SNAP_THRESHOLD) {
+        const dist = Math.abs(x - guide.position);
+        if (dist < closestDist) {
           snappedX = guide.position;
+          closestDist = dist;
           didSnap = true;
         }
       } else if (guide.type === 'line' && guide.start && guide.end) {
-        // Snap to line guide - find closest point on line
+        // Snap to line guide - find closest point on INFINITE line (not segment)
         const dx = guide.end.x - guide.start.x;
         const dy = guide.end.y - guide.start.y;
         const lengthSq = dx * dx + dy * dy;
 
         if (lengthSq > 0) {
-          // Project point onto line
-          const t = Math.max(0, Math.min(1, ((x - guide.start.x) * dx + (y - guide.start.y) * dy) / lengthSq));
+          // Project point onto infinite line (no clamping)
+          const t = ((x - guide.start.x) * dx + (y - guide.start.y) * dy) / lengthSq;
           const closestX = guide.start.x + t * dx;
           const closestY = guide.start.y + t * dy;
           const dist = Math.sqrt(Math.pow(x - closestX, 2) + Math.pow(y - closestY, 2));
 
-          if (dist < SNAP_THRESHOLD) {
+          if (dist < closestDist) {
             snappedX = closestX;
             snappedY = closestY;
+            closestDist = dist;
             didSnap = true;
           }
         }
@@ -247,27 +302,27 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             const img = new Image();
             img.onload = () => {
               // Scale image to fit canvas while preserving aspect ratio
-              const canvas = document.createElement('canvas');
-              canvas.width = CANVAS_SIZE;
-              canvas.height = CANVAS_SIZE;
-              const ctx = canvas.getContext('2d')!;
-
-              // Calculate scaling to fit while preserving aspect ratio
-              const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
+              const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height) * 0.8; // 80% of canvas
               const scaledWidth = img.width * scale;
               const scaledHeight = img.height * scale;
               const offsetX = (CANVAS_SIZE - scaledWidth) / 2;
               const offsetY = (CANVAS_SIZE - scaledHeight) / 2;
 
-              // Clear with transparent background
-              ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-              ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+              // Create canvas at the scaled size (not full canvas size)
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.ceil(scaledWidth);
+              canvas.height = Math.ceil(scaledHeight);
+              const ctx = canvas.getContext('2d')!;
+
+              // Draw image at natural size (scaled) - no offset baked in
+              ctx.drawImage(img, 0, 0, scaledWidth, scaledHeight);
 
               const scaledDataUrl = canvas.toDataURL('image/png');
 
               // Create new layer with pasted image
               const newLayer = addLayer('raster', 'Pasted Image');
               if (newLayer) {
+                // Transform contains position - layer canvas contains just the image
                 updateLayer(newLayer.id, {
                   imageData: scaledDataUrl,
                   transform: {
@@ -704,6 +759,27 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       ctx.globalAlpha = layer.opacity / 100;
       ctx.globalCompositeOperation = blendModeToCompositeOp(layer.blendMode);
 
+      // Apply layer transform if exists
+      const transform = layer.transform;
+      if (transform && (transform.x !== 0 || transform.y !== 0 || transform.rotation !== 0 ||
+          transform.scaleX !== 1 || transform.scaleY !== 1 || transform.width !== CANVAS_SIZE || transform.height !== CANVAS_SIZE)) {
+        // Calculate center for rotation
+        const cx = transform.x + transform.width / 2;
+        const cy = transform.y + transform.height / 2;
+
+        ctx.translate(cx, cy);
+        ctx.rotate((transform.rotation || 0) * Math.PI / 180);
+        ctx.scale(transform.scaleX || 1, transform.scaleY || 1);
+        ctx.translate(-transform.width / 2, -transform.height / 2);
+
+        // Draw transformed layer - use source canvas dimensions
+        const srcWidth = layerCanvas.width;
+        const srcHeight = layerCanvas.height;
+        ctx.drawImage(layerCanvas, 0, 0, srcWidth, srcHeight, 0, 0, transform.width, transform.height);
+        ctx.restore();
+        continue; // Skip the normal drawing below
+      }
+
       // Apply mask if exists
       if (layer.mask?.enabled && layer.mask.imageData) {
         // Check if mask image is cached
@@ -935,7 +1011,12 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
                 resolve();
                 return;
               }
-              ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+              // Resize layer canvas to match image size (important for transformed layers)
+              if (img.width !== layerCanvas.width || img.height !== layerCanvas.height) {
+                layerCanvas.width = img.width;
+                layerCanvas.height = img.height;
+              }
+              ctx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
               ctx.drawImage(img, 0, 0);
               layerImageDataRef.current.set(layer.id, layer.imageData!);
               loadedAny = true;
@@ -1022,7 +1103,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     return { x, y };
   }, [zoom, pan]);
 
-  // Draw brush stroke
+  // Draw brush stroke - GPU accelerated with cached textures
   const drawStroke = useCallback((
     ctx: CanvasRenderingContext2D,
     x1: number,
@@ -1032,7 +1113,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     pressure: number
   ) => {
     const brush = currentBrush;
-    const color = activeTool === 'eraser' ? 'rgba(0,0,0,0)' : primaryColor;
+    const color = activeTool === 'eraser' ? '#ffffff' : primaryColor;
 
     // Calculate actual size based on pressure
     const size = brush.pressureSize
@@ -1059,10 +1140,17 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
     ctx.globalAlpha = opacity * flow;
 
-    // Draw interpolated points
+    // Get cached brush texture (GPU optimization)
+    const brushTexture = getBrushTexture(size, brush.hardness, color);
+
+    // Calculate spacing - increase for larger brushes to reduce operations
     const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    const spacing = Math.max(1, (brush.spacing / 100) * size);
-    const steps = Math.ceil(distance / spacing);
+    const baseSpacing = Math.max(1, (brush.spacing / 100) * size);
+    // Adaptive spacing for performance - larger brushes need fewer samples
+    const spacing = size > 100 ? Math.max(baseSpacing, size * 0.15) : baseSpacing;
+    const steps = Math.max(1, Math.ceil(distance / spacing));
+
+    const halfSize = size / 2;
 
     for (let i = 0; i <= steps; i++) {
       const t = steps === 0 ? 0 : i / steps;
@@ -1072,31 +1160,15 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       // Apply scatter
       const scatterX = (Math.random() - 0.5) * 2 * brush.scatterX;
       const scatterY = (Math.random() - 0.5) * 2 * brush.scatterY;
-      const px = x + scatterX;
-      const py = y + scatterY;
+      const px = x + scatterX - halfSize;
+      const py = y + scatterY - halfSize;
 
-      // Draw brush tip
-      ctx.beginPath();
-
-      if (brush.hardness >= 99) {
-        // Hard edge brush
-        ctx.arc(px, py, size / 2, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-      } else {
-        // Soft edge brush with gradient
-        const gradient = ctx.createRadialGradient(px, py, 0, px, py, size / 2);
-        gradient.addColorStop(0, color);
-        gradient.addColorStop(brush.hardness / 100, color);
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.arc(px, py, size / 2, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.fill();
-      }
+      // Draw using cached texture (much faster than creating gradients)
+      ctx.drawImage(brushTexture, px, py, size, size);
     }
 
     ctx.restore();
-  }, [currentBrush, primaryColor, activeTool]);
+  }, [currentBrush, primaryColor, activeTool, getBrushTexture]);
 
   // Apply blur effect at a point
   const applyBlurAtPoint = useCallback((

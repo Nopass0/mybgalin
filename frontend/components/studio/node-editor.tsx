@@ -1228,9 +1228,14 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
    * @param type - Type of node to add
    */
   const addNode = (type: MaterialNodeType) => {
+    // Get container bounds to convert screen position to canvas position
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const containerX = rect ? nodePickerPosition.x - rect.left : nodePickerPosition.x;
+    const containerY = rect ? nodePickerPosition.y - rect.top : nodePickerPosition.y;
+
     const newNode = createNode(type, {
-      x: (nodePickerPosition.x - pan.x) / zoom,
-      y: (nodePickerPosition.y - pan.y) / zoom,
+      x: (containerX - pan.x) / zoom,
+      y: (containerY - pan.y) / zoom,
     });
     setNodes(prev => [...prev, newNode]);
     setShowNodePicker(false);
@@ -1320,11 +1325,10 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
    * @param e - Wheel event
    */
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom(prev => Math.max(0.25, Math.min(2, prev * delta)));
-    }
+    e.preventDefault();
+    // Zoom with mouse wheel (no modifier needed)
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(prev => Math.max(0.1, Math.min(3, prev * delta)));
   };
 
   // ==================== SAVE & EXPORT ====================
@@ -1829,16 +1833,23 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             })}
 
             {/* Active connection being drawn */}
-            {connecting && (
-              <path
-                d={`M ${getPortPosition(connecting.nodeId, connecting.portId, connecting.isOutput).x} ${getPortPosition(connecting.nodeId, connecting.portId, connecting.isOutput).y} L ${(lastMousePos.x - pan.x) / zoom} ${(lastMousePos.y - pan.y) / zoom}`}
-                fill="none"
-                stroke="#ff6600"
-                strokeWidth={2}
-                strokeDasharray="5,5"
-                opacity={0.6}
-              />
-            )}
+            {connecting && (() => {
+              const fromPos = getPortPosition(connecting.nodeId, connecting.portId, connecting.isOutput);
+              const toX = (lastMousePos.x - pan.x) / zoom;
+              const toY = (lastMousePos.y - pan.y) / zoom;
+              const midX = (fromPos.x + toX) / 2;
+
+              return (
+                <path
+                  d={`M ${fromPos.x} ${fromPos.y} C ${midX} ${fromPos.y}, ${midX} ${toY}, ${toX} ${toY}`}
+                  fill="none"
+                  stroke="#ff6600"
+                  strokeWidth={2}
+                  strokeDasharray="5,5"
+                  opacity={0.6}
+                />
+              );
+            })()}
           </svg>
 
           {/* Empty state placeholder */}

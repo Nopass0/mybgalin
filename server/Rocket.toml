@@ -1,0 +1,16 @@
+[default]
+# Allow large JSON requests for studio projects with embedded images
+limits = { json = "50MiB", data-form = "50MiB", file = "50MiB" }
+
+[default.tls]
+# TLS disabled by default, use reverse proxy for TLS
+
+[release]
+address = "0.0.0.0"
+port = 8000
+limits = { json = "50MiB", data-form = "50MiB", file = "50MiB" }
+
+[debug]
+address = "127.0.0.1"
+port = 8000
+limits = { json = "50MiB", data-form = "50MiB", file = "50MiB" }
