@@ -318,5 +318,63 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     .execute(&pool)
     .await?;
 
+    // CS2 Skin Studio tables
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS studio_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            steam_id TEXT UNIQUE NOT NULL,
+            persona_name TEXT NOT NULL,
+            avatar_url TEXT NOT NULL,
+            profile_url TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS studio_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES studio_users(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS studio_projects (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'sticker',
+            sticker_type TEXT NOT NULL DEFAULT 'paper',
+            thumbnail TEXT,
+            data TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES studio_users(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_studio_sessions_token ON studio_sessions(token)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_studio_projects_user ON studio_projects(user_id)")
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }
