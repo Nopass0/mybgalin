@@ -150,42 +150,43 @@ export default function StudioPage() {
           {/* Steam Login */}
           <motion.button
             onClick={login}
-            className="flex items-center gap-4 px-8 py-4 bg-gradient-to-r from-[#1b2838] to-[#171a21] hover:from-[#2a475e] hover:to-[#1b2838] rounded-xl transition-all shadow-lg shadow-black/30 border border-[#2a475e]/50 group"
-            whileHover={{ scale: 1.03, boxShadow: '0 8px 32px rgba(102, 192, 244, 0.15)' }}
+            className="relative flex items-center gap-5 px-10 py-5 bg-gradient-to-br from-[#171a21] via-[#1b2838] to-[#2a475e] rounded-2xl transition-all shadow-2xl shadow-black/50 border border-[#66c0f4]/30 group overflow-hidden"
+            whileHover={{ scale: 1.05, y: -2 }}
             whileTap={{ scale: 0.98 }}
           >
-            {/* Official Steam Logo SVG */}
-            <svg
-              className="w-8 h-8 group-hover:scale-110 transition-transform"
-              viewBox="0 0 256 259"
-              xmlns="http://www.w3.org/2000/svg"
-              preserveAspectRatio="xMidYMid"
-            >
-              <path
-                d="M127.779 0C60.42 0 5.24 52.412 0 119.014l68.724 28.674a35.821 35.821 0 0 1 20.426-6.366c.682 0 1.356.019 2.02.057l30.566-44.71v-.626c0-26.903 21.69-48.796 48.353-48.796 26.68 0 48.378 21.893 48.378 48.842 0 26.948-21.698 48.858-48.378 48.858l-.562-.005-43.813 31.56c0 .542.03 1.088.03 1.643 0 20.18-16.27 36.591-36.294 36.591-17.612 0-32.336-12.627-35.618-29.349L1.548 163.148C17.932 218.152 68.539 258.8 127.78 258.8c71.201 0 128.934-58.203 128.934-130.003C256.713 57.993 198.98 0 127.779 0"
-                fill="#ffffff"
-              />
-              <path
-                d="M80.392 214.272l-15.593-6.508c2.76 5.766 7.428 10.643 13.568 13.32 13.273 5.784 28.695-.27 34.408-13.508 2.765-6.407 2.778-13.478.038-19.903-2.74-6.426-7.906-11.388-14.554-13.988a26.783 26.783 0 0 0-14.06-1.47l16.116 6.728c9.79 4.153 14.428 15.426 10.348 25.178-4.084 9.748-15.256 14.476-25.056 10.344l-.215-.193zM202.305 144.054c0-17.917-14.449-32.48-32.263-32.48-17.814 0-32.273 14.563-32.273 32.48 0 17.918 14.459 32.482 32.273 32.482 17.814 0 32.263-14.564 32.263-32.482zm-56.407.042c0-13.454 10.788-24.364 24.101-24.364 13.313 0 24.106 10.91 24.106 24.364 0 13.45-10.793 24.362-24.106 24.362-13.313 0-24.101-10.912-24.101-24.362z"
-                fill="#ffffff"
-              />
-            </svg>
-            <div className="flex flex-col items-start">
-              <span className="text-white font-semibold text-lg">
+            {/* Animated background glow */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#66c0f4]/0 via-[#66c0f4]/10 to-[#66c0f4]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+
+            {/* Steam Logo from CDN */}
+            <img
+              src="https://community.cloudflare.steamstatic.com/public/shared/images/responsive/steam_logo.png"
+              alt="Steam"
+              className="w-10 h-10 object-contain group-hover:scale-110 transition-transform duration-300 drop-shadow-lg"
+            />
+
+            <div className="flex flex-col items-start z-10">
+              <span className="text-white font-bold text-xl tracking-wide">
                 Sign in with Steam
               </span>
-              <span className="text-[#66c0f4] text-xs">
-                Secure authentication
+              <span className="text-[#66c0f4]/80 text-sm font-medium">
+                Secure • Fast • Easy
               </span>
             </div>
-            <svg
-              className="w-5 h-5 text-[#66c0f4] ml-2 group-hover:translate-x-1 transition-transform"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+
+            {/* Arrow indicator */}
+            <div className="ml-auto pl-4 z-10">
+              <div className="w-10 h-10 rounded-full bg-[#66c0f4]/20 flex items-center justify-center group-hover:bg-[#66c0f4]/30 transition-colors">
+                <svg
+                  className="w-5 h-5 text-[#66c0f4] group-hover:translate-x-1 transition-transform"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
           </motion.button>
 
           {/* Back to site */}
