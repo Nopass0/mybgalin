@@ -70,6 +70,7 @@ export default function ProjectEditorPage() {
     layers,
     setLayers,
     addLayer,
+    activeLayerId,
     undo,
     redo,
     history,
@@ -201,9 +202,111 @@ export default function ProjectEditorPage() {
 
   // Handle applying mask to active layer
   const handleApplyMask = useCallback((mask: SmartMask) => {
-    // TODO: Apply smart mask to active layer
-    console.log('Applying mask:', mask);
-  }, []);
+    if (!activeLayerId) {
+      console.warn('No active layer to apply mask');
+      return;
+    }
+
+    const activeLayer = layers.find(l => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    // Generate mask image data based on mask type
+    const maskCanvas = document.createElement('canvas');
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const ctx = maskCanvas.getContext('2d')!;
+
+    // Create mask based on type
+    switch (mask.type) {
+      case 'corner-radius': {
+        const radius = mask.parameters.cornerRadius || 50;
+        const smooth = mask.parameters.cornerSmooth || 0;
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, width, height, radius + smooth);
+        ctx.fill();
+        break;
+      }
+      case 'vignette': {
+        const strength = mask.parameters.vignetteStrength || 0.5;
+        const vigRadius = mask.parameters.vignetteRadius || 0.7;
+        const softness = mask.parameters.vignetteSoftness || 0.3;
+        const cx = width / 2;
+        const cy = height / 2;
+        const maxRadius = Math.sqrt(cx * cx + cy * cy);
+        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxRadius * vigRadius);
+        gradient.addColorStop(0, 'white');
+        gradient.addColorStop(1 - softness, `rgba(255,255,255,${1 - strength})`);
+        gradient.addColorStop(1, 'black');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+      }
+      case 'border-gradient': {
+        const borderWidth = mask.parameters.borderWidth || 50;
+        const borderSoftness = mask.parameters.borderSoftness || 20;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(borderWidth, borderWidth, width - borderWidth * 2, height - borderWidth * 2);
+        // Feather edges
+        if (borderSoftness > 0) {
+          ctx.filter = `blur(${borderSoftness}px)`;
+          ctx.drawImage(maskCanvas, 0, 0);
+          ctx.filter = 'none';
+        }
+        break;
+      }
+      case 'linear-gradient': {
+        const angle = (mask.parameters.gradientAngle || 0) * Math.PI / 180;
+        const x1 = width / 2 - Math.cos(angle) * width;
+        const y1 = height / 2 - Math.sin(angle) * height;
+        const x2 = width / 2 + Math.cos(angle) * width;
+        const y2 = height / 2 + Math.sin(angle) * height;
+        const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+        gradient.addColorStop(0, 'black');
+        gradient.addColorStop(1, 'white');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+      }
+      case 'radial-gradient': {
+        const cx = width / 2;
+        const cy = height / 2;
+        const radius = Math.min(width, height) / 2;
+        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+        gradient.addColorStop(0, 'white');
+        gradient.addColorStop(1, 'black');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+      }
+      default:
+        // Default white mask (no masking)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    const maskImageData = maskCanvas.toDataURL('image/png');
+
+    // Update layer with mask
+    const updatedLayer = {
+      ...activeLayer,
+      mask: {
+        enabled: true,
+        linked: true,
+        imageData: maskImageData,
+        inverted: false,
+      },
+      smartMask: {
+        maskId: mask.id,
+        parameters: mask.parameters as Record<string, number | string | boolean>,
+      },
+    };
+
+    setLayers(layers.map(l => l.id === activeLayerId ? updatedLayer : l));
+    pushHistory(`Apply mask: ${mask.name}`);
+  }, [activeLayerId, layers, project, setLayers, pushHistory]);
 
   // Handle creating new mask
   const handleCreateMask = useCallback((mask: SmartMask) => {
@@ -212,16 +315,73 @@ export default function ProjectEditorPage() {
 
   // Handle applying generator to layer
   const handleApplyGeneratorToLayer = useCallback((imageData: ImageData) => {
-    // TODO: Apply generated texture to active layer
-    console.log('Applying generator:', imageData);
-  }, []);
+    if (!activeLayerId) {
+      console.warn('No active layer to apply generator');
+      return;
+    }
+
+    const activeLayer = layers.find(l => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    // Convert ImageData to canvas and then to data URL
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+    const ctx = tempCanvas.getContext('2d')!;
+    ctx.putImageData(imageData, 0, 0);
+
+    // Scale to layer size if needed
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+
+    if (imageData.width !== width || imageData.height !== height) {
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = width;
+      scaledCanvas.height = height;
+      const scaledCtx = scaledCanvas.getContext('2d')!;
+      scaledCtx.drawImage(tempCanvas, 0, 0, width, height);
+      const dataUrl = scaledCanvas.toDataURL('image/png');
+      setLayers(layers.map(l => l.id === activeLayerId ? { ...l, imageData: dataUrl } : l));
+    } else {
+      const dataUrl = tempCanvas.toDataURL('image/png');
+      setLayers(layers.map(l => l.id === activeLayerId ? { ...l, imageData: dataUrl } : l));
+    }
+
+    pushHistory('Apply generator');
+  }, [activeLayerId, layers, project, setLayers, pushHistory]);
 
   // Handle creating layer from generator
   const handleCreateLayerFromGenerator = useCallback((imageData: ImageData, name: string) => {
-    addLayer('raster', name);
-    // TODO: Set layer image data
+    // Convert ImageData to data URL
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+    const ctx = tempCanvas.getContext('2d')!;
+    ctx.putImageData(imageData, 0, 0);
+
+    // Scale to project size if needed
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+
+    let dataUrl: string;
+    if (imageData.width !== width || imageData.height !== height) {
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = width;
+      scaledCanvas.height = height;
+      const scaledCtx = scaledCanvas.getContext('2d')!;
+      scaledCtx.drawImage(tempCanvas, 0, 0, width, height);
+      dataUrl = scaledCanvas.toDataURL('image/png');
+    } else {
+      dataUrl = tempCanvas.toDataURL('image/png');
+    }
+
+    // Create new layer with generated content
+    const newLayer = addLayer('raster', name);
+    if (newLayer) {
+      setLayers(layers.map(l => l.id === newLayer.id ? { ...l, imageData: dataUrl } : l));
+    }
     pushHistory(`Generate ${name}`);
-  }, [addLayer, pushHistory]);
+  }, [addLayer, pushHistory, project, layers, setLayers]);
 
   // Capture current canvas as frame
   const captureCanvasFrame = useCallback((): string => {

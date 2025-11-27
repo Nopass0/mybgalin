@@ -30,6 +30,7 @@ import {
   Grid2x2,
   Wand2,
   Loader2,
+  Upload,
 } from 'lucide-react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import { Layer, BlendMode, LayerType } from '@/types/studio';
@@ -127,6 +128,98 @@ export function StudioLayersPanel() {
   // Get canvas dimensions with defaults
   const width = canvasWidth || 1024;
   const height = canvasHeight || 1024;
+
+  // Hidden file input ref for image import
+  const fileInputRef = useCallback((input: HTMLInputElement | null) => {
+    if (input) {
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          console.error('Invalid file type');
+          return;
+        }
+
+        setIsProcessing(true);
+        try {
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            const dataUrl = event.target?.result as string;
+            const img = new window.Image();
+            img.onload = () => {
+              // Scale image to fit canvas while preserving aspect ratio
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d')!;
+
+              // Calculate scaling to fit while preserving aspect ratio
+              const scale = Math.min(width / img.width, height / img.height);
+              const scaledWidth = img.width * scale;
+              const scaledHeight = img.height * scale;
+              const offsetX = (width - scaledWidth) / 2;
+              const offsetY = (height - scaledHeight) / 2;
+
+              // Clear with transparent background
+              ctx.clearRect(0, 0, width, height);
+              ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+
+              const scaledDataUrl = canvas.toDataURL('image/png');
+
+              // Create new layer with image
+              const layerName = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+              const newLayer = addLayer('raster', layerName);
+              if (newLayer) {
+                setLayers(layers.map(l => l.id === newLayer.id ? {
+                  ...l,
+                  imageData: scaledDataUrl,
+                  transform: {
+                    x: offsetX,
+                    y: offsetY,
+                    width: scaledWidth,
+                    height: scaledHeight,
+                    rotation: 0,
+                    scaleX: 1,
+                    scaleY: 1,
+                    skewX: 0,
+                    skewY: 0,
+                  }
+                } : l));
+              }
+              setIsProcessing(false);
+            };
+            img.onerror = () => {
+              console.error('Failed to load image');
+              setIsProcessing(false);
+            };
+            img.src = dataUrl;
+          };
+          reader.onerror = () => {
+            console.error('Failed to read file');
+            setIsProcessing(false);
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          console.error('Import failed:', err);
+          setIsProcessing(false);
+        }
+
+        // Reset input
+        (e.target as HTMLInputElement).value = '';
+      };
+    }
+  }, [width, height, addLayer, setLayers, layers]);
+
+  const handleImportClick = useCallback(() => {
+    // Create and trigger file input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    fileInputRef(input);
+    input.click();
+  }, [fileInputRef]);
 
   const handleReorder = (newOrder: Layer[]) => {
     setLayers(newOrder);
@@ -496,6 +589,15 @@ export function StudioLayersPanel() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="bg-[#1a1a1c] border-white/10">
+              <DropdownMenuItem
+                onClick={handleImportClick}
+                className="text-white hover:bg-white/10"
+                disabled={isProcessing}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Import Image...
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-white/10" />
               <DropdownMenuItem
                 onClick={() => addLayer('raster')}
                 className="text-white hover:bg-white/10"
