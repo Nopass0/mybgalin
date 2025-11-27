@@ -302,7 +302,8 @@ export default function StudioPage() {
             </motion.div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {projects.map((project, index) => (
+              {projects.filter(Boolean).map((project, index) => (
+                project && (
                 <motion.div
                   key={project.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -317,7 +318,7 @@ export default function StudioPage() {
                     {project.thumbnail ? (
                       <img
                         src={project.thumbnail}
-                        alt={project.name}
+                        alt={project.name || 'Project'}
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -330,15 +331,15 @@ export default function StudioPage() {
                   {/* Info */}
                   <div className="p-4">
                     <h3 className="text-white font-medium truncate">
-                      {project.name}
+                      {project.name || 'Untitled Project'}
                     </h3>
                     <div className="flex items-center gap-2 mt-2 text-xs text-white/40">
                       <span className="px-2 py-0.5 bg-white/10 rounded capitalize">
-                        {project.stickerType}
+                        {project.stickerType || 'sticker'}
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {new Date(project.updatedAt).toLocaleDateString()}
+                        {project.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : 'Unknown'}
                       </span>
                     </div>
                   </div>
@@ -354,6 +355,7 @@ export default function StudioPage() {
                     <Trash2 className="w-4 h-4 text-red-400" />
                   </button>
                 </motion.div>
+                )
               ))}
             </div>
           )}

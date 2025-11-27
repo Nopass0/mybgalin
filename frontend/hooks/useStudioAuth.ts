@@ -92,7 +92,11 @@ export const useStudioAuth = create<StudioAuthState>()(
 
           if (response.ok) {
             const data = await response.json();
-            set({ projects: data.projects || [] });
+            // Filter out any undefined/null projects and ensure each has required fields
+            const validProjects = (data.projects || []).filter(
+              (p: unknown) => p && typeof p === 'object' && 'id' in p
+            );
+            set({ projects: validProjects });
           }
         } catch (error) {
           console.error('Failed to load projects:', error);
