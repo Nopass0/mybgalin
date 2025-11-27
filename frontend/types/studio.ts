@@ -63,6 +63,8 @@ export interface Layer {
   textContent?: TextLayerContent;
   // Shape layer specific
   shapeContent?: ShapeLayerContent;
+  // Vector layer specific
+  vectorContent?: VectorLayerContent;
   // Smart fill
   smartFill?: SmartMaterialInstance;
   // Layer effects (drop shadow, glow, etc.)
@@ -187,6 +189,38 @@ export interface ShapeLayerContent {
 }
 
 export type ShapeType = 'rectangle' | 'ellipse' | 'polygon' | 'star' | 'line' | 'path' | 'custom';
+
+// ==================== VECTOR PATH SYSTEM ====================
+
+export interface VectorPoint {
+  x: number;
+  y: number;
+  // Control points for bezier curves (relative to point)
+  handleIn?: { x: number; y: number };
+  handleOut?: { x: number; y: number };
+  // Corner type affects handle behavior
+  cornerType?: 'smooth' | 'corner' | 'symmetric';
+}
+
+export interface VectorPath {
+  id: string;
+  points: VectorPoint[];
+  closed: boolean;
+  fill?: string;
+  stroke?: {
+    color: string;
+    width: number;
+    dashArray?: number[];
+    cap?: 'butt' | 'round' | 'square';
+    join?: 'miter' | 'round' | 'bevel';
+  };
+}
+
+export interface VectorLayerContent {
+  paths: VectorPath[];
+  activePath?: string;
+  selectedPoints?: { pathId: string; pointIndex: number }[];
+}
 
 // ==================== SMART MATERIALS (Node-Based) ====================
 
