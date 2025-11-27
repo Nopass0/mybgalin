@@ -64,6 +64,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { LayerEffectsPanel } from './layer-effects-panel';
+import { ColorAdjustmentsPanel } from './color-adjustments-panel';
 import { cn } from '@/lib/utils';
 
 const blendModes: { value: BlendMode; label: string }[] = [
@@ -123,6 +124,7 @@ export function StudioLayersPanel() {
   const [expandedLayers, setExpandedLayers] = useState<Set<string>>(new Set());
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showColorAdjustments, setShowColorAdjustments] = useState(false);
 
   const activeLayer = layers.find((l) => l.id === activeLayerId);
 
@@ -533,6 +535,12 @@ export function StudioLayersPanel() {
     }
   }, [layers, setLayers, setActiveLayer, isProcessing]);
 
+  // Handle color adjustment apply
+  const handleApplyColorAdjustment = useCallback((layerId: string, adjustedImageData: string) => {
+    updateLayer(layerId, { imageData: adjustedImageData });
+    setShowColorAdjustments(false);
+  }, [updateLayer]);
+
   // Convert to grayscale (for roughness/metalness)
   const handleConvertToGrayscale = useCallback(async (layerId: string, mapType: 'roughness' | 'metalness') => {
     const layer = layers.find(l => l.id === layerId);
@@ -716,6 +724,17 @@ export function StudioLayersPanel() {
           layer={activeLayer}
           onUpdateLayer={(updates) => updateLayer(activeLayer.id, updates)}
         />
+      )}
+
+      {/* Color Adjustments Panel (Modal) */}
+      {showColorAdjustments && activeLayer && activeLayer.imageData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <ColorAdjustmentsPanel
+            layer={activeLayer}
+            onApplyAdjustment={handleApplyColorAdjustment}
+            onClose={() => setShowColorAdjustments(false)}
+          />
+        </div>
       )}
 
       {/* Layers List */}
@@ -950,8 +969,18 @@ export function StudioLayersPanel() {
                             </DropdownMenuItem>
                           )}
                           {/* Generate maps options */}
-                          {layer.type === 'raster' && (
+                          {layer.type === 'raster' && layer.imageData && (
                             <>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setActiveLayer(layer.id);
+                                  setShowColorAdjustments(true);
+                                }}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <Sliders className="w-3 h-3 mr-2" />
+                                Color Adjustments...
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleGenerateNormalMap(layer.id)}
                                 className="text-white hover:bg-white/10 text-xs"
