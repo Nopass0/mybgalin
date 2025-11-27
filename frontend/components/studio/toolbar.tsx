@@ -17,6 +17,8 @@ import {
   Pipette,
   ZoomIn,
   Hand,
+  Spline,
+  Maximize2,
 } from 'lucide-react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import { ToolType } from '@/types/studio';
@@ -103,6 +105,16 @@ const tools: Tool[] = [
     icon: <Hand className="w-4 h-4" />,
     label: 'Hand Tool',
     shortcut: 'H',
+  },
+  {
+    id: 'warp',
+    icon: <Spline className="w-4 h-4" />,
+    label: 'Warp/Deform',
+    shortcut: 'W',
+    subTools: [
+      { id: 'warp', icon: <Spline className="w-4 h-4" />, label: 'Warp Tool' },
+      { id: 'perspective', icon: <Maximize2 className="w-4 h-4" />, label: 'Perspective Tool' },
+    ],
   },
 ];
 

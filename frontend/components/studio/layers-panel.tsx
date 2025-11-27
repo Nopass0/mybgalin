@@ -26,9 +26,22 @@ import {
   Unlink,
   FileText,
   Pentagon,
+  Merge,
+  Grid2x2,
+  Wand2,
+  Loader2,
+  Upload,
 } from 'lucide-react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import { Layer, BlendMode, LayerType } from '@/types/studio';
+import {
+  compositeLayers,
+  canvasToDataUrl,
+  rasterizeText,
+  rasterizeShape,
+  generateNormalMap,
+  convertToGrayscale,
+} from '@/lib/canvasUtils';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import {
@@ -50,6 +63,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { LayerEffectsPanel } from './layer-effects-panel';
+import { ColorAdjustmentsPanel } from './color-adjustments-panel';
 import { cn } from '@/lib/utils';
 
 const blendModes: { value: BlendMode; label: string }[] = [
@@ -102,12 +117,112 @@ export function StudioLayersPanel() {
     addLayerMask,
     removeLayerMask,
     updateLayer,
+    canvasWidth,
+    canvasHeight,
   } = useStudioEditor();
 
   const [expandedLayers, setExpandedLayers] = useState<Set<string>>(new Set());
   const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showColorAdjustments, setShowColorAdjustments] = useState(false);
 
   const activeLayer = layers.find((l) => l.id === activeLayerId);
+
+  // Get canvas dimensions with defaults
+  const width = canvasWidth || 1024;
+  const height = canvasHeight || 1024;
+
+  // Hidden file input ref for image import
+  const fileInputRef = useCallback((input: HTMLInputElement | null) => {
+    if (input) {
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          console.error('Invalid file type');
+          return;
+        }
+
+        setIsProcessing(true);
+        try {
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            const dataUrl = event.target?.result as string;
+            const img = new window.Image();
+            img.onload = () => {
+              // Scale image to fit canvas while preserving aspect ratio
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d')!;
+
+              // Calculate scaling to fit while preserving aspect ratio
+              const scale = Math.min(width / img.width, height / img.height);
+              const scaledWidth = img.width * scale;
+              const scaledHeight = img.height * scale;
+              const offsetX = (width - scaledWidth) / 2;
+              const offsetY = (height - scaledHeight) / 2;
+
+              // Clear with transparent background
+              ctx.clearRect(0, 0, width, height);
+              ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+
+              const scaledDataUrl = canvas.toDataURL('image/png');
+
+              // Create new layer with image
+              const layerName = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+              const newLayer = addLayer('raster', layerName);
+              if (newLayer) {
+                setLayers(layers.map(l => l.id === newLayer.id ? {
+                  ...l,
+                  imageData: scaledDataUrl,
+                  transform: {
+                    x: offsetX,
+                    y: offsetY,
+                    width: scaledWidth,
+                    height: scaledHeight,
+                    rotation: 0,
+                    scaleX: 1,
+                    scaleY: 1,
+                    skewX: 0,
+                    skewY: 0,
+                  }
+                } : l));
+              }
+              setIsProcessing(false);
+            };
+            img.onerror = () => {
+              console.error('Failed to load image');
+              setIsProcessing(false);
+            };
+            img.src = dataUrl;
+          };
+          reader.onerror = () => {
+            console.error('Failed to read file');
+            setIsProcessing(false);
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          console.error('Import failed:', err);
+          setIsProcessing(false);
+        }
+
+        // Reset input
+        (e.target as HTMLInputElement).value = '';
+      };
+    }
+  }, [width, height, addLayer, setLayers, layers]);
+
+  const handleImportClick = useCallback(() => {
+    // Create and trigger file input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    fileInputRef(input);
+    input.click();
+  }, [fileInputRef]);
 
   const handleReorder = (newOrder: Layer[]) => {
     setLayers(newOrder);
@@ -229,6 +344,244 @@ export function StudioLayersPanel() {
     });
   }, [layers, updateLayer]);
 
+  // Merge layer down (merge with layer below)
+  const mergeLayerDown = useCallback(async (layerId: string) => {
+    const layerIndex = layers.findIndex(l => l.id === layerId);
+    if (layerIndex === -1 || layerIndex >= layers.length - 1) return;
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      const currentLayer = layers[layerIndex];
+      const belowLayer = layers[layerIndex + 1];
+
+      // Composite the two layers together
+      const canvas = await compositeLayers([currentLayer, belowLayer], width, height);
+      const mergedImageData = canvasToDataUrl(canvas);
+
+      // Create merged layer
+      const mergedLayer: Layer = {
+        id: `merged-${Date.now()}`,
+        name: `${currentLayer.name} + ${belowLayer.name}`,
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: mergedImageData,
+      };
+
+      // Remove both layers and add merged
+      const newLayers = layers.filter((_, i) => i !== layerIndex && i !== layerIndex + 1);
+      newLayers.splice(layerIndex, 0, mergedLayer);
+
+      setLayers(newLayers);
+      setActiveLayer(mergedLayer.id);
+    } catch (error) {
+      console.error('Failed to merge layers:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, width, height, isProcessing]);
+
+  // Merge all visible layers
+  const mergeVisibleLayers = useCallback(async () => {
+    const visibleLayers = layers.filter(l => l.visible);
+    if (visibleLayers.length < 2) return;
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      // Composite all visible layers
+      const canvas = await compositeLayers(visibleLayers, width, height);
+      const mergedImageData = canvasToDataUrl(canvas);
+
+      // Create merged layer
+      const mergedLayer: Layer = {
+        id: `merged-${Date.now()}`,
+        name: 'Merged Visible',
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: mergedImageData,
+      };
+
+      // Keep hidden layers, add merged layer at top
+      const hiddenLayers = layers.filter(l => !l.visible);
+      const newLayers = [mergedLayer, ...hiddenLayers];
+
+      setLayers(newLayers);
+      setActiveLayer(mergedLayer.id);
+    } catch (error) {
+      console.error('Failed to merge visible layers:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, width, height, isProcessing]);
+
+  // Flatten all layers
+  const flattenLayers = useCallback(async () => {
+    if (layers.length < 2) return;
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      // Composite all layers with white background
+      const canvas = await compositeLayers(layers, width, height, '#ffffff');
+      const flattenedImageData = canvasToDataUrl(canvas);
+
+      const flattenedLayer: Layer = {
+        id: `flattened-${Date.now()}`,
+        name: 'Flattened',
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: flattenedImageData,
+      };
+
+      setLayers([flattenedLayer]);
+      setActiveLayer(flattenedLayer.id);
+    } catch (error) {
+      console.error('Failed to flatten layers:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, width, height, isProcessing]);
+
+  // Rasterize layer (convert vector/text/shape to raster)
+  const rasterizeLayer = useCallback(async (layerId: string) => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || layer.type === 'raster') return;
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      let imageData: string | undefined;
+
+      // Render based on layer type
+      if (layer.type === 'text' && layer.textContent) {
+        imageData = await rasterizeText(layer.textContent, width, height);
+      } else if (layer.type === 'shape' && layer.shapeContent) {
+        imageData = rasterizeShape(layer.shapeContent, width, height);
+      } else if (layer.imageData) {
+        // Already has image data, just use it
+        imageData = layer.imageData;
+      }
+
+      // Convert to raster layer
+      updateLayer(layerId, {
+        type: 'raster',
+        name: `${layer.name} (Rasterized)`,
+        imageData,
+        // Clear non-raster content
+        textContent: undefined,
+        shapeContent: undefined,
+      });
+    } catch (error) {
+      console.error('Failed to rasterize layer:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, updateLayer, width, height, isProcessing]);
+
+  // Generate normal map from layer
+  const handleGenerateNormalMap = useCallback(async (layerId: string) => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || !layer.imageData) return;
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      // Generate normal map from the layer's image
+      const normalMapImageData = await generateNormalMap(layer.imageData, {
+        strength: 2,
+        blurRadius: 1,
+        invert: false,
+        detailScale: 1,
+        method: 'sobel',
+      });
+
+      const normalMapLayer: Layer = {
+        id: `normal-${Date.now()}`,
+        name: `${layer.name} Normal`,
+        type: 'normal',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: normalMapImageData,
+      };
+
+      // Insert after the source layer
+      const layerIndex = layers.findIndex(l => l.id === layerId);
+      const newLayers = [...layers];
+      newLayers.splice(layerIndex, 0, normalMapLayer);
+
+      setLayers(newLayers);
+      setActiveLayer(normalMapLayer.id);
+    } catch (error) {
+      console.error('Failed to generate normal map:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, isProcessing]);
+
+  // Handle color adjustment apply
+  const handleApplyColorAdjustment = useCallback((layerId: string, adjustedImageData: string) => {
+    updateLayer(layerId, { imageData: adjustedImageData });
+    setShowColorAdjustments(false);
+  }, [updateLayer]);
+
+  // Convert to grayscale (for roughness/metalness)
+  const handleConvertToGrayscale = useCallback(async (layerId: string, mapType: 'roughness' | 'metalness') => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || !layer.imageData) return;
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+
+    try {
+      // Convert to grayscale
+      const grayscaleImageData = await convertToGrayscale(
+        layer.imageData,
+        false, // don't invert
+        1,     // contrast
+        0      // brightness
+      );
+
+      const newLayer: Layer = {
+        id: `${mapType}-${Date.now()}`,
+        name: `${layer.name} ${mapType.charAt(0).toUpperCase() + mapType.slice(1)}`,
+        type: mapType,
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        imageData: grayscaleImageData,
+      };
+
+      const layerIndex = layers.findIndex(l => l.id === layerId);
+      const newLayers = [...layers];
+      newLayers.splice(layerIndex, 0, newLayer);
+
+      setLayers(newLayers);
+      setActiveLayer(newLayer.id);
+    } catch (error) {
+      console.error('Failed to convert to grayscale:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [layers, setLayers, setActiveLayer, isProcessing]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 border-t border-white/10">
       {/* Header */}
@@ -245,6 +598,15 @@ export function StudioLayersPanel() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="bg-[#1a1a1c] border-white/10">
+              <DropdownMenuItem
+                onClick={handleImportClick}
+                className="text-white hover:bg-white/10"
+                disabled={isProcessing}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Import Image...
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-white/10" />
               <DropdownMenuItem
                 onClick={() => addLayer('raster')}
                 className="text-white hover:bg-white/10"
@@ -295,6 +657,23 @@ export function StudioLayersPanel() {
                 <CircleDot className="w-4 h-4 mr-2" />
                 Roughness Layer
               </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuItem
+                onClick={mergeVisibleLayers}
+                className="text-white hover:bg-white/10"
+                disabled={layers.filter(l => l.visible).length < 2}
+              >
+                <Merge className="w-4 h-4 mr-2" />
+                Merge Visible
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={flattenLayers}
+                className="text-white hover:bg-white/10"
+                disabled={layers.length < 2}
+              >
+                <Layers className="w-4 h-4 mr-2" />
+                Flatten Image
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -336,6 +715,25 @@ export function StudioLayersPanel() {
               {activeLayer.opacity}%
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Layer Effects */}
+      {activeLayer && (
+        <LayerEffectsPanel
+          layer={activeLayer}
+          onUpdateLayer={(updates) => updateLayer(activeLayer.id, updates)}
+        />
+      )}
+
+      {/* Color Adjustments Panel (Modal) */}
+      {showColorAdjustments && activeLayer && activeLayer.imageData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <ColorAdjustmentsPanel
+            layer={activeLayer}
+            onApplyAdjustment={handleApplyColorAdjustment}
+            onClose={() => setShowColorAdjustments(false)}
+          />
         </div>
       )}
 
@@ -430,9 +828,22 @@ export function StudioLayersPanel() {
                             src={layer.imageData}
                             alt={layer.name}
                             className="w-full h-full object-cover"
+                            style={{ imageRendering: 'auto' }}
                           />
                         ) : layer.type === 'group' ? (
-                          <FolderClosed className="w-3 h-3 text-white/30" />
+                          layer.isExpanded ? (
+                            <FolderOpen className="w-3 h-3 text-white/30" />
+                          ) : (
+                            <FolderClosed className="w-3 h-3 text-white/30" />
+                          )
+                        ) : layer.type === 'text' ? (
+                          <Type className="w-3 h-3 text-white/30" />
+                        ) : layer.type === 'shape' ? (
+                          <Pentagon className="w-3 h-3 text-white/30" />
+                        ) : layer.type === 'adjustment' ? (
+                          <Sliders className="w-3 h-3 text-white/30" />
+                        ) : layer.smartFill ? (
+                          <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 opacity-50" />
                         ) : (
                           <span className="text-white/20 text-[7px]">Empty</span>
                         )}
@@ -547,6 +958,62 @@ export function StudioLayersPanel() {
                                 className="text-white hover:bg-white/10 text-xs"
                               >
                                 Remove Mask
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          <DropdownMenuSeparator className="bg-white/10" />
+                          {/* Merge options */}
+                          <DropdownMenuItem
+                            onClick={() => mergeLayerDown(layer.id)}
+                            className="text-white hover:bg-white/10 text-xs"
+                            disabled={layers.indexOf(layer) >= layers.length - 1}
+                          >
+                            <Merge className="w-3 h-3 mr-2" />
+                            Merge Down
+                          </DropdownMenuItem>
+                          {/* Rasterize option for non-raster layers */}
+                          {(layer.type === 'text' || layer.type === 'shape' || layer.type === 'vector') && (
+                            <DropdownMenuItem
+                              onClick={() => rasterizeLayer(layer.id)}
+                              className="text-white hover:bg-white/10 text-xs"
+                            >
+                              <Grid2x2 className="w-3 h-3 mr-2" />
+                              Rasterize Layer
+                            </DropdownMenuItem>
+                          )}
+                          {/* Generate maps options */}
+                          {layer.type === 'raster' && layer.imageData && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setActiveLayer(layer.id);
+                                  setShowColorAdjustments(true);
+                                }}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <Sliders className="w-3 h-3 mr-2" />
+                                Color Adjustments...
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleGenerateNormalMap(layer.id)}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <Wand2 className="w-3 h-3 mr-2" />
+                                Generate Normal Map
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleConvertToGrayscale(layer.id, 'roughness')}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <CircleDot className="w-3 h-3 mr-2" />
+                                To Roughness Map
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleConvertToGrayscale(layer.id, 'metalness')}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <Sparkles className="w-3 h-3 mr-2" />
+                                To Metalness Map
                               </DropdownMenuItem>
                             </>
                           )}

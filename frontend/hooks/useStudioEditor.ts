@@ -8,7 +8,11 @@ import type {
   StudioProject,
   HistoryState,
   Gradient,
+  SmartMaterial,
+  SmartMask,
+  EnvironmentSettings,
 } from '@/types/studio';
+import { DEFAULT_ENVIRONMENT, DEFAULT_SMART_MASKS } from '@/types/studio';
 
 // Simple UUID generator since we may not have uuid package
 const generateId = () => {
@@ -102,6 +106,28 @@ interface EditorState {
   setNormalMapMode: (enabled: boolean) => void;
   normalMapStrength: number;
   setNormalMapStrength: (strength: number) => void;
+
+  // Canvas dimensions (computed from project)
+  canvasWidth: number;
+  canvasHeight: number;
+
+  // Smart Materials
+  smartMaterials: SmartMaterial[];
+  activeMaterialId: string | null;
+  setSmartMaterials: (materials: SmartMaterial[]) => void;
+  addMaterial: () => SmartMaterial;
+  updateMaterial: (material: SmartMaterial) => void;
+  deleteMaterial: (id: string) => void;
+  duplicateMaterial: (id: string) => void;
+  setActiveMaterialId: (id: string | null) => void;
+
+  // Smart Masks
+  smartMasks: SmartMask[];
+  setSmartMasks: (masks: SmartMask[]) => void;
+
+  // Environment
+  environmentSettings: EnvironmentSettings;
+  setEnvironmentSettings: (settings: EnvironmentSettings) => void;
 }
 
 const defaultBrush: CustomBrush = {
@@ -141,6 +167,212 @@ const defaultSoftBrush: CustomBrush = {
   tiltAngle: false,
   shape: 'round',
 };
+
+// Additional brush presets for CS2 skin creation
+const inkBrush: CustomBrush = {
+  id: 'ink',
+  name: 'Ink',
+  size: 8,
+  hardness: 100,
+  opacity: 100,
+  flow: 100,
+  spacing: 3,
+  angle: 0,
+  roundness: 100,
+  scatterX: 0,
+  scatterY: 0,
+  pressureSize: true,
+  pressureOpacity: false,
+  pressureFlow: false,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const sprayBrush: CustomBrush = {
+  id: 'spray',
+  name: 'Spray',
+  size: 80,
+  hardness: 20,
+  opacity: 15,
+  flow: 30,
+  spacing: 2,
+  angle: 0,
+  roundness: 100,
+  scatterX: 40,
+  scatterY: 40,
+  pressureSize: false,
+  pressureOpacity: true,
+  pressureFlow: true,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const chalkBrush: CustomBrush = {
+  id: 'chalk',
+  name: 'Chalk',
+  size: 30,
+  hardness: 85,
+  opacity: 80,
+  flow: 60,
+  spacing: 8,
+  angle: 45,
+  roundness: 60,
+  scatterX: 5,
+  scatterY: 5,
+  pressureSize: true,
+  pressureOpacity: true,
+  pressureFlow: true,
+  tiltAngle: true,
+  shape: 'round',
+};
+
+const markerBrush: CustomBrush = {
+  id: 'marker',
+  name: 'Marker',
+  size: 25,
+  hardness: 95,
+  opacity: 90,
+  flow: 100,
+  spacing: 5,
+  angle: 0,
+  roundness: 50,
+  scatterX: 0,
+  scatterY: 0,
+  pressureSize: false,
+  pressureOpacity: false,
+  pressureFlow: false,
+  tiltAngle: true,
+  shape: 'round',
+};
+
+const grungeBrush: CustomBrush = {
+  id: 'grunge',
+  name: 'Grunge',
+  size: 60,
+  hardness: 70,
+  opacity: 60,
+  flow: 40,
+  spacing: 15,
+  angle: 0,
+  roundness: 80,
+  scatterX: 20,
+  scatterY: 20,
+  pressureSize: true,
+  pressureOpacity: true,
+  pressureFlow: true,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const airbrushPreset: CustomBrush = {
+  id: 'airbrush',
+  name: 'Airbrush',
+  size: 100,
+  hardness: 0,
+  opacity: 20,
+  flow: 15,
+  spacing: 3,
+  angle: 0,
+  roundness: 100,
+  scatterX: 0,
+  scatterY: 0,
+  pressureSize: true,
+  pressureOpacity: true,
+  pressureFlow: true,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const pencilBrush: CustomBrush = {
+  id: 'pencil',
+  name: 'Pencil',
+  size: 3,
+  hardness: 100,
+  opacity: 100,
+  flow: 100,
+  spacing: 5,
+  angle: 0,
+  roundness: 100,
+  scatterX: 1,
+  scatterY: 1,
+  pressureSize: true,
+  pressureOpacity: true,
+  pressureFlow: false,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const splatterBrush: CustomBrush = {
+  id: 'splatter',
+  name: 'Splatter',
+  size: 40,
+  hardness: 100,
+  opacity: 80,
+  flow: 100,
+  spacing: 50,
+  angle: 0,
+  roundness: 100,
+  scatterX: 60,
+  scatterY: 60,
+  pressureSize: true,
+  pressureOpacity: false,
+  pressureFlow: false,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const wearBrush: CustomBrush = {
+  id: 'wear',
+  name: 'Wear & Tear',
+  size: 50,
+  hardness: 40,
+  opacity: 30,
+  flow: 20,
+  spacing: 25,
+  angle: 0,
+  roundness: 70,
+  scatterX: 30,
+  scatterY: 30,
+  pressureSize: true,
+  pressureOpacity: true,
+  pressureFlow: true,
+  tiltAngle: false,
+  shape: 'round',
+};
+
+const scratchBrush: CustomBrush = {
+  id: 'scratch',
+  name: 'Scratches',
+  size: 2,
+  hardness: 100,
+  opacity: 60,
+  flow: 100,
+  spacing: 3,
+  angle: 45,
+  roundness: 10,
+  scatterX: 2,
+  scatterY: 2,
+  pressureSize: true,
+  pressureOpacity: true,
+  pressureFlow: false,
+  tiltAngle: true,
+  shape: 'round',
+};
+
+const defaultBrushes: CustomBrush[] = [
+  defaultBrush,
+  defaultSoftBrush,
+  inkBrush,
+  pencilBrush,
+  markerBrush,
+  airbrushPreset,
+  sprayBrush,
+  chalkBrush,
+  grungeBrush,
+  splatterBrush,
+  wearBrush,
+  scratchBrush,
+];
 
 const defaultGradient: Gradient = {
   type: 'linear',
@@ -318,7 +550,7 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
 
   // Brush
   currentBrush: defaultBrush,
-  brushes: [defaultBrush, defaultSoftBrush],
+  brushes: defaultBrushes,
   setCurrentBrush: (brush) => set({ currentBrush: brush }),
   updateBrush: (updates) => {
     const { currentBrush } = get();
@@ -460,4 +692,74 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
   setNormalMapMode: (normalMapMode) => set({ normalMapMode }),
   normalMapStrength: 1,
   setNormalMapStrength: (normalMapStrength) => set({ normalMapStrength }),
+
+  // Canvas dimensions (computed from project)
+  get canvasWidth() {
+    const project = get().project;
+    return project?.data?.width || 1024;
+  },
+  get canvasHeight() {
+    const project = get().project;
+    return project?.data?.height || 1024;
+  },
+
+  // Smart Materials
+  smartMaterials: [],
+  activeMaterialId: null,
+  setSmartMaterials: (smartMaterials) => set({ smartMaterials }),
+  addMaterial: () => {
+    const { smartMaterials } = get();
+    const newMaterial: SmartMaterial = {
+      id: generateId(),
+      name: `Material ${smartMaterials.length + 1}`,
+      category: 'custom',
+      nodes: [],
+      connections: [],
+      outputNodeId: '',
+    };
+    set({ smartMaterials: [...smartMaterials, newMaterial], activeMaterialId: newMaterial.id });
+    return newMaterial;
+  },
+  updateMaterial: (material) => {
+    const { smartMaterials } = get();
+    set({
+      smartMaterials: smartMaterials.map((m) =>
+        m.id === material.id ? material : m
+      ),
+    });
+  },
+  deleteMaterial: (id) => {
+    const { smartMaterials, activeMaterialId } = get();
+    set({
+      smartMaterials: smartMaterials.filter((m) => m.id !== id),
+      activeMaterialId: activeMaterialId === id ? null : activeMaterialId,
+    });
+  },
+  duplicateMaterial: (id) => {
+    const { smartMaterials } = get();
+    const material = smartMaterials.find((m) => m.id === id);
+    if (!material) return;
+
+    const duplicate: SmartMaterial = {
+      ...material,
+      id: generateId(),
+      name: `${material.name} copy`,
+      nodes: JSON.parse(JSON.stringify(material.nodes)),
+      connections: JSON.parse(JSON.stringify(material.connections)),
+    };
+
+    set({
+      smartMaterials: [...smartMaterials, duplicate],
+      activeMaterialId: duplicate.id,
+    });
+  },
+  setActiveMaterialId: (activeMaterialId) => set({ activeMaterialId }),
+
+  // Smart Masks
+  smartMasks: DEFAULT_SMART_MASKS,
+  setSmartMasks: (smartMasks) => set({ smartMasks }),
+
+  // Environment
+  environmentSettings: DEFAULT_ENVIRONMENT,
+  setEnvironmentSettings: (environmentSettings) => set({ environmentSettings }),
 }));

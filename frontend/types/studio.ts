@@ -64,6 +64,8 @@ export interface Layer {
   shapeContent?: ShapeLayerContent;
   // Smart fill
   smartFill?: SmartMaterialInstance;
+  // Layer effects (drop shadow, glow, etc.)
+  effects?: LayerEffect[];
 }
 
 export type LayerType =
@@ -577,7 +579,9 @@ export type ToolType =
   | 'sharpen'
   | 'dodge'
   | 'burn'
-  | 'sponge';
+  | 'sponge'
+  | 'warp'
+  | 'perspective';
 
 // ==================== BRUSH ====================
 

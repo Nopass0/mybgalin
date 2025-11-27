@@ -26,10 +26,13 @@ import {
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
+import { useHotkeys, useSpaceBarPan } from '@/hooks/useHotkeys';
+import { useAutoSave, useLocalBackup } from '@/hooks/useAutoSave';
 import { StudioToolbar } from '@/components/studio/toolbar';
 import { StudioLayersPanel } from '@/components/studio/layers-panel';
 import { StudioColorPicker } from '@/components/studio/color-picker';
 import { StudioBrushSettings } from '@/components/studio/brush-settings';
+import { ShapeToolPanel } from '@/components/studio/shape-tool-panel';
 import { StudioCanvas } from '@/components/studio/canvas';
 import { StudioMapTabs } from '@/components/studio/map-tabs';
 import { TextToolPanel } from '@/components/studio/text-tool-panel';
@@ -37,7 +40,9 @@ import { SmartMasksPanel } from '@/components/studio/smart-masks-panel';
 import { EnvironmentPanel } from '@/components/studio/environment-panel';
 import { GeneratorsPanel } from '@/components/studio/generators-panel';
 import { NodeEditor } from '@/components/studio/node-editor';
+import { MaterialsPanel } from '@/components/studio/materials-panel';
 import { LenticularEditor } from '@/components/studio/lenticular-editor';
+import { ExportDialog } from '@/components/studio/export-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -65,12 +70,46 @@ export default function ProjectEditorPage() {
     layers,
     setLayers,
     addLayer,
+    activeLayerId,
     undo,
     redo,
     history,
     historyIndex,
     pushHistory,
+    // Smart materials from store (for auto-save)
+    smartMaterials,
+    setSmartMaterials,
+    activeMaterialId,
+    setActiveMaterialId,
+    addMaterial,
+    updateMaterial,
+    deleteMaterial: deleteMaterialStore,
+    duplicateMaterial: duplicateMaterialStore,
+    // Smart masks from store
+    smartMasks,
+    setSmartMasks,
+    // Environment from store
+    environmentSettings,
+    setEnvironmentSettings,
   } = useStudioEditor();
+
+  // Initialize hotkeys for Photoshop-like shortcuts
+  useHotkeys();
+
+  // Space bar for temporary hand tool
+  const isSpacePanning = useSpaceBarPan();
+
+  // Auto-save functionality
+  const {
+    lastSaved,
+    isSaving: isAutoSaving,
+    hasUnsavedChanges,
+    saveError,
+    save: autoSave
+  } = useAutoSave(projectId);
+
+  // Local backup
+  const { loadFromLocal, clearLocal } = useLocalBackup(projectId);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,11 +119,9 @@ export default function ProjectEditorPage() {
   // Panel states
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('default');
   const [showNodeEditor, setShowNodeEditor] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
 
-  // Smart features state
-  const [smartMasks, setSmartMasks] = useState<SmartMask[]>(DEFAULT_SMART_MASKS);
-  const [smartMaterials, setSmartMaterials] = useState<SmartMaterial[]>([]);
-  const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>(DEFAULT_ENVIRONMENT);
+  // Lenticular state (local - not yet in store)
   const [lenticularFrames, setLenticularFrames] = useState<LenticularFrame[]>([]);
   const [lenticularSettings, setLenticularSettings] = useState<LenticularSettings>({
     frameCount: 8,
@@ -109,96 +146,317 @@ export default function ProjectEditorPage() {
         } else {
           setLayers(foundProject.data.layers);
         }
+
+        // Load materials from project data
+        if (foundProject.data?.materials) {
+          setSmartMaterials(foundProject.data.materials);
+        }
+
+        // Load smart masks from project data
+        if (foundProject.data?.smartMasks) {
+          setSmartMasks(foundProject.data.smartMasks);
+        }
+
+        // Load environment settings from project data
+        if (foundProject.data?.environment) {
+          setEnvironmentSettings(foundProject.data.environment);
+        }
       }
       setIsLoading(false);
     } else if (!authLoading && !isAuthenticated) {
       router.push('/studio');
     }
-  }, [authLoading, isAuthenticated, projects, projectId]);
+  }, [authLoading, isAuthenticated, projects, projectId, setSmartMaterials, setSmartMasks, setEnvironmentSettings]);
 
-  // Keyboard shortcuts
+  // Manual save handler
+  const handleSave = useCallback(async () => {
+    if (!project) return;
+    setIsSaving(true);
+    try {
+      await autoSave();
+    } finally {
+      setIsSaving(false);
+    }
+  }, [project, autoSave]);
+
+  const handleExport = useCallback(() => {
+    setShowExportDialog(true);
+  }, []);
+
+  // Ctrl+S save / Ctrl+E export shortcuts (separate from useHotkeys to access handlers)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + Z = Undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      }
-      // Ctrl/Cmd + Shift + Z = Redo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
-        e.preventDefault();
-        redo();
-      }
-      // Ctrl/Cmd + S = Save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
       }
-      // + = Zoom In
-      if (e.key === '=' || e.key === '+') {
-        setZoom(zoom * 1.2);
-      }
-      // - = Zoom Out
-      if (e.key === '-') {
-        setZoom(zoom / 1.2);
-      }
-      // 0 = Reset Zoom
-      if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
         e.preventDefault();
-        setZoom(1);
+        handleExport();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [zoom, undo, redo]);
-
-  const handleSave = async () => {
-    if (!project) return;
-    setIsSaving(true);
-    // TODO: Implement save via API
-    setTimeout(() => setIsSaving(false), 1000);
-  };
-
-  const handleExport = async () => {
-    // TODO: Implement export
-  };
+  }, [handleSave, handleExport]);
 
   // Handle applying mask to active layer
   const handleApplyMask = useCallback((mask: SmartMask) => {
-    // TODO: Apply smart mask to active layer
-    console.log('Applying mask:', mask);
-  }, []);
+    if (!activeLayerId) {
+      console.warn('No active layer to apply mask');
+      return;
+    }
+
+    const activeLayer = layers.find(l => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    // Generate mask image data based on mask type
+    const maskCanvas = document.createElement('canvas');
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const ctx = maskCanvas.getContext('2d')!;
+
+    // Create mask based on type
+    switch (mask.type) {
+      case 'corner-radius': {
+        const radius = mask.parameters.cornerRadius || 50;
+        const smooth = mask.parameters.cornerSmooth || 0;
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, width, height, radius + smooth);
+        ctx.fill();
+        break;
+      }
+      case 'vignette': {
+        const strength = mask.parameters.vignetteStrength || 0.5;
+        const vigRadius = mask.parameters.vignetteRadius || 0.7;
+        const softness = mask.parameters.vignetteSoftness || 0.3;
+        const cx = width / 2;
+        const cy = height / 2;
+        const maxRadius = Math.sqrt(cx * cx + cy * cy);
+        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxRadius * vigRadius);
+        gradient.addColorStop(0, 'white');
+        gradient.addColorStop(1 - softness, `rgba(255,255,255,${1 - strength})`);
+        gradient.addColorStop(1, 'black');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+      }
+      case 'border-gradient': {
+        const borderWidth = mask.parameters.borderWidth || 50;
+        const borderSoftness = mask.parameters.borderSoftness || 20;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(borderWidth, borderWidth, width - borderWidth * 2, height - borderWidth * 2);
+        // Feather edges
+        if (borderSoftness > 0) {
+          ctx.filter = `blur(${borderSoftness}px)`;
+          ctx.drawImage(maskCanvas, 0, 0);
+          ctx.filter = 'none';
+        }
+        break;
+      }
+      case 'linear-gradient': {
+        const angle = (mask.parameters.gradientAngle || 0) * Math.PI / 180;
+        const x1 = width / 2 - Math.cos(angle) * width;
+        const y1 = height / 2 - Math.sin(angle) * height;
+        const x2 = width / 2 + Math.cos(angle) * width;
+        const y2 = height / 2 + Math.sin(angle) * height;
+        const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+        gradient.addColorStop(0, 'black');
+        gradient.addColorStop(1, 'white');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+      }
+      case 'radial-gradient': {
+        const cx = width / 2;
+        const cy = height / 2;
+        const radius = Math.min(width, height) / 2;
+        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+        gradient.addColorStop(0, 'white');
+        gradient.addColorStop(1, 'black');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        break;
+      }
+      default:
+        // Default white mask (no masking)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    const maskImageData = maskCanvas.toDataURL('image/png');
+
+    // Update layer with mask
+    const updatedLayer = {
+      ...activeLayer,
+      mask: {
+        enabled: true,
+        linked: true,
+        imageData: maskImageData,
+        inverted: false,
+      },
+      smartMask: {
+        maskId: mask.id,
+        parameters: mask.parameters as Record<string, number | string | boolean>,
+      },
+    };
+
+    setLayers(layers.map(l => l.id === activeLayerId ? updatedLayer : l));
+    pushHistory(`Apply mask: ${mask.name}`);
+  }, [activeLayerId, layers, project, setLayers, pushHistory]);
 
   // Handle creating new mask
   const handleCreateMask = useCallback((mask: SmartMask) => {
-    setSmartMasks((prev) => [...prev, mask]);
-  }, []);
+    setSmartMasks([...smartMasks, mask]);
+  }, [smartMasks, setSmartMasks]);
 
   // Handle applying generator to layer
   const handleApplyGeneratorToLayer = useCallback((imageData: ImageData) => {
-    // TODO: Apply generated texture to active layer
-    console.log('Applying generator:', imageData);
-  }, []);
+    if (!activeLayerId) {
+      console.warn('No active layer to apply generator');
+      return;
+    }
+
+    const activeLayer = layers.find(l => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    // Convert ImageData to canvas and then to data URL
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+    const ctx = tempCanvas.getContext('2d')!;
+    ctx.putImageData(imageData, 0, 0);
+
+    // Scale to layer size if needed
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+
+    if (imageData.width !== width || imageData.height !== height) {
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = width;
+      scaledCanvas.height = height;
+      const scaledCtx = scaledCanvas.getContext('2d')!;
+      scaledCtx.drawImage(tempCanvas, 0, 0, width, height);
+      const dataUrl = scaledCanvas.toDataURL('image/png');
+      setLayers(layers.map(l => l.id === activeLayerId ? { ...l, imageData: dataUrl } : l));
+    } else {
+      const dataUrl = tempCanvas.toDataURL('image/png');
+      setLayers(layers.map(l => l.id === activeLayerId ? { ...l, imageData: dataUrl } : l));
+    }
+
+    pushHistory('Apply generator');
+  }, [activeLayerId, layers, project, setLayers, pushHistory]);
 
   // Handle creating layer from generator
   const handleCreateLayerFromGenerator = useCallback((imageData: ImageData, name: string) => {
-    addLayer('raster', name);
-    // TODO: Set layer image data
+    // Convert ImageData to data URL
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+    const ctx = tempCanvas.getContext('2d')!;
+    ctx.putImageData(imageData, 0, 0);
+
+    // Scale to project size if needed
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+
+    let dataUrl: string;
+    if (imageData.width !== width || imageData.height !== height) {
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = width;
+      scaledCanvas.height = height;
+      const scaledCtx = scaledCanvas.getContext('2d')!;
+      scaledCtx.drawImage(tempCanvas, 0, 0, width, height);
+      dataUrl = scaledCanvas.toDataURL('image/png');
+    } else {
+      dataUrl = tempCanvas.toDataURL('image/png');
+    }
+
+    // Create new layer with generated content
+    const newLayer = addLayer('raster', name);
+    if (newLayer) {
+      setLayers(layers.map(l => l.id === newLayer.id ? { ...l, imageData: dataUrl } : l));
+    }
     pushHistory(`Generate ${name}`);
-  }, [addLayer, pushHistory]);
+  }, [addLayer, pushHistory, project, layers, setLayers]);
 
   // Capture current canvas as frame
   const captureCanvasFrame = useCallback((): string => {
-    // TODO: Capture from actual canvas
-    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-  }, []);
+    // Try to capture from main canvas element
+    const mainCanvas = document.querySelector<HTMLCanvasElement>('#main-canvas, canvas');
+    if (mainCanvas) {
+      try {
+        return mainCanvas.toDataURL('image/png');
+      } catch {
+        console.warn('Failed to capture canvas directly');
+      }
+    }
+
+    // Fallback: composite all visible layers manually
+    const width = project?.data?.width || 1024;
+    const height = project?.data?.height || 1024;
+    const visibleLayers = layers.filter(l => l.visible);
+
+    if (visibleLayers.length === 0) {
+      // Return transparent canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      return canvas.toDataURL('image/png');
+    }
+
+    // Create composite canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+
+    // Draw layers in order (bottom to top)
+    for (let i = visibleLayers.length - 1; i >= 0; i--) {
+      const layer = visibleLayers[i];
+      if (layer.imageData) {
+        const img = new window.Image();
+        img.src = layer.imageData;
+        if (img.complete) {
+          ctx.globalAlpha = layer.opacity / 100;
+          ctx.drawImage(img, 0, 0);
+        }
+      }
+    }
+
+    return canvas.toDataURL('image/png');
+  }, [layers, project]);
 
   // Handle selecting lenticular frame
   const handleSelectLenticularFrame = useCallback((frame: LenticularFrame) => {
     // Load frame's layers into editor
     setLayers(frame.layers);
   }, [setLayers]);
+
+  // Material handlers - using store functions for auto-save
+  const handleCreateMaterial = useCallback(() => {
+    addMaterial();
+  }, [addMaterial]);
+
+  const handleDuplicateMaterial = useCallback((id: string) => {
+    duplicateMaterialStore(id);
+  }, [duplicateMaterialStore]);
+
+  const handleDeleteMaterial = useCallback((id: string) => {
+    deleteMaterialStore(id);
+  }, [deleteMaterialStore]);
+
+  const handleUpdateMaterial = useCallback((material: SmartMaterial) => {
+    updateMaterial(material);
+  }, [updateMaterial]);
+
+  const handleOpenMaterialEditor = useCallback((id: string) => {
+    setActiveMaterialId(id);
+    setShowNodeEditor(true);
+  }, [setActiveMaterialId]);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
@@ -257,6 +515,36 @@ export default function ProjectEditorPage() {
             <span className="text-xs text-white/40 px-2 py-0.5 bg-white/5 rounded capitalize">
               {project.stickerType}
             </span>
+
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-1.5 ml-2">
+              {isAutoSaving ? (
+                <span className="flex items-center gap-1 text-xs text-orange-400">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Saving...
+                </span>
+              ) : saveError ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-xs text-red-400 cursor-help">
+                      Save failed
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-red-400">{saveError}</TooltipContent>
+                </Tooltip>
+              ) : hasUnsavedChanges ? (
+                <span className="text-xs text-yellow-400/60">Unsaved changes</span>
+              ) : lastSaved ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-xs text-green-400/60">Saved</span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Last saved: {lastSaved.toLocaleTimeString()}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex items-center gap-1">
@@ -351,10 +639,10 @@ export default function ProjectEditorPage() {
               variant="ghost"
               size="sm"
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isAutoSaving}
               className="text-white/60 hover:text-white"
             >
-              {isSaving ? (
+              {(isSaving || isAutoSaving) ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Save className="w-4 h-4" />
@@ -478,16 +766,16 @@ export default function ProjectEditorPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    onClick={() => setShowNodeEditor(!showNodeEditor)}
+                    onClick={() => setRightPanelTab('materials')}
                     className={cn(
                       'p-1.5 rounded transition-colors',
-                      showNodeEditor ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                      rightPanelTab === 'materials' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
                     )}
                   >
                     <GitBranch className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Node Editor</TooltipContent>
+                <TooltipContent>Materials & Node Editor</TooltipContent>
               </Tooltip>
 
               {project?.stickerType === 'lenticular' && (
@@ -514,6 +802,7 @@ export default function ProjectEditorPage() {
                 <>
                   <StudioColorPicker />
                   <StudioBrushSettings />
+                  <ShapeToolPanel />
                   <StudioLayersPanel />
                 </>
               )}
@@ -550,6 +839,20 @@ export default function ProjectEditorPage() {
                 />
               )}
 
+              {rightPanelTab === 'materials' && (
+                <MaterialsPanel
+                  materials={smartMaterials}
+                  activeMaterialId={activeMaterialId}
+                  onSelectMaterial={setActiveMaterialId}
+                  onCreateMaterial={handleCreateMaterial}
+                  onDuplicateMaterial={handleDuplicateMaterial}
+                  onDeleteMaterial={handleDeleteMaterial}
+                  onUpdateMaterial={handleUpdateMaterial}
+                  onOpenFullEditor={handleOpenMaterialEditor}
+                  className="flex-1"
+                />
+              )}
+
               {rightPanelTab === 'lenticular' && project?.stickerType === 'lenticular' && (
                 <LenticularEditor
                   frames={lenticularFrames}
@@ -566,7 +869,7 @@ export default function ProjectEditorPage() {
           </div>
 
           {/* Node Editor Overlay */}
-          {showNodeEditor && (
+          {showNodeEditor && activeMaterialId && (
             <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
               <div className="relative w-full h-full max-w-6xl bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
                 <div className="absolute top-3 right-3 z-10">
@@ -578,8 +881,8 @@ export default function ProjectEditorPage() {
                   </button>
                 </div>
                 <NodeEditor
-                  material={smartMaterials[0] || {
-                    id: 'new',
+                  material={smartMaterials.find(m => m.id === activeMaterialId) || {
+                    id: activeMaterialId,
                     name: 'New Material',
                     category: 'custom',
                     nodes: [],
@@ -587,22 +890,24 @@ export default function ProjectEditorPage() {
                     outputNodeId: '',
                   }}
                   onChange={(material) => {
-                    // Update or add material
-                    setSmartMaterials((prev) => {
-                      const idx = prev.findIndex((m) => m.id === material.id);
-                      if (idx >= 0) {
-                        const next = [...prev];
-                        next[idx] = material;
-                        return next;
-                      }
-                      return [...prev, material];
-                    });
+                    handleUpdateMaterial(material);
                   }}
                   className="w-full h-full"
                 />
               </div>
             </div>
           )}
+
+          {/* Export Dialog */}
+          <ExportDialog
+            isOpen={showExportDialog}
+            onClose={() => setShowExportDialog(false)}
+            projectName={project.name}
+            layers={layers}
+            canvasWidth={project.data?.width || 1024}
+            canvasHeight={project.data?.height || 1024}
+            stickerType={project.stickerType}
+          />
         </div>
       </div>
     </TooltipProvider>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronDown,
@@ -35,11 +35,129 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+/**
+ * Real-time brush stroke preview component
+ * Renders a sample stroke based on current brush settings
+ */
+function BrushStrokePreview({ brush, color }: { brush: CustomBrush; color: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  /**
+   * Draw brush stroke preview on canvas
+   */
+  const drawPreview = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Clear canvas with transparent background
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw checkered background
+    const checkSize = 4;
+    for (let y = 0; y < height; y += checkSize) {
+      for (let x = 0; x < width; x += checkSize) {
+        const isLight = ((x / checkSize) + (y / checkSize)) % 2 === 0;
+        ctx.fillStyle = isLight ? '#2a2a2c' : '#222224';
+        ctx.fillRect(x, y, checkSize, checkSize);
+      }
+    }
+
+    // Calculate brush size relative to preview (max 50% of height)
+    const maxSize = height * 0.5;
+    const brushSize = Math.min(brush.size, maxSize);
+    const steps = 30;
+
+    // Draw S-curve stroke with pressure simulation
+    ctx.save();
+
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+
+      // S-curve path
+      const x = width * 0.1 + (width * 0.8) * t;
+      const y = height * 0.5 + Math.sin(t * Math.PI * 2) * (height * 0.25);
+
+      // Simulate pressure (0 to 1 to 0 curve)
+      const pressure = Math.sin(t * Math.PI);
+
+      // Calculate brush properties with pressure
+      const size = brush.pressureSize
+        ? brushSize * (0.3 + pressure * 0.7)
+        : brushSize;
+      const opacity = brush.pressureOpacity
+        ? (brush.opacity / 100) * (0.3 + pressure * 0.7)
+        : brush.opacity / 100;
+      const flow = brush.pressureFlow
+        ? (brush.flow / 100) * (0.3 + pressure * 0.7)
+        : brush.flow / 100;
+
+      // Apply scatter if enabled
+      const scatterX = brush.scatterX > 0 ? (Math.random() - 0.5) * brush.scatterX * 0.5 : 0;
+      const scatterY = brush.scatterY > 0 ? (Math.random() - 0.5) * brush.scatterY * 0.5 : 0;
+
+      // Draw brush dab
+      ctx.globalAlpha = opacity * flow;
+
+      // Create radial gradient for soft brush
+      const gradient = ctx.createRadialGradient(
+        x + scatterX, y + scatterY, 0,
+        x + scatterX, y + scatterY, size / 2
+      );
+
+      // Parse color
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+
+      // Hardness affects gradient falloff
+      const hardnessRatio = brush.hardness / 100;
+      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+      gradient.addColorStop(hardnessRatio, `rgba(${r}, ${g}, ${b}, 1)`);
+      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+
+      ctx.fillStyle = gradient;
+
+      // Draw ellipse for roundness
+      ctx.beginPath();
+      ctx.save();
+      ctx.translate(x + scatterX, y + scatterY);
+      ctx.rotate((brush.angle * Math.PI) / 180);
+      ctx.scale(1, brush.roundness / 100);
+      ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+      ctx.restore();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }, [brush, color]);
+
+  // Redraw on brush or color change
+  useEffect(() => {
+    drawPreview();
+  }, [drawPreview]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={200}
+      height={60}
+      className="w-full h-[60px] rounded-lg border border-white/10"
+    />
+  );
+}
+
 export function StudioBrushSettings() {
   const {
     activeTool,
     currentBrush,
     brushes,
+    primaryColor,
     setCurrentBrush,
     updateBrush,
     saveBrush,
@@ -94,6 +212,9 @@ export function StudioBrushSettings() {
 
       <CollapsibleContent>
         <div className="px-3 py-3 space-y-4 border-b border-white/10">
+          {/* Real-time Stroke Preview */}
+          <BrushStrokePreview brush={currentBrush} color={primaryColor} />
+
           {/* Current Brush Preview */}
           <div className="flex items-center gap-2">
             <button

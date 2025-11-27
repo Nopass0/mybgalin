@@ -874,6 +874,10 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
   const [isExporting, setIsExporting] = useState(false);
   const [previewMode, setPreviewMode] = useState<'2d' | '3d'>('2d');
 
+  // Node preview state - stores generated preview thumbnails for each node
+  const [nodePreviews, setNodePreviews] = useState<Map<string, string>>(new Map());
+  const previewSizeRef = useRef(64); // Preview thumbnail size
+
   // ==================== NODE INTERACTION HANDLERS ====================
 
   /**
@@ -938,6 +942,254 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [handleMouseMove, handleMouseUp]);
+
+  // Generate node previews when nodes or connections change
+  useEffect(() => {
+    const generateNodePreviews = async () => {
+      const size = previewSizeRef.current;
+      const newPreviews = new Map<string, string>();
+
+      for (const node of nodes) {
+        // Skip input nodes that just pass through values
+        if (node.type === 'uv-input' || node.type === 'position-input' ||
+            node.type === 'normal-input' || node.type === 'time-input' ||
+            node.type === 'value-input') {
+          continue;
+        }
+
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) continue;
+
+          const imageData = ctx.createImageData(size, size);
+          const data = imageData.data;
+
+          for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+              const i = (y * size + x) * 4;
+              const uv = { x: x / size, y: y / size };
+              const color = evaluateNodeAtUVForPreview(node, uv);
+
+              data[i] = Math.round(Math.max(0, Math.min(1, color.r)) * 255);
+              data[i + 1] = Math.round(Math.max(0, Math.min(1, color.g)) * 255);
+              data[i + 2] = Math.round(Math.max(0, Math.min(1, color.b)) * 255);
+              data[i + 3] = 255;
+            }
+          }
+
+          ctx.putImageData(imageData, 0, 0);
+          newPreviews.set(node.id, canvas.toDataURL());
+        } catch {
+          // Skip nodes that fail to render
+        }
+      }
+
+      setNodePreviews(newPreviews);
+    };
+
+    // Debounce preview generation
+    const timeoutId = setTimeout(generateNodePreviews, 100);
+    return () => clearTimeout(timeoutId);
+  }, [nodes, connections]);
+
+  // Simplified node evaluation for preview (doesn't follow connections for performance)
+  const evaluateNodeAtUVForPreview = (
+    node: MaterialNode,
+    uv: { x: number; y: number }
+  ): { r: number; g: number; b: number } => {
+    switch (node.type) {
+      case 'color-input': {
+        const colorStr = node.parameters.find(p => p.id === 'color')?.value as string || '#808080';
+        return hexToRgb(colorStr);
+      }
+
+      case 'gradient-input': {
+        // Simple horizontal gradient
+        const color1 = node.parameters.find(p => p.id === 'color1')?.value as string || '#000000';
+        const color2 = node.parameters.find(p => p.id === 'color2')?.value as string || '#ffffff';
+        const c1 = hexToRgb(color1);
+        const c2 = hexToRgb(color2);
+        const t = uv.x;
+        return {
+          r: c1.r + (c2.r - c1.r) * t,
+          g: c1.g + (c2.g - c1.g) * t,
+          b: c1.b + (c2.b - c1.b) * t,
+        };
+      }
+
+      case 'noise-perlin':
+      case 'noise-simplex': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const value = perlinNoise(uv.x * scale, uv.y * scale, seed);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'noise-fbm':
+      case 'noise-turbulence': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const octaves = Number(node.parameters.find(p => p.id === 'octaves')?.value || 4);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        let value = 0;
+        let amplitude = 1;
+        let frequency = scale;
+        let maxValue = 0;
+        for (let i = 0; i < octaves; i++) {
+          value += amplitude * perlinNoise(uv.x * frequency, uv.y * frequency, seed + i);
+          maxValue += amplitude;
+          amplitude *= 0.5;
+          frequency *= 2;
+        }
+        value = value / maxValue;
+        if (node.type === 'noise-turbulence') value = Math.abs(value);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'noise-voronoi':
+      case 'noise-worley': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const value = voronoiNoise(uv.x * scale, uv.y * scale, seed);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'noise-white':
+      case 'noise-value': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const nx = Math.floor(uv.x * scale) + seed;
+        const ny = Math.floor(uv.y * scale);
+        const value = Math.abs(Math.sin(nx * 12.9898 + ny * 78.233) * 43758.5453) % 1;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-checker': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 8);
+        const cx = Math.floor(uv.x * scale) % 2;
+        const cy = Math.floor(uv.y * scale) % 2;
+        const value = (cx + cy) % 2;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-stripes': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const angle = Number(node.parameters.find(p => p.id === 'angle')?.value || 0) * Math.PI / 180;
+        const rotX = uv.x * Math.cos(angle) - uv.y * Math.sin(angle);
+        const value = Math.floor(rotX * scale) % 2;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-dots': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const radius = Number(node.parameters.find(p => p.id === 'radius')?.value || 0.3);
+        const cx = (uv.x * scale) % 1 - 0.5;
+        const cy = (uv.y * scale) % 1 - 0.5;
+        const dist = Math.sqrt(cx * cx + cy * cy);
+        const value = dist < radius ? 1 : 0;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-grid': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const lineWidth = Number(node.parameters.find(p => p.id === 'lineWidth')?.value || 0.1);
+        const sx = (uv.x * scale) % 1;
+        const sy = (uv.y * scale) % 1;
+        const value = (sx < lineWidth || sy < lineWidth) ? 1 : 0;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-wave': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const amplitude = Number(node.parameters.find(p => p.id === 'amplitude')?.value || 0.5);
+        const value = (Math.sin(uv.x * scale * Math.PI * 2) * amplitude + 1) * 0.5;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-circle': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const cx = uv.x - 0.5;
+        const cy = uv.y - 0.5;
+        const dist = Math.sqrt(cx * cx + cy * cy) * scale * 2;
+        const value = (Math.sin(dist * Math.PI * 2) + 1) * 0.5;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-spiral': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const cx = uv.x - 0.5;
+        const cy = uv.y - 0.5;
+        const angle = Math.atan2(cy, cx);
+        const dist = Math.sqrt(cx * cx + cy * cy);
+        const value = (Math.sin((angle + dist * scale * 10)) + 1) * 0.5;
+        return { r: value, g: value, b: value };
+      }
+
+      // CS2 specific nodes
+      case 'cs2-scratches': {
+        const density = Number(node.parameters.find(p => p.id === 'density')?.value || 0.5);
+        const length = Number(node.parameters.find(p => p.id === 'length')?.value || 0.5);
+        const value = perlinNoise(uv.x * 50, uv.y * 2, 0) * density;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'cs2-wear':
+      case 'cs2-edge-wear': {
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.5);
+        const noise = perlinNoise(uv.x * 20, uv.y * 20, 42);
+        const value = noise * amount;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'cs2-dirt':
+      case 'cs2-grunge': {
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.5);
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const value = voronoiNoise(uv.x * scale, uv.y * scale, 123) * amount;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'cs2-holographic': {
+        const value = (Math.sin(uv.x * 50 + uv.y * 30) + 1) * 0.5;
+        const r = (Math.sin(uv.x * 100) + 1) * 0.5;
+        const g = (Math.sin(uv.x * 100 + 2) + 1) * 0.5;
+        const b = (Math.sin(uv.x * 100 + 4) + 1) * 0.5;
+        return { r, g, b };
+      }
+
+      case 'cs2-glitter': {
+        const density = Number(node.parameters.find(p => p.id === 'density')?.value || 0.5);
+        const scale = 100;
+        const nx = Math.floor(uv.x * scale);
+        const ny = Math.floor(uv.y * scale);
+        const random = Math.abs(Math.sin(nx * 12.9898 + ny * 78.233) * 43758.5453) % 1;
+        const value = random > (1 - density * 0.1) ? 1 : 0;
+        return { r: value, g: value, b: value };
+      }
+
+      // Output nodes - just show gray
+      case 'output-color':
+      case 'output-normal':
+      case 'output-metalness':
+      case 'output-roughness':
+      case 'output-ao':
+      case 'output-combined':
+        return { r: 0.5, g: 0.5, b: 0.5 };
+
+      // Math operations - show gradient
+      case 'math-add':
+      case 'math-subtract':
+      case 'math-multiply':
+      case 'math-divide':
+      case 'color-mix':
+        return { r: uv.x, g: uv.y, b: 0.5 };
+
+      default:
+        return { r: 0.5, g: 0.5, b: 0.5 };
+    }
+  };
 
   /**
    * Handles clicking on a node port to create connections
@@ -1592,6 +1844,18 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
                 >
                   {node.type.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                 </div>
+
+                {/* Node preview thumbnail */}
+                {nodePreviews.get(node.id) && (
+                  <div className="px-2 pt-2">
+                    <img
+                      src={nodePreviews.get(node.id)}
+                      alt="Node preview"
+                      className="w-full h-16 rounded border border-white/10 object-cover bg-black"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                  </div>
+                )}
 
                 {/* Node content */}
                 <div className="p-2">
