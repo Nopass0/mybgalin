@@ -164,17 +164,25 @@ export const useStudioAuth = create<StudioAuthState>()(
         const token = localStorage.getItem('studio_token');
         if (!token) throw new Error('Not authenticated');
 
+        // Backend expects { name?, thumbnail?, data? } where data is a JSON string
+        const updatePayload = {
+          name: project.name,
+          thumbnail: project.thumbnail,
+          data: typeof project.data === 'string' ? project.data : JSON.stringify(project.data),
+        };
+
         const response = await fetch(`${API_BASE}/studio/projects/${project.id}`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(project),
+          body: JSON.stringify(updatePayload),
         });
 
         if (!response.ok) {
-          throw new Error('Failed to update project');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to update project');
         }
 
         set((state) => ({
