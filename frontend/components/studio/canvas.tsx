@@ -90,6 +90,11 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [gradientEnd, setGradientEnd] = useState<{ x: number; y: number } | null>(null);
   const [isDrawingGradient, setIsDrawingGradient] = useState(false);
 
+  // Clone stamp state
+  const [cloneSource, setCloneSource] = useState<{ x: number; y: number } | null>(null);
+  const [cloneOffset, setCloneOffset] = useState<{ x: number; y: number } | null>(null);
+  const cloneSourceLayerRef = useRef<string | null>(null);
+
   // Initialize offscreen canvas
   useEffect(() => {
     offscreenCanvasRef.current = document.createElement('canvas');
@@ -1156,6 +1161,69 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     ctx.putImageData(imageData, sx, sy);
   }, []);
 
+  // Apply clone stamp at a point
+  const applyCloneAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    sourceCanvas: HTMLCanvasElement,
+    targetX: number,
+    targetY: number,
+    sourceX: number,
+    sourceY: number,
+    radius: number,
+    opacity: number
+  ) => {
+    const size = Math.ceil(radius * 2);
+    const halfSize = Math.floor(size / 2);
+
+    // Get source region
+    const srcX = Math.max(0, Math.floor(sourceX - halfSize));
+    const srcY = Math.max(0, Math.floor(sourceY - halfSize));
+    const srcW = Math.min(size, CANVAS_SIZE - srcX);
+    const srcH = Math.min(size, CANVAS_SIZE - srcY);
+
+    if (srcW <= 0 || srcH <= 0) return;
+
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) return;
+
+    const sourceData = sourceCtx.getImageData(srcX, srcY, srcW, srcH);
+
+    // Get target region
+    const tgtX = Math.max(0, Math.floor(targetX - halfSize));
+    const tgtY = Math.max(0, Math.floor(targetY - halfSize));
+    const tgtW = Math.min(size, CANVAS_SIZE - tgtX);
+    const tgtH = Math.min(size, CANVAS_SIZE - tgtY);
+
+    if (tgtW <= 0 || tgtH <= 0) return;
+
+    const targetData = ctx.getImageData(tgtX, tgtY, tgtW, tgtH);
+
+    // Blend source into target within circular brush
+    for (let py = 0; py < Math.min(srcH, tgtH); py++) {
+      for (let px = 0; px < Math.min(srcW, tgtW); px++) {
+        const dx = px - halfSize;
+        const dy = py - halfSize;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+
+        const srcIdx = (py * srcW + px) * 4;
+        const tgtIdx = (py * tgtW + px) * 4;
+
+        // Soft falloff at edges
+        const falloff = 1 - (dist / radius);
+        const blend = falloff * opacity;
+
+        // Blend source with target
+        targetData.data[tgtIdx] = Math.round(targetData.data[tgtIdx] * (1 - blend) + sourceData.data[srcIdx] * blend);
+        targetData.data[tgtIdx + 1] = Math.round(targetData.data[tgtIdx + 1] * (1 - blend) + sourceData.data[srcIdx + 1] * blend);
+        targetData.data[tgtIdx + 2] = Math.round(targetData.data[tgtIdx + 2] * (1 - blend) + sourceData.data[srcIdx + 2] * blend);
+        targetData.data[tgtIdx + 3] = Math.round(targetData.data[tgtIdx + 3] * (1 - blend) + sourceData.data[srcIdx + 3] * blend);
+      }
+    }
+
+    ctx.putImageData(targetData, tgtX, tgtY);
+  }, []);
+
   // Pointer event handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
@@ -1300,6 +1368,59 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
+
+    // Handle clone stamp tool
+    if (activeTool === 'clone') {
+      if (!activeLayerId) return;
+
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (!activeLayer || activeLayer.locked) return;
+
+      // Alt+click to set clone source
+      if (e.altKey) {
+        setCloneSource({ x, y });
+        setCloneOffset(null);
+        cloneSourceLayerRef.current = activeLayerId;
+        return;
+      }
+
+      // Normal click to clone from source
+      if (!cloneSource) {
+        console.warn('Clone source not set. Alt+click to set source point.');
+        return;
+      }
+
+      // Calculate offset on first click if not set
+      if (!cloneOffset) {
+        setCloneOffset({
+          x: cloneSource.x - x,
+          y: cloneSource.y - y,
+        });
+      }
+
+      setIsDrawing(true);
+      setLastPoint({ x, y });
+
+      // Apply initial clone
+      const layerCanvas = getLayerCanvas(activeLayerId);
+      const ctx = layerCanvas.getContext('2d');
+      const sourceCanvas = cloneSourceLayerRef.current
+        ? layerCanvasesRef.current.get(cloneSourceLayerRef.current)
+        : layerCanvas;
+
+      if (ctx && sourceCanvas) {
+        const offset = cloneOffset || { x: cloneSource.x - x, y: cloneSource.y - y };
+        const sourceX = x + offset.x;
+        const sourceY = y + offset.y;
+        const radius = currentBrush.size / 2;
+        const opacity = currentBrush.opacity / 100;
+
+        applyCloneAtPoint(ctx, sourceCanvas, x, y, sourceX, sourceY, radius, opacity);
+        compositeCanvas();
+      }
+
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -1319,6 +1440,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     applyDodgeAtPoint,
     applyBurnAtPoint,
     applySpongeAtPoint,
+    cloneSource,
+    cloneOffset,
+    applyCloneAtPoint,
   ]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -1326,7 +1450,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
     // Update brush preview position
     if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' ||
-        activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') {
+        activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge' ||
+        activeTool === 'clone') {
       setBrushPreview({ x: e.clientX, y: e.clientY });
     }
 
@@ -1451,6 +1576,30 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             }
           }
           compositeCanvas();
+        } else if (activeTool === 'clone' && cloneSource && cloneOffset) {
+          // Handle clone stamp tool
+          const radius = currentBrush.size / 2;
+          const opacity = (currentBrush.opacity / 100) * (e.pressure || 0.5);
+          const sourceCanvas = cloneSourceLayerRef.current
+            ? layerCanvasesRef.current.get(cloneSourceLayerRef.current)
+            : layerCanvas;
+
+          if (sourceCanvas) {
+            // Interpolate along the stroke
+            const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2));
+            const steps = Math.max(1, Math.ceil(distance / (radius * 0.5)));
+
+            for (let i = 0; i <= steps; i++) {
+              const t = i / steps;
+              const px = lastPoint.x + (x - lastPoint.x) * t;
+              const py = lastPoint.y + (y - lastPoint.y) * t;
+              const sourceX = px + cloneOffset.x;
+              const sourceY = py + cloneOffset.y;
+
+              applyCloneAtPoint(ctx, sourceCanvas, px, py, sourceX, sourceY, radius, opacity);
+            }
+            compositeCanvas();
+          }
         } else {
           // Normal brush/eraser
           updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
@@ -1491,6 +1640,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     applyDodgeAtPoint,
     applyBurnAtPoint,
     applySpongeAtPoint,
+    cloneSource,
+    cloneOffset,
+    applyCloneAtPoint,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -1703,7 +1855,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       {/* Brush cursor preview */}
       {brushPreview && (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' ||
-                        activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') && (
+                        activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge' ||
+                        activeTool === 'clone') && (
         <div
           className="pointer-events-none fixed rounded-full border border-white/50 mix-blend-difference"
           style={{
@@ -1764,6 +1917,27 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             strokeWidth="2"
           />
         </svg>
+      )}
+
+      {/* Clone source indicator */}
+      {activeTool === 'clone' && cloneSource && (
+        <div
+          className="absolute pointer-events-none z-40"
+          style={{
+            left: `calc(50% + ${(cloneSource.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`,
+            top: `calc(50% + ${(cloneSource.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          {/* Crosshair for clone source */}
+          <svg width="24" height="24" viewBox="0 0 24 24" className="text-cyan-400">
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="4 2" />
+            <line x1="12" y1="2" x2="12" y2="8" stroke="currentColor" strokeWidth="2" />
+            <line x1="12" y1="16" x2="12" y2="22" stroke="currentColor" strokeWidth="2" />
+            <line x1="2" y1="12" x2="8" y2="12" stroke="currentColor" strokeWidth="2" />
+            <line x1="16" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        </div>
       )}
 
       {/* Zoom indicator */}
@@ -1910,6 +2084,7 @@ function getCursorForTool(tool: string, hoveredHandle?: HandleType | null): stri
     case 'dodge':
     case 'burn':
     case 'sponge':
+    case 'clone':
       return 'none';
     default:
       return 'crosshair';
