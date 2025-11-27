@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
-import type { Transform, Layer, BlendMode } from '@/types/studio';
+import type { Transform, Layer, BlendMode, LayerEffect } from '@/types/studio';
 
 // Map BlendMode to valid Canvas 2D GlobalCompositeOperation
 function blendModeToCompositeOp(blendMode: BlendMode): GlobalCompositeOperation {
@@ -179,6 +179,327 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     return canvas;
   }, []);
 
+  // Apply layer effects to a canvas and return result canvas
+  const applyLayerEffects = useCallback((
+    sourceCanvas: HTMLCanvasElement,
+    effects: LayerEffect[]
+  ): HTMLCanvasElement => {
+    if (!effects || effects.length === 0) return sourceCanvas;
+
+    const enabledEffects = effects.filter(e => e.enabled);
+    if (enabledEffects.length === 0) return sourceCanvas;
+
+    // Create result canvas
+    const resultCanvas = document.createElement('canvas');
+    resultCanvas.width = CANVAS_SIZE;
+    resultCanvas.height = CANVAS_SIZE;
+    const resultCtx = resultCanvas.getContext('2d')!;
+
+    // Process effects
+    for (const effect of enabledEffects) {
+      switch (effect.type) {
+        case 'drop-shadow':
+          applyDropShadow(resultCtx, sourceCanvas, effect);
+          break;
+        case 'outer-glow':
+          applyOuterGlow(resultCtx, sourceCanvas, effect);
+          break;
+      }
+    }
+
+    // Draw original layer on top
+    resultCtx.drawImage(sourceCanvas, 0, 0);
+
+    // Apply effects that go on top
+    for (const effect of enabledEffects) {
+      switch (effect.type) {
+        case 'inner-shadow':
+          applyInnerShadow(resultCtx, sourceCanvas, effect);
+          break;
+        case 'inner-glow':
+          applyInnerGlow(resultCtx, sourceCanvas, effect);
+          break;
+        case 'color-overlay':
+          applyColorOverlay(resultCtx, sourceCanvas, effect);
+          break;
+        case 'stroke':
+          applyStroke(resultCtx, sourceCanvas, effect);
+          break;
+      }
+    }
+
+    return resultCanvas;
+  }, []);
+
+  // Drop shadow effect
+  const applyDropShadow = (
+    ctx: CanvasRenderingContext2D,
+    source: HTMLCanvasElement,
+    effect: LayerEffect
+  ) => {
+    const params = effect.parameters;
+    const color = (params.color as string) || '#000000';
+    const angle = (params.angle as number) || 135;
+    const distance = (params.distance as number) || 10;
+    const size = (params.size as number) || 10;
+    const spread = (params.spread as number) || 0;
+
+    // Calculate offset from angle
+    const radians = (angle * Math.PI) / 180;
+    const offsetX = Math.cos(radians) * distance;
+    const offsetY = Math.sin(radians) * distance;
+
+    ctx.save();
+    ctx.globalAlpha = effect.opacity / 100;
+    ctx.globalCompositeOperation = blendModeToCompositeOp(effect.blendMode);
+
+    // Apply shadow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = size;
+    ctx.shadowOffsetX = offsetX;
+    ctx.shadowOffsetY = offsetY;
+
+    // If spread, expand the shadow
+    if (spread > 0) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = CANVAS_SIZE;
+      tempCanvas.height = CANVAS_SIZE;
+      const tempCtx = tempCanvas.getContext('2d')!;
+      tempCtx.filter = `blur(${spread}px)`;
+      tempCtx.drawImage(source, 0, 0);
+      ctx.drawImage(tempCanvas, 0, 0);
+    } else {
+      ctx.drawImage(source, 0, 0);
+    }
+
+    // Clear the actual image area so only shadow remains
+    ctx.shadowColor = 'transparent';
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.drawImage(source, 0, 0);
+
+    ctx.restore();
+  };
+
+  // Outer glow effect
+  const applyOuterGlow = (
+    ctx: CanvasRenderingContext2D,
+    source: HTMLCanvasElement,
+    effect: LayerEffect
+  ) => {
+    const params = effect.parameters;
+    const color = (params.color as string) || '#ffff00';
+    const size = (params.size as number) || 20;
+    const spread = (params.spread as number) || 0;
+
+    ctx.save();
+    ctx.globalAlpha = effect.opacity / 100;
+    ctx.globalCompositeOperation = blendModeToCompositeOp(effect.blendMode);
+
+    // Create glow by drawing multiple blurred copies
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = CANVAS_SIZE;
+    tempCanvas.height = CANVAS_SIZE;
+    const tempCtx = tempCanvas.getContext('2d')!;
+
+    // Extract alpha from source and colorize
+    tempCtx.drawImage(source, 0, 0);
+    tempCtx.globalCompositeOperation = 'source-in';
+    tempCtx.fillStyle = color;
+    tempCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Apply blur for glow
+    ctx.filter = `blur(${size}px)`;
+
+    // Draw multiple times for spread effect
+    const iterations = Math.max(1, Math.ceil(spread / 2) + 1);
+    for (let i = 0; i < iterations; i++) {
+      ctx.drawImage(tempCanvas, 0, 0);
+    }
+
+    ctx.filter = 'none';
+    ctx.restore();
+  };
+
+  // Inner shadow effect
+  const applyInnerShadow = (
+    ctx: CanvasRenderingContext2D,
+    source: HTMLCanvasElement,
+    effect: LayerEffect
+  ) => {
+    const params = effect.parameters;
+    const color = (params.color as string) || '#000000';
+    const angle = (params.angle as number) || 135;
+    const distance = (params.distance as number) || 5;
+    const size = (params.size as number) || 5;
+
+    const radians = (angle * Math.PI) / 180;
+    const offsetX = Math.cos(radians) * distance;
+    const offsetY = Math.sin(radians) * distance;
+
+    ctx.save();
+    ctx.globalAlpha = effect.opacity / 100;
+    ctx.globalCompositeOperation = blendModeToCompositeOp(effect.blendMode);
+
+    // Create inner shadow by inverting the layer and using it as shadow
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = CANVAS_SIZE;
+    tempCanvas.height = CANVAS_SIZE;
+    const tempCtx = tempCanvas.getContext('2d')!;
+
+    // Draw inverted mask (everything except the layer content)
+    tempCtx.fillStyle = color;
+    tempCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    tempCtx.globalCompositeOperation = 'destination-out';
+    tempCtx.drawImage(source, 0, 0);
+
+    // Apply shadow
+    tempCtx.globalCompositeOperation = 'source-over';
+    tempCtx.shadowColor = color;
+    tempCtx.shadowBlur = size;
+    tempCtx.shadowOffsetX = -offsetX;
+    tempCtx.shadowOffsetY = -offsetY;
+    tempCtx.fillStyle = color;
+    tempCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Mask to original layer
+    ctx.globalCompositeOperation = 'source-atop';
+    tempCtx.globalCompositeOperation = 'destination-in';
+    tempCtx.drawImage(source, 0, 0);
+
+    ctx.drawImage(tempCanvas, 0, 0);
+    ctx.restore();
+  };
+
+  // Inner glow effect
+  const applyInnerGlow = (
+    ctx: CanvasRenderingContext2D,
+    source: HTMLCanvasElement,
+    effect: LayerEffect
+  ) => {
+    const params = effect.parameters;
+    const color = (params.color as string) || '#ffffff';
+    const size = (params.size as number) || 10;
+
+    ctx.save();
+    ctx.globalAlpha = effect.opacity / 100;
+    ctx.globalCompositeOperation = blendModeToCompositeOp(effect.blendMode);
+
+    // Create glow from edges inward
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = CANVAS_SIZE;
+    tempCanvas.height = CANVAS_SIZE;
+    const tempCtx = tempCanvas.getContext('2d')!;
+
+    // Get edge by subtracting eroded version
+    tempCtx.drawImage(source, 0, 0);
+    tempCtx.globalCompositeOperation = 'source-in';
+    tempCtx.fillStyle = color;
+    tempCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Blur for glow
+    tempCtx.filter = `blur(${size}px)`;
+    const temp2 = document.createElement('canvas');
+    temp2.width = CANVAS_SIZE;
+    temp2.height = CANVAS_SIZE;
+    const temp2Ctx = temp2.getContext('2d')!;
+    temp2Ctx.filter = `blur(${size}px)`;
+    temp2Ctx.drawImage(tempCanvas, 0, 0);
+
+    // Mask to original layer
+    temp2Ctx.filter = 'none';
+    temp2Ctx.globalCompositeOperation = 'destination-in';
+    temp2Ctx.drawImage(source, 0, 0);
+
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.drawImage(temp2, 0, 0);
+    ctx.restore();
+  };
+
+  // Color overlay effect
+  const applyColorOverlay = (
+    ctx: CanvasRenderingContext2D,
+    source: HTMLCanvasElement,
+    effect: LayerEffect
+  ) => {
+    const params = effect.parameters;
+    const color = (params.color as string) || '#ff0000';
+
+    ctx.save();
+    ctx.globalAlpha = effect.opacity / 100;
+    ctx.globalCompositeOperation = blendModeToCompositeOp(effect.blendMode);
+
+    // Create color-filled version of the layer
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = CANVAS_SIZE;
+    tempCanvas.height = CANVAS_SIZE;
+    const tempCtx = tempCanvas.getContext('2d')!;
+
+    tempCtx.drawImage(source, 0, 0);
+    tempCtx.globalCompositeOperation = 'source-in';
+    tempCtx.fillStyle = color;
+    tempCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.drawImage(tempCanvas, 0, 0);
+    ctx.restore();
+  };
+
+  // Stroke effect
+  const applyStroke = (
+    ctx: CanvasRenderingContext2D,
+    source: HTMLCanvasElement,
+    effect: LayerEffect
+  ) => {
+    const params = effect.parameters;
+    const color = (params.color as string) || '#000000';
+    const size = (params.size as number) || 3;
+    const position = (params.position as string) || 'outside'; // outside, inside, center
+
+    ctx.save();
+    ctx.globalAlpha = effect.opacity / 100;
+    ctx.globalCompositeOperation = blendModeToCompositeOp(effect.blendMode);
+
+    // Create stroke by dilating and subtracting
+    const strokeCanvas = document.createElement('canvas');
+    strokeCanvas.width = CANVAS_SIZE;
+    strokeCanvas.height = CANVAS_SIZE;
+    const strokeCtx = strokeCanvas.getContext('2d')!;
+
+    // Draw expanded version by drawing multiple offset copies
+    strokeCtx.fillStyle = color;
+    const steps = Math.ceil(size);
+    for (let dx = -steps; dx <= steps; dx++) {
+      for (let dy = -steps; dy <= steps; dy++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= size) {
+          strokeCtx.drawImage(source, dx, dy);
+        }
+      }
+    }
+
+    // Colorize
+    strokeCtx.globalCompositeOperation = 'source-in';
+    strokeCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    if (position === 'outside') {
+      // Remove original area for outside stroke
+      strokeCtx.globalCompositeOperation = 'destination-out';
+      strokeCtx.drawImage(source, 0, 0);
+      ctx.drawImage(strokeCanvas, 0, 0);
+    } else if (position === 'inside') {
+      // Mask to original for inside stroke
+      strokeCtx.globalCompositeOperation = 'destination-in';
+      strokeCtx.drawImage(source, 0, 0);
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.drawImage(strokeCanvas, 0, 0);
+    } else {
+      // Center stroke - draw both
+      ctx.drawImage(strokeCanvas, 0, 0);
+    }
+
+    ctx.restore();
+  };
+
   // Composite all layers to main canvas
   const compositeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -205,8 +526,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const layer = layers[i];
       if (!layer.visible) continue;
 
-      const layerCanvas = layerCanvasesRef.current.get(layer.id);
+      let layerCanvas = layerCanvasesRef.current.get(layer.id);
       if (!layerCanvas) continue;
+
+      // Apply layer effects if any
+      if (layer.effects && layer.effects.length > 0) {
+        layerCanvas = applyLayerEffects(layerCanvas, layer.effects);
+      }
 
       ctx.save();
       ctx.globalAlpha = layer.opacity / 100;
@@ -267,7 +593,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         drawTransformHandles(ctx, transform);
       }
     }
-  }, [layers, showGrid, activeTool, activeLayerId]);
+  }, [layers, showGrid, activeTool, activeLayerId, applyLayerEffects]);
 
   // Draw transform handles around the layer
   const drawTransformHandles = useCallback((ctx: CanvasRenderingContext2D, transform: Transform) => {
