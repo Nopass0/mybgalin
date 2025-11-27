@@ -14,6 +14,15 @@ import {
   Maximize2,
   Grid3X3,
   Loader2,
+  Type,
+  Sparkles,
+  Layers,
+  Sun,
+  GitBranch,
+  Film,
+  Palette,
+  Brush,
+  X,
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
@@ -23,6 +32,12 @@ import { StudioColorPicker } from '@/components/studio/color-picker';
 import { StudioBrushSettings } from '@/components/studio/brush-settings';
 import { StudioCanvas } from '@/components/studio/canvas';
 import { StudioMapTabs } from '@/components/studio/map-tabs';
+import { TextToolPanel } from '@/components/studio/text-tool-panel';
+import { SmartMasksPanel } from '@/components/studio/smart-masks-panel';
+import { EnvironmentPanel } from '@/components/studio/environment-panel';
+import { GeneratorsPanel } from '@/components/studio/generators-panel';
+import { NodeEditor } from '@/components/studio/node-editor';
+import { LenticularEditor } from '@/components/studio/lenticular-editor';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -30,6 +45,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { DEFAULT_ENVIRONMENT, DEFAULT_SMART_MASKS } from '@/types/studio';
+import type { SmartMask, SmartMaterial, EnvironmentSettings, LenticularFrame, LenticularSettings, Layer } from '@/types/studio';
+import { cn } from '@/lib/utils';
+
+type RightPanelTab = 'default' | 'text' | 'masks' | 'generators' | 'environment' | 'materials' | 'lenticular';
 
 export default function ProjectEditorPage() {
   const params = useParams();
@@ -56,6 +76,24 @@ export default function ProjectEditorPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [activeMapTab, setActiveMapTab] = useState<'color' | 'normal' | 'metalness' | 'roughness'>('color');
+
+  // Panel states
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('default');
+  const [showNodeEditor, setShowNodeEditor] = useState(false);
+
+  // Smart features state
+  const [smartMasks, setSmartMasks] = useState<SmartMask[]>(DEFAULT_SMART_MASKS);
+  const [smartMaterials, setSmartMaterials] = useState<SmartMaterial[]>([]);
+  const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>(DEFAULT_ENVIRONMENT);
+  const [lenticularFrames, setLenticularFrames] = useState<LenticularFrame[]>([]);
+  const [lenticularSettings, setLenticularSettings] = useState<LenticularSettings>({
+    frameCount: 8,
+    animationType: 'flip',
+    transitionType: 'ease',
+    loopMode: 'loop',
+    fps: 12,
+  });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Load project
   useEffect(() => {
@@ -125,6 +163,42 @@ export default function ProjectEditorPage() {
   const handleExport = async () => {
     // TODO: Implement export
   };
+
+  // Handle applying mask to active layer
+  const handleApplyMask = useCallback((mask: SmartMask) => {
+    // TODO: Apply smart mask to active layer
+    console.log('Applying mask:', mask);
+  }, []);
+
+  // Handle creating new mask
+  const handleCreateMask = useCallback((mask: SmartMask) => {
+    setSmartMasks((prev) => [...prev, mask]);
+  }, []);
+
+  // Handle applying generator to layer
+  const handleApplyGeneratorToLayer = useCallback((imageData: ImageData) => {
+    // TODO: Apply generated texture to active layer
+    console.log('Applying generator:', imageData);
+  }, []);
+
+  // Handle creating layer from generator
+  const handleCreateLayerFromGenerator = useCallback((imageData: ImageData, name: string) => {
+    addLayer('raster', name);
+    // TODO: Set layer image data
+    pushHistory(`Generate ${name}`);
+  }, [addLayer, pushHistory]);
+
+  // Capture current canvas as frame
+  const captureCanvasFrame = useCallback((): string => {
+    // TODO: Capture from actual canvas
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  }, []);
+
+  // Handle selecting lenticular frame
+  const handleSelectLenticularFrame = useCallback((frame: LenticularFrame) => {
+    // Load frame's layers into editor
+    setLayers(frame.layers);
+  }, [setLayers]);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
@@ -324,15 +398,211 @@ export default function ProjectEditorPage() {
 
           {/* Right Panel */}
           <div className="w-72 border-l border-white/10 bg-[#121214] flex flex-col overflow-hidden">
-            {/* Color Picker */}
-            <StudioColorPicker />
+            {/* Panel Tabs */}
+            <div className="flex items-center border-b border-white/10 px-1 py-1 gap-0.5 shrink-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setRightPanelTab('default')}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      rightPanelTab === 'default' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <Brush className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Brush & Colors</TooltipContent>
+              </Tooltip>
 
-            {/* Brush Settings */}
-            <StudioBrushSettings />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setRightPanelTab('text')}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      rightPanelTab === 'text' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <Type className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Text Tool</TooltipContent>
+              </Tooltip>
 
-            {/* Layers Panel */}
-            <StudioLayersPanel />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setRightPanelTab('generators')}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      rightPanelTab === 'generators' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Generators</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setRightPanelTab('masks')}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      rightPanelTab === 'masks' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Smart Masks</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setRightPanelTab('environment')}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      rightPanelTab === 'environment' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <Sun className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Environment</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setShowNodeEditor(!showNodeEditor)}
+                    className={cn(
+                      'p-1.5 rounded transition-colors',
+                      showNodeEditor ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <GitBranch className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Node Editor</TooltipContent>
+              </Tooltip>
+
+              {project?.stickerType === 'lenticular' && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setRightPanelTab('lenticular')}
+                      className={cn(
+                        'p-1.5 rounded transition-colors',
+                        rightPanelTab === 'lenticular' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                      )}
+                    >
+                      <Film className="w-3.5 h-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Lenticular Editor</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+
+            {/* Panel Content */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {rightPanelTab === 'default' && (
+                <>
+                  <StudioColorPicker />
+                  <StudioBrushSettings />
+                  <StudioLayersPanel />
+                </>
+              )}
+
+              {rightPanelTab === 'text' && (
+                <>
+                  <TextToolPanel className="flex-1" />
+                  <StudioLayersPanel />
+                </>
+              )}
+
+              {rightPanelTab === 'generators' && (
+                <GeneratorsPanel
+                  onApplyToLayer={handleApplyGeneratorToLayer}
+                  onCreateLayer={handleCreateLayerFromGenerator}
+                  className="flex-1"
+                />
+              )}
+
+              {rightPanelTab === 'masks' && (
+                <SmartMasksPanel
+                  masks={smartMasks}
+                  onApplyMask={handleApplyMask}
+                  onCreateMask={handleCreateMask}
+                  className="flex-1"
+                />
+              )}
+
+              {rightPanelTab === 'environment' && (
+                <EnvironmentPanel
+                  settings={environmentSettings}
+                  onChange={setEnvironmentSettings}
+                  className="flex-1"
+                />
+              )}
+
+              {rightPanelTab === 'lenticular' && project?.stickerType === 'lenticular' && (
+                <LenticularEditor
+                  frames={lenticularFrames}
+                  settings={lenticularSettings}
+                  currentLayers={layers}
+                  onFramesChange={setLenticularFrames}
+                  onSettingsChange={setLenticularSettings}
+                  onSelectFrame={handleSelectLenticularFrame}
+                  onCaptureFrame={captureCanvasFrame}
+                  className="flex-1"
+                />
+              )}
+            </div>
           </div>
+
+          {/* Node Editor Overlay */}
+          {showNodeEditor && (
+            <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
+              <div className="relative w-full h-full max-w-6xl bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
+                <div className="absolute top-3 right-3 z-10">
+                  <button
+                    onClick={() => setShowNodeEditor(false)}
+                    className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+                  >
+                    <X className="w-4 h-4 text-white/60" />
+                  </button>
+                </div>
+                <NodeEditor
+                  material={smartMaterials[0] || {
+                    id: 'new',
+                    name: 'New Material',
+                    category: 'custom',
+                    nodes: [],
+                    connections: [],
+                    outputNodeId: '',
+                  }}
+                  onChange={(material) => {
+                    // Update or add material
+                    setSmartMaterials((prev) => {
+                      const idx = prev.findIndex((m) => m.id === material.id);
+                      if (idx >= 0) {
+                        const next = [...prev];
+                        next[idx] = material;
+                        return next;
+                      }
+                      return [...prev, material];
+                    });
+                  }}
+                  className="w-full h-full"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </TooltipProvider>

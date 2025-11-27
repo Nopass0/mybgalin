@@ -2,6 +2,30 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
+import type { Transform, Layer, BlendMode } from '@/types/studio';
+
+// Map BlendMode to valid Canvas 2D GlobalCompositeOperation
+function blendModeToCompositeOp(blendMode: BlendMode): GlobalCompositeOperation {
+  const validModes: Record<string, GlobalCompositeOperation> = {
+    'normal': 'source-over',
+    'multiply': 'multiply',
+    'screen': 'screen',
+    'overlay': 'overlay',
+    'darken': 'darken',
+    'lighten': 'lighten',
+    'color-dodge': 'color-dodge',
+    'color-burn': 'color-burn',
+    'hard-light': 'hard-light',
+    'soft-light': 'soft-light',
+    'difference': 'difference',
+    'exclusion': 'exclusion',
+    'hue': 'hue',
+    'saturation': 'saturation',
+    'color': 'color',
+    'luminosity': 'luminosity',
+  };
+  return validModes[blendMode] || 'source-over';
+}
 
 interface StudioCanvasProps {
   zoom: number;
@@ -10,6 +34,17 @@ interface StudioCanvasProps {
 }
 
 const CANVAS_SIZE = 1024;
+
+// Handle types for transform
+type HandleType = 'move' | 'tl' | 'tr' | 'bl' | 'br' | 'rotate' | 't' | 'r' | 'b' | 'l';
+
+interface TransformState {
+  active: boolean;
+  handle: HandleType | null;
+  startX: number;
+  startY: number;
+  startTransform: Transform | null;
+}
 
 export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,6 +72,16 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [isPanning, setIsPanning] = useState(false);
   const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
   const [brushPreview, setBrushPreview] = useState<{ x: number; y: number } | null>(null);
+
+  // Transform state for draggable objects
+  const [transformState, setTransformState] = useState<TransformState>({
+    active: false,
+    handle: null,
+    startX: 0,
+    startY: 0,
+    startTransform: null,
+  });
+  const [hoveredHandle, setHoveredHandle] = useState<HandleType | null>(null);
 
   // Initialize offscreen canvas
   useEffect(() => {
@@ -88,7 +133,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       ctx.save();
       ctx.globalAlpha = layer.opacity / 100;
-      ctx.globalCompositeOperation = layer.blendMode === 'normal' ? 'source-over' : layer.blendMode;
+      ctx.globalCompositeOperation = blendModeToCompositeOp(layer.blendMode);
 
       // Apply mask if exists
       if (layer.mask?.enabled && layer.mask.imageData) {
@@ -131,7 +176,136 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         ctx.stroke();
       }
     }
-  }, [layers, showGrid]);
+
+    // Draw transform handles for active layer (in move/transform mode)
+    if ((activeTool === 'move' || activeTool === 'transform') && activeLayerId) {
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (activeLayer) {
+        const transform = activeLayer.transform || {
+          x: 0, y: 0,
+          width: CANVAS_SIZE, height: CANVAS_SIZE,
+          rotation: 0, scaleX: 1, scaleY: 1, skewX: 0, skewY: 0,
+        };
+
+        drawTransformHandles(ctx, transform);
+      }
+    }
+  }, [layers, showGrid, activeTool, activeLayerId]);
+
+  // Draw transform handles around the layer
+  const drawTransformHandles = useCallback((ctx: CanvasRenderingContext2D, transform: Transform) => {
+    const { x, y, width, height, rotation } = transform;
+    const handleSize = 8;
+    const handleOffset = handleSize / 2;
+
+    ctx.save();
+
+    // Translate to center and rotate
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+
+    // Draw bounding box
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(x, y, width, height);
+    ctx.setLineDash([]);
+
+    // Draw handles
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2;
+
+    const handles: { type: HandleType; hx: number; hy: number }[] = [
+      { type: 'tl', hx: x, hy: y },
+      { type: 'tr', hx: x + width, hy: y },
+      { type: 'bl', hx: x, hy: y + height },
+      { type: 'br', hx: x + width, hy: y + height },
+      { type: 't', hx: x + width / 2, hy: y },
+      { type: 'b', hx: x + width / 2, hy: y + height },
+      { type: 'l', hx: x, hy: y + height / 2 },
+      { type: 'r', hx: x + width, hy: y + height / 2 },
+    ];
+
+    handles.forEach(({ type, hx, hy }) => {
+      ctx.beginPath();
+      ctx.rect(hx - handleOffset, hy - handleOffset, handleSize, handleSize);
+      ctx.fill();
+      ctx.stroke();
+
+      // Highlight hovered handle
+      if (hoveredHandle === type) {
+        ctx.fillStyle = '#f97316';
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+      }
+    });
+
+    // Draw rotation handle (above top center)
+    const rotateHandleY = y - 30;
+    ctx.beginPath();
+    ctx.arc(x + width / 2, rotateHandleY, handleSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = hoveredHandle === 'rotate' ? '#f97316' : '#ffffff';
+    ctx.fill();
+    ctx.stroke();
+
+    // Line connecting to rotation handle
+    ctx.beginPath();
+    ctx.moveTo(x + width / 2, y);
+    ctx.lineTo(x + width / 2, rotateHandleY + handleSize / 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }, [hoveredHandle]);
+
+  // Get default transform for a layer
+  const getLayerTransform = useCallback((layer: Layer): Transform => {
+    return layer.transform || {
+      x: 0,
+      y: 0,
+      width: CANVAS_SIZE,
+      height: CANVAS_SIZE,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      skewX: 0,
+      skewY: 0,
+    };
+  }, []);
+
+  // Check if point is on a handle
+  const getHandleAtPoint = useCallback((px: number, py: number, transform: Transform): HandleType | null => {
+    const { x, y, width, height } = transform;
+    const handleSize = 12; // Slightly larger hit area
+
+    const handles: { type: HandleType; hx: number; hy: number }[] = [
+      { type: 'tl', hx: x, hy: y },
+      { type: 'tr', hx: x + width, hy: y },
+      { type: 'bl', hx: x, hy: y + height },
+      { type: 'br', hx: x + width, hy: y + height },
+      { type: 't', hx: x + width / 2, hy: y },
+      { type: 'b', hx: x + width / 2, hy: y + height },
+      { type: 'l', hx: x, hy: y + height / 2 },
+      { type: 'r', hx: x + width, hy: y + height / 2 },
+      { type: 'rotate', hx: x + width / 2, hy: y - 30 },
+    ];
+
+    for (const { type, hx, hy } of handles) {
+      if (Math.abs(px - hx) <= handleSize && Math.abs(py - hy) <= handleSize) {
+        return type;
+      }
+    }
+
+    // Check if inside bounding box for move
+    if (px >= x && px <= x + width && py >= y && py <= y + height) {
+      return 'move';
+    }
+
+    return null;
+  }, []);
 
   // Render on layer changes
   useEffect(() => {
@@ -240,6 +414,27 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       return;
     }
 
+    // Handle move/transform tool
+    if ((activeTool === 'move' || activeTool === 'transform') && activeLayerId) {
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (activeLayer && !activeLayer.locked) {
+        const transform = getLayerTransform(activeLayer);
+        const handle = getHandleAtPoint(x, y, transform);
+
+        if (handle) {
+          setTransformState({
+            active: true,
+            handle,
+            startX: x,
+            startY: y,
+            startTransform: { ...transform },
+          });
+          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          return;
+        }
+      }
+    }
+
     // Handle eyedropper
     if (activeTool === 'eyedropper') {
       const canvas = canvasRef.current;
@@ -301,6 +496,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     compositeCanvas,
     pushHistory,
     primaryColor,
+    getLayerTransform,
+    getHandleAtPoint,
   ]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -309,6 +506,83 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     // Update brush preview position
     if (activeTool === 'brush' || activeTool === 'eraser') {
       setBrushPreview({ x: e.clientX, y: e.clientY });
+    }
+
+    // Handle transform hover highlight
+    if ((activeTool === 'move' || activeTool === 'transform') && activeLayerId && !transformState.active) {
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (activeLayer) {
+        const transform = getLayerTransform(activeLayer);
+        const handle = getHandleAtPoint(x, y, transform);
+        setHoveredHandle(handle);
+      }
+    }
+
+    // Handle active transform dragging
+    if (transformState.active && transformState.startTransform && activeLayerId) {
+      const dx = x - transformState.startX;
+      const dy = y - transformState.startY;
+      const st = transformState.startTransform;
+
+      let newTransform: Transform = { ...st };
+
+      switch (transformState.handle) {
+        case 'move':
+          newTransform.x = st.x + dx;
+          newTransform.y = st.y + dy;
+          break;
+        case 'tl':
+          newTransform.x = st.x + dx;
+          newTransform.y = st.y + dy;
+          newTransform.width = st.width - dx;
+          newTransform.height = st.height - dy;
+          break;
+        case 'tr':
+          newTransform.y = st.y + dy;
+          newTransform.width = st.width + dx;
+          newTransform.height = st.height - dy;
+          break;
+        case 'bl':
+          newTransform.x = st.x + dx;
+          newTransform.width = st.width - dx;
+          newTransform.height = st.height + dy;
+          break;
+        case 'br':
+          newTransform.width = st.width + dx;
+          newTransform.height = st.height + dy;
+          break;
+        case 't':
+          newTransform.y = st.y + dy;
+          newTransform.height = st.height - dy;
+          break;
+        case 'b':
+          newTransform.height = st.height + dy;
+          break;
+        case 'l':
+          newTransform.x = st.x + dx;
+          newTransform.width = st.width - dx;
+          break;
+        case 'r':
+          newTransform.width = st.width + dx;
+          break;
+        case 'rotate':
+          // Calculate rotation angle from center
+          const cx = st.x + st.width / 2;
+          const cy = st.y + st.height / 2;
+          const startAngle = Math.atan2(transformState.startY - cy, transformState.startX - cx);
+          const currentAngle = Math.atan2(y - cy, x - cx);
+          const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+          newTransform.rotation = st.rotation + angleDiff;
+          break;
+      }
+
+      // Ensure minimum size
+      newTransform.width = Math.max(10, newTransform.width);
+      newTransform.height = Math.max(10, newTransform.height);
+
+      updateLayer(activeLayerId, { transform: newTransform });
+      compositeCanvas();
+      return;
     }
 
     // Handle panning
@@ -342,9 +616,29 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     drawStroke,
     compositeCanvas,
     updatePointerState,
+    layers,
+    transformState,
+    getLayerTransform,
+    getHandleAtPoint,
+    updateLayer,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    // Handle transform finish
+    if (transformState.active) {
+      setTransformState({
+        active: false,
+        handle: null,
+        startX: 0,
+        startY: 0,
+        startTransform: null,
+      });
+      setHoveredHandle(null);
+      pushHistory('Transform');
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      return;
+    }
+
     if (isDrawing) {
       setIsDrawing(false);
       pushHistory('Brush stroke');
@@ -362,7 +656,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     setIsPanning(false);
     setLastPoint(null);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [isDrawing, pushHistory, activeLayerId, updateLayer]);
+  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState]);
 
   // Handle wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -395,7 +689,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       onWheel={handleWheel}
       style={{
         touchAction: 'none',
-        cursor: getCursorForTool(activeTool),
+        cursor: getCursorForTool(activeTool, hoveredHandle),
       }}
     >
       {/* Canvas centered with zoom and pan */}
@@ -526,10 +820,33 @@ function hexToRGBA(hex: string): { r: number; g: number; b: number; a: number } 
     : { r: 0, g: 0, b: 0, a: 255 };
 }
 
-function getCursorForTool(tool: string): string {
+function getCursorForTool(tool: string, hoveredHandle?: HandleType | null): string {
+  // Transform handle cursors
+  if ((tool === 'move' || tool === 'transform') && hoveredHandle) {
+    switch (hoveredHandle) {
+      case 'move':
+        return 'move';
+      case 'tl':
+      case 'br':
+        return 'nwse-resize';
+      case 'tr':
+      case 'bl':
+        return 'nesw-resize';
+      case 't':
+      case 'b':
+        return 'ns-resize';
+      case 'l':
+      case 'r':
+        return 'ew-resize';
+      case 'rotate':
+        return 'grab';
+    }
+  }
+
   switch (tool) {
     case 'move':
-      return 'move';
+    case 'transform':
+      return 'default';
     case 'hand':
       return 'grab';
     case 'eyedropper':
