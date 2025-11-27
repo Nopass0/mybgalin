@@ -579,7 +579,9 @@ export type ToolType =
   | 'sharpen'
   | 'dodge'
   | 'burn'
-  | 'sponge';
+  | 'sponge'
+  | 'warp'
+  | 'perspective';
 
 // ==================== BRUSH ====================
 

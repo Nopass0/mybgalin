@@ -127,6 +127,20 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [strokeStartPoint, setStrokeStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [constrainedAxis, setConstrainedAxis] = useState<'x' | 'y' | null>(null);
 
+  // Warp tool state
+  const [warpMode, setWarpMode] = useState<'push' | 'twirl' | 'pinch' | 'bloat' | 'reconstruct'>('push');
+  const [isWarping, setIsWarping] = useState(false);
+  const warpImageBackupRef = useRef<ImageData | null>(null);
+
+  // Perspective guides state
+  const [perspectiveGuides, setPerspectiveGuides] = useState<Array<{
+    id: string;
+    vanishingPoint: { x: number; y: number };
+    lines: number;
+    angle: number;
+    spread: number;
+  }>>([]);
+
   // Initialize offscreen canvas
   useEffect(() => {
     offscreenCanvasRef.current = document.createElement('canvas');
@@ -1286,6 +1300,142 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     ctx.putImageData(targetData, tgtX, tgtY);
   }, []);
 
+  // Apply warp/deformation effect at a point (liquify style)
+  const applyWarpAtPoint = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    deltaX: number,
+    deltaY: number,
+    radius: number,
+    strength: number,
+    mode: 'push' | 'twirl' | 'pinch' | 'bloat' | 'reconstruct'
+  ) => {
+    const size = Math.ceil(radius * 2) + 4;
+    const halfSize = Math.floor(size / 2);
+    const sx = Math.max(0, Math.floor(x - halfSize));
+    const sy = Math.max(0, Math.floor(y - halfSize));
+    const sw = Math.min(size, CANVAS_SIZE - sx);
+    const sh = Math.min(size, CANVAS_SIZE - sy);
+
+    if (sw <= 0 || sh <= 0) return;
+
+    // Get the current image data
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const origData = new Uint8ClampedArray(imageData.data);
+    const data = imageData.data;
+
+    // Clear the region first
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 0;
+      data[i + 1] = 0;
+      data[i + 2] = 0;
+      data[i + 3] = 0;
+    }
+
+    // Sample from original and place in new positions
+    for (let py = 0; py < sh; py++) {
+      for (let px = 0; px < sw; px++) {
+        const localX = px - (x - sx);
+        const localY = py - (y - sy);
+        const dist = Math.sqrt(localX * localX + localY * localY);
+
+        if (dist > radius || dist === 0) {
+          // Copy unchanged pixels
+          const idx = (py * sw + px) * 4;
+          data[idx] = origData[idx];
+          data[idx + 1] = origData[idx + 1];
+          data[idx + 2] = origData[idx + 2];
+          data[idx + 3] = origData[idx + 3];
+          continue;
+        }
+
+        // Calculate falloff (stronger in center)
+        const falloff = Math.pow(1 - (dist / radius), 2);
+        const amount = falloff * strength;
+
+        let srcX = px;
+        let srcY = py;
+
+        switch (mode) {
+          case 'push':
+            // Push pixels in the direction of mouse movement
+            srcX = px + deltaX * amount;
+            srcY = py + deltaY * amount;
+            break;
+          case 'twirl':
+            // Rotate pixels around center point
+            const angle = amount * Math.PI * 0.5 * (deltaX > 0 ? 1 : -1);
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            srcX = localX * cos - localY * sin + (x - sx);
+            srcY = localX * sin + localY * cos + (y - sy);
+            break;
+          case 'pinch':
+            // Pull pixels toward center
+            srcX = px + localX * amount * 0.3;
+            srcY = py + localY * amount * 0.3;
+            break;
+          case 'bloat':
+            // Push pixels away from center
+            srcX = px - localX * amount * 0.3;
+            srcY = py - localY * amount * 0.3;
+            break;
+          case 'reconstruct':
+            // Restore from backup
+            if (warpImageBackupRef.current) {
+              const backupSx = Math.max(0, Math.floor(x - halfSize));
+              const backupSy = Math.max(0, Math.floor(y - halfSize));
+              const backupIdx = ((py + backupSy) * CANVAS_SIZE + (px + backupSx)) * 4;
+              const idx = (py * sw + px) * 4;
+
+              const backupData = warpImageBackupRef.current.data;
+              if (backupIdx >= 0 && backupIdx + 3 < backupData.length) {
+                data[idx] = Math.round(origData[idx] * (1 - amount) + backupData[backupIdx] * amount);
+                data[idx + 1] = Math.round(origData[idx + 1] * (1 - amount) + backupData[backupIdx + 1] * amount);
+                data[idx + 2] = Math.round(origData[idx + 2] * (1 - amount) + backupData[backupIdx + 2] * amount);
+                data[idx + 3] = Math.round(origData[idx + 3] * (1 - amount) + backupData[backupIdx + 3] * amount);
+              }
+            }
+            continue;
+        }
+
+        // Sample from source with bilinear interpolation
+        const srcXi = Math.floor(srcX);
+        const srcYi = Math.floor(srcY);
+        const fx = srcX - srcXi;
+        const fy = srcY - srcYi;
+
+        if (srcXi >= 0 && srcXi < sw - 1 && srcYi >= 0 && srcYi < sh - 1) {
+          const idx00 = (srcYi * sw + srcXi) * 4;
+          const idx10 = (srcYi * sw + srcXi + 1) * 4;
+          const idx01 = ((srcYi + 1) * sw + srcXi) * 4;
+          const idx11 = ((srcYi + 1) * sw + srcXi + 1) * 4;
+          const dstIdx = (py * sw + px) * 4;
+
+          for (let c = 0; c < 4; c++) {
+            const v00 = origData[idx00 + c];
+            const v10 = origData[idx10 + c];
+            const v01 = origData[idx01 + c];
+            const v11 = origData[idx11 + c];
+            const v = v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
+            data[dstIdx + c] = Math.round(v);
+          }
+        } else if (srcXi >= 0 && srcXi < sw && srcYi >= 0 && srcYi < sh) {
+          // Simple nearest neighbor for edge cases
+          const srcIdx = (srcYi * sw + srcXi) * 4;
+          const dstIdx = (py * sw + px) * 4;
+          data[dstIdx] = origData[srcIdx];
+          data[dstIdx + 1] = origData[srcIdx + 1];
+          data[dstIdx + 2] = origData[srcIdx + 2];
+          data[dstIdx + 3] = origData[srcIdx + 3];
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
+  }, []);
+
   // Handle context menu (right-click)
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1297,7 +1447,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       menuType = 'brush';
     } else if (activeTool === 'text') {
       menuType = 'text';
-    } else if (['blur', 'sharpen', 'smudge', 'dodge', 'burn', 'sponge'].includes(activeTool)) {
+    } else if (['blur', 'sharpen', 'smudge', 'dodge', 'burn', 'sponge', 'warp'].includes(activeTool)) {
       menuType = 'filter';
     } else {
       menuType = 'canvas';
@@ -1573,6 +1723,39 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
       }
     }
+
+    // Handle warp tool
+    if (activeTool === 'warp') {
+      if (!activeLayerId) return;
+
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (!activeLayer || activeLayer.locked) return;
+
+      // Create backup of layer for reconstruct mode
+      const layerCanvas = getLayerCanvas(activeLayerId);
+      const ctx = layerCanvas.getContext('2d');
+      if (ctx) {
+        warpImageBackupRef.current = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      }
+
+      setIsWarping(true);
+      setLastPoint({ x, y });
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
+
+    // Handle perspective tool (place vanishing point)
+    if (activeTool === 'perspective') {
+      // Add a new perspective vanishing point
+      const newGuide = {
+        id: `perspective-${Date.now()}`,
+        vanishingPoint: { x, y },
+        lines: 8,
+        angle: 0,
+        spread: 360,
+      };
+      setPerspectiveGuides(prev => [...prev, newGuide]);
+      compositeCanvas();
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -1598,6 +1781,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     contextMenu,
     showRulers,
     guideStartPoint,
+    warpMode,
   ]);
 
   // Magic wand selection algorithm
@@ -1723,7 +1907,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     // Update brush preview position
     if (activeTool === 'brush' || activeTool === 'eraser' || activeTool === 'blur' || activeTool === 'sharpen' ||
         activeTool === 'smudge' || activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge' ||
-        activeTool === 'clone') {
+        activeTool === 'clone' || activeTool === 'warp') {
       setBrushPreview({ x: e.clientX, y: e.clientY });
     }
 
@@ -1906,6 +2090,22 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         });
       }
     }
+
+    // Handle warp tool
+    if (isWarping && lastPoint && activeLayerId) {
+      const layerCanvas = getLayerCanvas(activeLayerId);
+      const ctx = layerCanvas.getContext('2d');
+      if (ctx) {
+        const deltaX = (x - lastPoint.x) * 0.5;
+        const deltaY = (y - lastPoint.y) * 0.5;
+        const radius = currentBrush.size;
+        const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
+
+        applyWarpAtPoint(ctx, x, y, deltaX, deltaY, radius, strength, warpMode);
+        compositeCanvas();
+      }
+      setLastPoint({ x, y });
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -1940,6 +2140,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     shiftHeld,
     strokeStartPoint,
     constrainedAxis,
+    isWarping,
+    warpMode,
+    applyWarpAtPoint,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -2042,10 +2245,26 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       setLassoPoints([]);
     }
 
+    // Finish warp
+    if (isWarping) {
+      setIsWarping(false);
+      warpImageBackupRef.current = null;
+      pushHistory('Warp');
+
+      // Save layer canvas data
+      if (activeLayerId) {
+        const layerCanvas = layerCanvasesRef.current.get(activeLayerId);
+        if (layerCanvas) {
+          const imageData = layerCanvas.toDataURL();
+          updateLayer(activeLayerId, { imageData });
+        }
+      }
+    }
+
     setIsPanning(false);
     setLastPoint(null);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas, isSelecting, activeTool, lassoPoints, selectionStart, screenToCanvas]);
+  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas, isSelecting, activeTool, lassoPoints, selectionStart, screenToCanvas, isWarping]);
 
   // Get bounds from lasso points
   const getLassoBounds = useCallback((points: { x: number; y: number }[]): { x: number; y: number; width: number; height: number } => {
@@ -2526,6 +2745,16 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         </>
       )}
 
+      {/* Clear perspective guides button */}
+      {perspectiveGuides.length > 0 && (
+        <button
+          onClick={() => setPerspectiveGuides([])}
+          className="absolute top-[40px] right-[160px] bg-purple-500/80 hover:bg-purple-500 px-2 py-1 rounded text-xs text-white z-50"
+        >
+          Clear Perspective ({perspectiveGuides.length})
+        </button>
+      )}
+
       {/* Guides overlay */}
       {guides.length > 0 && (
         <svg className="absolute inset-0 pointer-events-none z-30" width="100%" height="100%">
@@ -2554,6 +2783,61 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
               />
             )
           ))}
+        </svg>
+      )}
+
+      {/* Perspective guides overlay */}
+      {perspectiveGuides.length > 0 && (
+        <svg className="absolute inset-0 pointer-events-none z-30" width="100%" height="100%">
+          {perspectiveGuides.map((pg) => {
+            const centerX = `calc(50% + ${(pg.vanishingPoint.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`;
+            const centerY = `calc(50% + ${(pg.vanishingPoint.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`;
+            const lines = [];
+            const lineLength = 3000; // Long enough to go beyond canvas
+
+            for (let i = 0; i < pg.lines; i++) {
+              const angle = (pg.spread / pg.lines) * i + pg.angle - pg.spread / 2;
+              const radAngle = (angle * Math.PI) / 180;
+              const endX = pg.vanishingPoint.x + Math.cos(radAngle) * lineLength;
+              const endY = pg.vanishingPoint.y + Math.sin(radAngle) * lineLength;
+              const endXCalc = `calc(50% + ${(endX - CANVAS_SIZE / 2) * zoom + pan.x}px)`;
+              const endYCalc = `calc(50% + ${(endY - CANVAS_SIZE / 2) * zoom + pan.y}px)`;
+
+              lines.push(
+                <line
+                  key={`${pg.id}-line-${i}`}
+                  x1={centerX}
+                  y1={centerY}
+                  x2={endXCalc}
+                  y2={endYCalc}
+                  stroke="magenta"
+                  strokeWidth="1"
+                  strokeDasharray="6 3"
+                  opacity="0.6"
+                />
+              );
+            }
+
+            return (
+              <g key={pg.id}>
+                {lines}
+                {/* Vanishing point marker */}
+                <circle
+                  cx={centerX}
+                  cy={centerY}
+                  r="6"
+                  fill="magenta"
+                  opacity="0.8"
+                />
+                <circle
+                  cx={centerX}
+                  cy={centerY}
+                  r="2"
+                  fill="white"
+                />
+              </g>
+            );
+          })}
         </svg>
       )}
 
