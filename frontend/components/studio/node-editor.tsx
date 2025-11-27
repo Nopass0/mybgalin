@@ -926,10 +926,10 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
 
   /**
    * Handles mouse up to end dragging/panning
+   * Note: connecting state is NOT cleared here to allow click-to-connect workflow
    */
   const handleMouseUp = useCallback(() => {
     setDraggedNode(null);
-    setConnecting(null);
     setIsPanning(false);
   }, []);
 
@@ -942,6 +942,30 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [handleMouseMove, handleMouseUp]);
+
+  // Handle keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setConnecting(null);
+        setShowNodePicker(false);
+      }
+      // Delete selected node with Delete or Backspace
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
+        // Don't delete if focused on an input
+        if ((e.target as HTMLElement).tagName === 'INPUT') return;
+        deleteSelectedNode();
+      }
+      // Duplicate with Ctrl/Cmd + D
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedNodeId) {
+        e.preventDefault();
+        duplicateSelectedNode();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId]);
 
   // Generate node previews when nodes or connections change
   useEffect(() => {
@@ -1314,9 +1338,10 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       setIsPanning(true);
       e.preventDefault();
     } else if (e.button === 0 && e.target === e.currentTarget) {
-      // Left click on empty space deselects
+      // Left click on empty space deselects and cancels connecting
       setSelectedNodeId(null);
       setShowNodePicker(false);
+      setConnecting(null);
     }
   };
 
@@ -1640,11 +1665,38 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
 
     const ports = isOutput ? node.outputs : node.inputs;
     const portIndex = ports.findIndex(p => p.id === portId);
-    const paramCount = node.parameters.length;
+
+    // Node layout heights:
+    // - Header: 36px (px-3 py-2 with text)
+    // - Preview thumbnail: 80px (pt-2 = 8px + h-16 = 64px + px-2 = 8px padding)
+    // - Content padding top: 8px (p-2)
+    // - Each port row: 24px (py-1 = 8px total + 12px circle + 4px gap)
+    // - Each parameter row: ~32px average
+
+    const headerHeight = 36;
+    const hasPreview = nodePreviews.has(node.id);
+    const previewHeight = hasPreview ? 80 : 0;
+    const contentPaddingTop = 8;
+    const portRowHeight = 24;
+    const paramRowHeight = 32;
+
+    let y = node.position.y + headerHeight + previewHeight + contentPaddingTop;
+
+    if (isOutput) {
+      // Output ports are at the bottom, after inputs and parameters
+      y += node.inputs.length * portRowHeight; // All input ports
+      y += node.parameters.length * paramRowHeight; // All parameters
+      y += portIndex * portRowHeight; // This output port's position
+      y += 6; // Center in the port row
+    } else {
+      // Input ports are at the top
+      y += portIndex * portRowHeight;
+      y += 6; // Center in the port row
+    }
 
     return {
       x: node.position.x + (isOutput ? 220 : 0),
-      y: node.position.y + 40 + portIndex * 24 + (isOutput ? paramCount * 30 : 0),
+      y,
     };
   };
 
@@ -1835,8 +1887,12 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             {/* Active connection being drawn */}
             {connecting && (() => {
               const fromPos = getPortPosition(connecting.nodeId, connecting.portId, connecting.isOutput);
-              const toX = (lastMousePos.x - pan.x) / zoom;
-              const toY = (lastMousePos.y - pan.y) / zoom;
+              // Convert screen coordinates to canvas coordinates
+              const rect = canvasRef.current?.getBoundingClientRect();
+              const offsetX = rect ? rect.left : 0;
+              const offsetY = rect ? rect.top : 0;
+              const toX = (lastMousePos.x - offsetX - pan.x) / zoom;
+              const toY = (lastMousePos.y - offsetY - pan.y) / zoom;
               const midX = (fromPos.x + toX) / 2;
 
               return (
