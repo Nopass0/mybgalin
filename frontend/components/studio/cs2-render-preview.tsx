@@ -78,9 +78,9 @@ export function CS2RenderPreview({ className }: CS2RenderPreviewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [lastMouse, setLastMouse] = useState({ x: 0, y: 0 });
 
-  // Animation
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [animationSpeed, setAnimationSpeed] = useState(1);
+  // Animation - auto-rotate on mount for demo
+  const [isAnimating, setIsAnimating] = useState(true);
+  const [animationSpeed, setAnimationSpeed] = useState(0.5);
 
   // Sticker settings
   const [stickerShape, setStickerShape] = useState('square');
@@ -88,8 +88,11 @@ export function CS2RenderPreview({ className }: CS2RenderPreviewProps) {
   const [showShadow, setShowShadow] = useState(true);
   const [wearAmount, setWearAmount] = useState(0);
 
-  // Get layer data
-  const colorLayer = layers.find(l => l.type === 'raster' || l.type === 'normal');
+  // Get layer data - find the first visible raster layer with imageData for color
+  const colorLayer = layers.find(l => l.type === 'raster' && l.visible && l.imageData);
+  // If no raster layer, try to get any layer with imageData
+  const fallbackColorLayer = colorLayer || layers.find(l => l.imageData && l.visible);
+  // Find material map layers
   const normalLayer = layers.find(l => l.type === 'normal');
   const metalnessLayer = layers.find(l => l.type === 'metalness');
   const roughnessLayer = layers.find(l => l.type === 'roughness');
@@ -143,8 +146,10 @@ export function CS2RenderPreview({ className }: CS2RenderPreviewProps) {
       roughness?: HTMLImageElement;
     } = {};
 
-    if (colorLayer?.imageData) {
-      textures.color = await loadImage(colorLayer.imageData);
+    // Use fallbackColorLayer to ensure we get any visible layer with imageData
+    const activeColorLayer = fallbackColorLayer || colorLayer;
+    if (activeColorLayer?.imageData) {
+      textures.color = await loadImage(activeColorLayer.imageData);
     }
     if (normalLayer?.imageData) {
       textures.normal = await loadImage(normalLayer.imageData);
@@ -260,7 +265,7 @@ export function CS2RenderPreview({ className }: CS2RenderPreviewProps) {
       drawHolographicOverlay(ctx, centerX, centerY, size, rotation.y);
     }
   }, [
-    layers, colorLayer, normalLayer, metalnessLayer, roughnessLayer,
+    layers, colorLayer, fallbackColorLayer, normalLayer, metalnessLayer, roughnessLayer,
     environment, lightAngle, lightHeight, lightIntensity, ambientIntensity,
     rotation, zoom, stickerShape, showReflections, showShadow, wearAmount,
     loadImage
@@ -296,6 +301,7 @@ export function CS2RenderPreview({ className }: CS2RenderPreviewProps) {
   // Mouse handlers for rotation
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
+    setIsAnimating(false); // Stop auto-rotation when user interacts
     setLastMouse({ x: e.clientX, y: e.clientY });
   };
 
@@ -482,6 +488,26 @@ export function CS2RenderPreview({ className }: CS2RenderPreviewProps) {
             max={1}
             step={0.01}
           />
+        </div>
+
+        {/* Animation speed slider */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] text-white/40">Rotation Speed</label>
+            <span className="text-[10px] text-white/30">{animationSpeed.toFixed(1)}°/frame</span>
+          </div>
+          <Slider
+            value={[animationSpeed]}
+            onValueChange={([v]) => setAnimationSpeed(v)}
+            min={0.1}
+            max={3}
+            step={0.1}
+          />
+        </div>
+
+        {/* Status */}
+        <div className="text-[10px] text-white/30 text-center">
+          {isAnimating ? '🔄 Rotating - Click canvas to drag manually' : '✋ Drag canvas to rotate'}
         </div>
       </div>
     </div>
