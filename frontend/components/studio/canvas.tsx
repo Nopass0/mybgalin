@@ -95,6 +95,18 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [cloneOffset, setCloneOffset] = useState<{ x: number; y: number } | null>(null);
   const cloneSourceLayerRef = useRef<string | null>(null);
 
+  // Selection state
+  const [selection, setSelection] = useState<{
+    type: 'rect' | 'ellipse' | 'lasso' | 'magic';
+    bounds?: { x: number; y: number; width: number; height: number };
+    path?: { x: number; y: number }[];
+    maskData?: ImageData;
+  } | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  const [lassoPoints, setLassoPoints] = useState<{ x: number; y: number }[]>([]);
+  const selectionAnimationRef = useRef<number>(0);
+
   // Initialize offscreen canvas
   useEffect(() => {
     offscreenCanvasRef.current = document.createElement('canvas');
@@ -1421,6 +1433,42 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
+
+    // Handle selection tools
+    if (activeTool === 'selection-rect' || activeTool === 'selection-lasso' || activeTool === 'selection-magic') {
+      // Clear selection if clicking without shift
+      if (!e.shiftKey) {
+        setSelection(null);
+      }
+
+      if (activeTool === 'selection-magic') {
+        // Magic wand - select similar colors
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const maskData = magicWandSelect(ctx, Math.floor(x), Math.floor(y), 32);
+            if (maskData) {
+              setSelection({
+                type: 'magic',
+                maskData,
+                bounds: getMaskBounds(maskData),
+              });
+            }
+          }
+        }
+      } else if (activeTool === 'selection-lasso') {
+        // Start lasso selection
+        setIsSelecting(true);
+        setLassoPoints([{ x, y }]);
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      } else {
+        // Start rect/ellipse selection
+        setIsSelecting(true);
+        setSelectionStart({ x, y });
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      }
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -1444,6 +1492,102 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     cloneOffset,
     applyCloneAtPoint,
   ]);
+
+  // Magic wand selection algorithm
+  const magicWandSelect = useCallback((
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    tolerance: number
+  ): ImageData | null => {
+    const imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    const data = imageData.data;
+    const width = CANVAS_SIZE;
+    const height = CANVAS_SIZE;
+
+    // Create mask
+    const maskData = ctx.createImageData(width, height);
+    const mask = maskData.data;
+
+    // Get starting color
+    const startPos = (startY * width + startX) * 4;
+    if (startPos < 0 || startPos >= data.length - 3) return null;
+
+    const startR = data[startPos];
+    const startG = data[startPos + 1];
+    const startB = data[startPos + 2];
+    const startA = data[startPos + 3];
+
+    const stack: [number, number][] = [[startX, startY]];
+    const visited = new Set<string>();
+
+    while (stack.length > 0) {
+      const [px, py] = stack.pop()!;
+      const key = `${px},${py}`;
+
+      if (visited.has(key)) continue;
+      if (px < 0 || px >= width || py < 0 || py >= height) continue;
+
+      const pos = (py * width + px) * 4;
+      const r = data[pos];
+      const g = data[pos + 1];
+      const b = data[pos + 2];
+      const a = data[pos + 3];
+
+      // Check if color matches within tolerance
+      const diff = Math.sqrt(
+        Math.pow(r - startR, 2) +
+        Math.pow(g - startG, 2) +
+        Math.pow(b - startB, 2) +
+        Math.pow(a - startA, 2)
+      );
+
+      if (diff <= tolerance * 2) {
+        // Mark as selected (white in mask)
+        mask[pos] = 255;
+        mask[pos + 1] = 255;
+        mask[pos + 2] = 255;
+        mask[pos + 3] = 255;
+
+        visited.add(key);
+
+        stack.push([px + 1, py]);
+        stack.push([px - 1, py]);
+        stack.push([px, py + 1]);
+        stack.push([px, py - 1]);
+      }
+    }
+
+    return maskData;
+  }, []);
+
+  // Get bounds from mask data
+  const getMaskBounds = useCallback((maskData: ImageData): { x: number; y: number; width: number; height: number } => {
+    const mask = maskData.data;
+    const width = maskData.width;
+    const height = maskData.height;
+
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const pos = (y * width + x) * 4;
+        if (mask[pos + 3] > 0) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
@@ -1614,6 +1758,26 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     if (isDrawingGradient && gradientStart) {
       setGradientEnd({ x, y });
     }
+
+    // Update selection while dragging
+    if (isSelecting) {
+      if (activeTool === 'selection-lasso') {
+        // Add point to lasso path
+        setLassoPoints(prev => [...prev, { x, y }]);
+      } else if (activeTool === 'selection-rect' && selectionStart) {
+        // Update rect selection bounds
+        const bounds = {
+          x: Math.min(selectionStart.x, x),
+          y: Math.min(selectionStart.y, y),
+          width: Math.abs(x - selectionStart.x),
+          height: Math.abs(y - selectionStart.y),
+        };
+        setSelection({
+          type: 'rect',
+          bounds,
+        });
+      }
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -1643,6 +1807,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     cloneSource,
     cloneOffset,
     applyCloneAtPoint,
+    isSelecting,
+    selectionStart,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -1708,10 +1874,65 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       setGradientEnd(null);
     }
 
+    // Finish selection
+    if (isSelecting) {
+      const { x, y } = screenToCanvas(e.clientX, e.clientY);
+
+      if (activeTool === 'selection-lasso' && lassoPoints.length > 2) {
+        // Complete lasso selection - close the path
+        setSelection({
+          type: 'lasso',
+          path: [...lassoPoints, lassoPoints[0]], // Close the path
+          bounds: getLassoBounds(lassoPoints),
+        });
+      } else if (activeTool === 'selection-rect' && selectionStart) {
+        // Finalize rect selection
+        const bounds = {
+          x: Math.min(selectionStart.x, x),
+          y: Math.min(selectionStart.y, y),
+          width: Math.abs(x - selectionStart.x),
+          height: Math.abs(y - selectionStart.y),
+        };
+        // Only create selection if it has non-zero area
+        if (bounds.width > 1 && bounds.height > 1) {
+          setSelection({
+            type: 'rect',
+            bounds,
+          });
+        }
+      }
+
+      setIsSelecting(false);
+      setSelectionStart(null);
+      setLassoPoints([]);
+    }
+
     setIsPanning(false);
     setLastPoint(null);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas]);
+  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas, isSelecting, activeTool, lassoPoints, selectionStart, screenToCanvas]);
+
+  // Get bounds from lasso points
+  const getLassoBounds = useCallback((points: { x: number; y: number }[]): { x: number; y: number; width: number; height: number } => {
+    if (points.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+
+    let minX = points[0].x, minY = points[0].y;
+    let maxX = points[0].x, maxY = points[0].y;
+
+    for (const p of points) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }, []);
 
   // Handle wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -1940,6 +2161,108 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         </div>
       )}
 
+      {/* Selection overlay */}
+      {(selection || (isSelecting && (selectionStart || lassoPoints.length > 0))) && (
+        <svg
+          className="absolute inset-0 pointer-events-none z-40"
+          width="100%"
+          height="100%"
+        >
+          <defs>
+            <pattern id="marching-ants" patternUnits="userSpaceOnUse" width="16" height="16">
+              <rect width="16" height="16" fill="none" />
+              <path d="M0 0 L8 0 L8 8 L0 8 Z M8 8 L16 8 L16 16 L8 16 Z" fill="white" />
+            </pattern>
+            <mask id="selection-mask">
+              <rect width="100%" height="100%" fill="black" fillOpacity="0.3" />
+              {/* Cut out the selection area */}
+              {selection?.type === 'rect' && selection.bounds && (
+                <rect
+                  x={`calc(50% + ${(selection.bounds.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+                  y={`calc(50% + ${(selection.bounds.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+                  width={selection.bounds.width * zoom}
+                  height={selection.bounds.height * zoom}
+                  fill="white"
+                />
+              )}
+              {selection?.type === 'lasso' && selection.path && (
+                <polygon
+                  points={selection.path.map(p =>
+                    `calc(50% + ${(p.x - CANVAS_SIZE / 2) * zoom + pan.x}px),calc(50% + ${(p.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`
+                  ).join(' ')}
+                  fill="white"
+                />
+              )}
+            </mask>
+          </defs>
+
+          {/* Darkened area outside selection */}
+          {selection && !isSelecting && (
+            <rect width="100%" height="100%" fill="black" fillOpacity="0.3" mask="url(#selection-mask)" />
+          )}
+
+          {/* Selection border - rect */}
+          {((selection?.type === 'rect' && selection.bounds) || (isSelecting && selectionStart && activeTool === 'selection-rect')) && (
+            <>
+              {/* Get current selection bounds */}
+              {(() => {
+                const bounds = selection?.bounds || (selectionStart && {
+                  x: Math.min(selectionStart.x, selectionStart.x),
+                  y: Math.min(selectionStart.y, selectionStart.y),
+                  width: 0,
+                  height: 0,
+                });
+                if (!bounds) return null;
+                const screenX = `calc(50% + ${(bounds.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`;
+                const screenY = `calc(50% + ${(bounds.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`;
+                return (
+                  <rect
+                    x={screenX}
+                    y={screenY}
+                    width={bounds.width * zoom}
+                    height={bounds.height * zoom}
+                    fill="none"
+                    stroke="white"
+                    strokeWidth="1"
+                    strokeDasharray="4 4"
+                    className="animate-[dash_0.5s_linear_infinite]"
+                  />
+                );
+              })()}
+            </>
+          )}
+
+          {/* Selection border - lasso */}
+          {(selection?.type === 'lasso' && selection.path) || (isSelecting && lassoPoints.length > 1 && activeTool === 'selection-lasso') ? (
+            <polyline
+              points={(selection?.path || lassoPoints).map(p =>
+                `${window.innerWidth / 2 + (p.x - CANVAS_SIZE / 2) * zoom + pan.x},${window.innerHeight / 2 + (p.y - CANVAS_SIZE / 2) * zoom + pan.y}`
+              ).join(' ')}
+              fill="none"
+              stroke="white"
+              strokeWidth="1"
+              strokeDasharray="4 4"
+              className="animate-[dash_0.5s_linear_infinite]"
+            />
+          ) : null}
+
+          {/* Selection border - magic wand (show bounds) */}
+          {selection?.type === 'magic' && selection.bounds && (
+            <rect
+              x={`calc(50% + ${(selection.bounds.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`}
+              y={`calc(50% + ${(selection.bounds.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`}
+              width={selection.bounds.width * zoom}
+              height={selection.bounds.height * zoom}
+              fill="none"
+              stroke="cyan"
+              strokeWidth="1"
+              strokeDasharray="4 4"
+              className="animate-[dash_0.5s_linear_infinite]"
+            />
+          )}
+        </svg>
+      )}
+
       {/* Zoom indicator */}
       <div className="absolute bottom-4 left-4 px-2 py-1 bg-black/50 rounded text-[10px] text-white/60">
         {Math.round(zoom * 100)}%
@@ -2076,6 +2399,10 @@ function getCursorForTool(tool: string, hoveredHandle?: HandleType | null): stri
       return 'crosshair';
     case 'zoom':
       return 'zoom-in';
+    case 'selection-rect':
+    case 'selection-lasso':
+    case 'selection-magic':
+      return 'crosshair';
     case 'brush':
     case 'eraser':
     case 'blur':
