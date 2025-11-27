@@ -26,10 +26,13 @@ import {
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
+import { useHotkeys, useSpaceBarPan } from '@/hooks/useHotkeys';
+import { useAutoSave, useLocalBackup } from '@/hooks/useAutoSave';
 import { StudioToolbar } from '@/components/studio/toolbar';
 import { StudioLayersPanel } from '@/components/studio/layers-panel';
 import { StudioColorPicker } from '@/components/studio/color-picker';
 import { StudioBrushSettings } from '@/components/studio/brush-settings';
+import { ShapeToolPanel } from '@/components/studio/shape-tool-panel';
 import { StudioCanvas } from '@/components/studio/canvas';
 import { StudioMapTabs } from '@/components/studio/map-tabs';
 import { TextToolPanel } from '@/components/studio/text-tool-panel';
@@ -37,6 +40,7 @@ import { SmartMasksPanel } from '@/components/studio/smart-masks-panel';
 import { EnvironmentPanel } from '@/components/studio/environment-panel';
 import { GeneratorsPanel } from '@/components/studio/generators-panel';
 import { NodeEditor } from '@/components/studio/node-editor';
+import { MaterialsPanel } from '@/components/studio/materials-panel';
 import { LenticularEditor } from '@/components/studio/lenticular-editor';
 import { Button } from '@/components/ui/button';
 import {
@@ -72,6 +76,24 @@ export default function ProjectEditorPage() {
     pushHistory,
   } = useStudioEditor();
 
+  // Initialize hotkeys for Photoshop-like shortcuts
+  useHotkeys();
+
+  // Space bar for temporary hand tool
+  const isSpacePanning = useSpaceBarPan();
+
+  // Auto-save functionality
+  const {
+    lastSaved,
+    isSaving: isAutoSaving,
+    hasUnsavedChanges,
+    saveError,
+    save: autoSave
+  } = useAutoSave(projectId);
+
+  // Local backup
+  const { loadFromLocal, clearLocal } = useLocalBackup(projectId);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
@@ -84,6 +106,7 @@ export default function ProjectEditorPage() {
   // Smart features state
   const [smartMasks, setSmartMasks] = useState<SmartMask[]>(DEFAULT_SMART_MASKS);
   const [smartMaterials, setSmartMaterials] = useState<SmartMaterial[]>([]);
+  const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
   const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>(DEFAULT_ENVIRONMENT);
   const [lenticularFrames, setLenticularFrames] = useState<LenticularFrame[]>([]);
   const [lenticularSettings, setLenticularSettings] = useState<LenticularSettings>({
@@ -116,49 +139,29 @@ export default function ProjectEditorPage() {
     }
   }, [authLoading, isAuthenticated, projects, projectId]);
 
-  // Keyboard shortcuts
+  // Manual save handler
+  const handleSave = useCallback(async () => {
+    if (!project) return;
+    setIsSaving(true);
+    try {
+      await autoSave();
+    } finally {
+      setIsSaving(false);
+    }
+  }, [project, autoSave]);
+
+  // Ctrl+S save shortcut (separate from useHotkeys to access autoSave)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + Z = Undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      }
-      // Ctrl/Cmd + Shift + Z = Redo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
-        e.preventDefault();
-        redo();
-      }
-      // Ctrl/Cmd + S = Save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
-      }
-      // + = Zoom In
-      if (e.key === '=' || e.key === '+') {
-        setZoom(zoom * 1.2);
-      }
-      // - = Zoom Out
-      if (e.key === '-') {
-        setZoom(zoom / 1.2);
-      }
-      // 0 = Reset Zoom
-      if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        setZoom(1);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [zoom, undo, redo]);
-
-  const handleSave = async () => {
-    if (!project) return;
-    setIsSaving(true);
-    // TODO: Implement save via API
-    setTimeout(() => setIsSaving(false), 1000);
-  };
+  }, [handleSave]);
 
   const handleExport = async () => {
     // TODO: Implement export
@@ -199,6 +202,49 @@ export default function ProjectEditorPage() {
     // Load frame's layers into editor
     setLayers(frame.layers);
   }, [setLayers]);
+
+  // Material handlers
+  const handleCreateMaterial = useCallback(() => {
+    const newMaterial: SmartMaterial = {
+      id: `material-${Date.now()}`,
+      name: `Material ${smartMaterials.length + 1}`,
+      category: 'custom',
+      nodes: [],
+      connections: [],
+      outputNodeId: '',
+    };
+    setSmartMaterials(prev => [...prev, newMaterial]);
+    setActiveMaterialId(newMaterial.id);
+  }, [smartMaterials.length]);
+
+  const handleDuplicateMaterial = useCallback((id: string) => {
+    const material = smartMaterials.find(m => m.id === id);
+    if (!material) return;
+
+    const duplicate: SmartMaterial = {
+      ...material,
+      id: `material-${Date.now()}`,
+      name: `${material.name} (copy)`,
+    };
+    setSmartMaterials(prev => [...prev, duplicate]);
+    setActiveMaterialId(duplicate.id);
+  }, [smartMaterials]);
+
+  const handleDeleteMaterial = useCallback((id: string) => {
+    setSmartMaterials(prev => prev.filter(m => m.id !== id));
+    if (activeMaterialId === id) {
+      setActiveMaterialId(null);
+    }
+  }, [activeMaterialId]);
+
+  const handleUpdateMaterial = useCallback((material: SmartMaterial) => {
+    setSmartMaterials(prev => prev.map(m => m.id === material.id ? material : m));
+  }, []);
+
+  const handleOpenMaterialEditor = useCallback((id: string) => {
+    setActiveMaterialId(id);
+    setShowNodeEditor(true);
+  }, []);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
@@ -257,6 +303,36 @@ export default function ProjectEditorPage() {
             <span className="text-xs text-white/40 px-2 py-0.5 bg-white/5 rounded capitalize">
               {project.stickerType}
             </span>
+
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-1.5 ml-2">
+              {isAutoSaving ? (
+                <span className="flex items-center gap-1 text-xs text-orange-400">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Saving...
+                </span>
+              ) : saveError ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-xs text-red-400 cursor-help">
+                      Save failed
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-red-400">{saveError}</TooltipContent>
+                </Tooltip>
+              ) : hasUnsavedChanges ? (
+                <span className="text-xs text-yellow-400/60">Unsaved changes</span>
+              ) : lastSaved ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-xs text-green-400/60">Saved</span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Last saved: {lastSaved.toLocaleTimeString()}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex items-center gap-1">
@@ -351,10 +427,10 @@ export default function ProjectEditorPage() {
               variant="ghost"
               size="sm"
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isAutoSaving}
               className="text-white/60 hover:text-white"
             >
-              {isSaving ? (
+              {(isSaving || isAutoSaving) ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Save className="w-4 h-4" />
@@ -478,16 +554,16 @@ export default function ProjectEditorPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    onClick={() => setShowNodeEditor(!showNodeEditor)}
+                    onClick={() => setRightPanelTab('materials')}
                     className={cn(
                       'p-1.5 rounded transition-colors',
-                      showNodeEditor ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
+                      rightPanelTab === 'materials' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:bg-white/5'
                     )}
                   >
                     <GitBranch className="w-3.5 h-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Node Editor</TooltipContent>
+                <TooltipContent>Materials & Node Editor</TooltipContent>
               </Tooltip>
 
               {project?.stickerType === 'lenticular' && (
@@ -514,6 +590,7 @@ export default function ProjectEditorPage() {
                 <>
                   <StudioColorPicker />
                   <StudioBrushSettings />
+                  <ShapeToolPanel />
                   <StudioLayersPanel />
                 </>
               )}
@@ -550,6 +627,20 @@ export default function ProjectEditorPage() {
                 />
               )}
 
+              {rightPanelTab === 'materials' && (
+                <MaterialsPanel
+                  materials={smartMaterials}
+                  activeMaterialId={activeMaterialId}
+                  onSelectMaterial={setActiveMaterialId}
+                  onCreateMaterial={handleCreateMaterial}
+                  onDuplicateMaterial={handleDuplicateMaterial}
+                  onDeleteMaterial={handleDeleteMaterial}
+                  onUpdateMaterial={handleUpdateMaterial}
+                  onOpenFullEditor={handleOpenMaterialEditor}
+                  className="flex-1"
+                />
+              )}
+
               {rightPanelTab === 'lenticular' && project?.stickerType === 'lenticular' && (
                 <LenticularEditor
                   frames={lenticularFrames}
@@ -566,7 +657,7 @@ export default function ProjectEditorPage() {
           </div>
 
           {/* Node Editor Overlay */}
-          {showNodeEditor && (
+          {showNodeEditor && activeMaterialId && (
             <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
               <div className="relative w-full h-full max-w-6xl bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
                 <div className="absolute top-3 right-3 z-10">
@@ -578,8 +669,8 @@ export default function ProjectEditorPage() {
                   </button>
                 </div>
                 <NodeEditor
-                  material={smartMaterials[0] || {
-                    id: 'new',
+                  material={smartMaterials.find(m => m.id === activeMaterialId) || {
+                    id: activeMaterialId,
                     name: 'New Material',
                     category: 'custom',
                     nodes: [],
@@ -587,16 +678,7 @@ export default function ProjectEditorPage() {
                     outputNodeId: '',
                   }}
                   onChange={(material) => {
-                    // Update or add material
-                    setSmartMaterials((prev) => {
-                      const idx = prev.findIndex((m) => m.id === material.id);
-                      if (idx >= 0) {
-                        const next = [...prev];
-                        next[idx] = material;
-                        return next;
-                      }
-                      return [...prev, material];
-                    });
+                    handleUpdateMaterial(material);
                   }}
                   className="w-full h-full"
                 />

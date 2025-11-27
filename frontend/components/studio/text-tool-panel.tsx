@@ -35,8 +35,9 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
-// Popular Google Fonts preloaded
+// Popular Google Fonts preloaded - organized by category
 const POPULAR_FONTS: GoogleFont[] = [
+  // Sans-serif - Modern & Clean
   { family: 'Roboto', variants: ['100', '300', '400', '500', '700', '900'], category: 'sans-serif' },
   { family: 'Open Sans', variants: ['300', '400', '500', '600', '700', '800'], category: 'sans-serif' },
   { family: 'Lato', variants: ['100', '300', '400', '700', '900'], category: 'sans-serif' },
@@ -45,18 +46,44 @@ const POPULAR_FONTS: GoogleFont[] = [
   { family: 'Poppins', variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
   { family: 'Raleway', variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
   { family: 'Inter', variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
+  { family: 'Nunito', variants: ['200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
+  { family: 'Work Sans', variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
+  // Serif - Elegant
   { family: 'Playfair Display', variants: ['400', '500', '600', '700', '800', '900'], category: 'serif' },
   { family: 'Merriweather', variants: ['300', '400', '700', '900'], category: 'serif' },
+  { family: 'Lora', variants: ['400', '500', '600', '700'], category: 'serif' },
+  { family: 'Crimson Text', variants: ['400', '600', '700'], category: 'serif' },
+  // Monospace - Tech
   { family: 'Source Code Pro', variants: ['200', '300', '400', '500', '600', '700', '900'], category: 'monospace' },
   { family: 'Fira Code', variants: ['300', '400', '500', '600', '700'], category: 'monospace' },
+  { family: 'JetBrains Mono', variants: ['100', '200', '300', '400', '500', '600', '700', '800'], category: 'monospace' },
+  { family: 'Roboto Mono', variants: ['100', '200', '300', '400', '500', '600', '700'], category: 'monospace' },
+  // Display - Impact/Gaming Style (Great for CS2 skins!)
   { family: 'Bebas Neue', variants: ['400'], category: 'display' },
   { family: 'Anton', variants: ['400'], category: 'display' },
+  { family: 'Russo One', variants: ['400'], category: 'display' },
+  { family: 'Bungee', variants: ['400'], category: 'display' },
+  { family: 'Teko', variants: ['300', '400', '500', '600', '700'], category: 'display' },
+  { family: 'Black Ops One', variants: ['400'], category: 'display' },
+  { family: 'Orbitron', variants: ['400', '500', '600', '700', '800', '900'], category: 'display' },
+  { family: 'Righteous', variants: ['400'], category: 'display' },
+  { family: 'Audiowide', variants: ['400'], category: 'display' },
+  { family: 'Press Start 2P', variants: ['400'], category: 'display' },
+  { family: 'Lobster', variants: ['400'], category: 'display' },
+  { family: 'Bangers', variants: ['400'], category: 'display' },
+  { family: 'Alfa Slab One', variants: ['400'], category: 'display' },
+  { family: 'Rubik Mono One', variants: ['400'], category: 'display' },
+  { family: 'Graduate', variants: ['400'], category: 'display' },
+  { family: 'Special Elite', variants: ['400'], category: 'display' },
+  { family: 'Staatliches', variants: ['400'], category: 'display' },
+  // Handwriting - Artistic
   { family: 'Permanent Marker', variants: ['400'], category: 'handwriting' },
   { family: 'Dancing Script', variants: ['400', '500', '600', '700'], category: 'handwriting' },
   { family: 'Pacifico', variants: ['400'], category: 'handwriting' },
-  { family: 'Lobster', variants: ['400'], category: 'display' },
-  { family: 'Bangers', variants: ['400'], category: 'display' },
-  { family: 'Press Start 2P', variants: ['400'], category: 'display' },
+  { family: 'Caveat', variants: ['400', '500', '600', '700'], category: 'handwriting' },
+  { family: 'Shadows Into Light', variants: ['400'], category: 'handwriting' },
+  { family: 'Kaushan Script', variants: ['400'], category: 'handwriting' },
+  { family: 'Rock Salt', variants: ['400'], category: 'handwriting' },
 ];
 
 const TEXT_WARPS: { value: TextWarp['type']; label: string }[] = [
@@ -91,6 +118,7 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
   } = useStudioEditor();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [loadedFonts, setLoadedFonts] = useState<Set<string>>(new Set());
   const [isLoadingFont, setIsLoadingFont] = useState(false);
 
@@ -165,9 +193,13 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
     pushHistory('Add text layer');
   };
 
-  const filteredFonts = POPULAR_FONTS.filter(font =>
-    font.family.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredFonts = POPULAR_FONTS.filter(font => {
+    const matchesSearch = font.family.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === 'all' || font.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  const categories = ['all', ...Array.from(new Set(POPULAR_FONTS.map(f => f.category)))];
 
   if (!isOpen) return null;
 
@@ -193,6 +225,18 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
         <div className="p-3 space-y-4">
           {isTextLayer && textContent ? (
             <>
+              {/* Text Content */}
+              <div className="space-y-2">
+                <label className="text-[10px] text-white/40 uppercase tracking-wider">Text</label>
+                <textarea
+                  value={textContent.text}
+                  onChange={(e) => updateTextContent({ text: e.target.value })}
+                  placeholder="Enter your text..."
+                  className="w-full h-20 px-3 py-2 bg-white/5 border border-white/10 rounded-md text-white text-sm resize-none focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                  style={{ fontFamily: loadedFonts.has(textContent.fontFamily) ? textContent.fontFamily : 'inherit' }}
+                />
+              </div>
+
               {/* Font Family */}
               <div className="space-y-2">
                 <label className="text-[10px] text-white/40 uppercase tracking-wider">Font Family</label>
@@ -208,8 +252,8 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
                       <ChevronDown className="w-4 h-4 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-72 p-0 bg-[#1a1a1c] border-white/10">
-                    <div className="p-2 border-b border-white/10">
+                  <PopoverContent className="w-80 p-0 bg-[#1a1a1c] border-white/10">
+                    <div className="p-2 border-b border-white/10 space-y-2">
                       <div className="relative">
                         <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                         <Input
@@ -218,6 +262,23 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
                           placeholder="Search fonts..."
                           className="pl-8 bg-white/5 border-white/10 text-white"
                         />
+                      </div>
+                      {/* Category filter */}
+                      <div className="flex flex-wrap gap-1">
+                        {categories.map(cat => (
+                          <button
+                            key={cat}
+                            onClick={() => setCategoryFilter(cat)}
+                            className={cn(
+                              'px-2 py-0.5 text-[10px] rounded transition-colors capitalize',
+                              categoryFilter === cat
+                                ? 'bg-orange-500/30 text-orange-300'
+                                : 'bg-white/5 text-white/50 hover:bg-white/10'
+                            )}
+                          >
+                            {cat}
+                          </button>
+                        ))}
                       </div>
                     </div>
                     <ScrollArea className="h-64">
@@ -229,21 +290,30 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
                               loadFont(font.family);
                               updateTextContent({ fontFamily: font.family });
                             }}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded text-left hover:bg-white/5 ${
-                              textContent.fontFamily === font.family ? 'bg-orange-500/20' : ''
-                            }`}
+                            onMouseEnter={() => loadFont(font.family)}
+                            className={cn(
+                              'w-full flex items-center justify-between px-3 py-2 rounded text-left transition-colors',
+                              textContent.fontFamily === font.family
+                                ? 'bg-orange-500/20'
+                                : 'hover:bg-white/5'
+                            )}
                           >
                             <span
-                              className="text-white"
+                              className="text-white text-sm truncate max-w-[180px]"
                               style={{ fontFamily: loadedFonts.has(font.family) ? font.family : 'inherit' }}
                             >
                               {font.family}
                             </span>
-                            <span className="text-[10px] text-white/30 capitalize">
+                            <span className="text-[10px] text-white/30 capitalize shrink-0 ml-2">
                               {font.category}
                             </span>
                           </button>
                         ))}
+                        {filteredFonts.length === 0 && (
+                          <div className="text-center py-4 text-white/40 text-sm">
+                            No fonts found
+                          </div>
+                        )}
                       </div>
                     </ScrollArea>
                   </PopoverContent>

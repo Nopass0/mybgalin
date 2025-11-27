@@ -26,6 +26,9 @@ import {
   Unlink,
   FileText,
   Pentagon,
+  Merge,
+  Grid2x2,
+  Wand2,
 } from 'lucide-react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import { Layer, BlendMode, LayerType } from '@/types/studio';
@@ -229,6 +232,144 @@ export function StudioLayersPanel() {
     });
   }, [layers, updateLayer]);
 
+  // Merge layer down (merge with layer below)
+  const mergeLayerDown = useCallback((layerId: string) => {
+    const layerIndex = layers.findIndex(l => l.id === layerId);
+    if (layerIndex === -1 || layerIndex >= layers.length - 1) return;
+
+    const currentLayer = layers[layerIndex];
+    const belowLayer = layers[layerIndex + 1];
+
+    // Create merged layer
+    const mergedLayer: Layer = {
+      id: `merged-${Date.now()}`,
+      name: `${currentLayer.name} + ${belowLayer.name}`,
+      type: 'raster',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      // TODO: Merge the actual image data
+      imageData: currentLayer.imageData || belowLayer.imageData,
+    };
+
+    // Remove both layers and add merged
+    const newLayers = layers.filter((_, i) => i !== layerIndex && i !== layerIndex + 1);
+    newLayers.splice(layerIndex, 0, mergedLayer);
+
+    setLayers(newLayers);
+    setActiveLayer(mergedLayer.id);
+  }, [layers, setLayers, setActiveLayer]);
+
+  // Merge all visible layers
+  const mergeVisibleLayers = useCallback(() => {
+    const visibleLayers = layers.filter(l => l.visible);
+    if (visibleLayers.length < 2) return;
+
+    // Create merged layer
+    const mergedLayer: Layer = {
+      id: `merged-${Date.now()}`,
+      name: 'Merged Visible',
+      type: 'raster',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      // TODO: Merge the actual image data
+    };
+
+    // Keep hidden layers, add merged layer at top
+    const hiddenLayers = layers.filter(l => !l.visible);
+    const newLayers = [mergedLayer, ...hiddenLayers];
+
+    setLayers(newLayers);
+    setActiveLayer(mergedLayer.id);
+  }, [layers, setLayers, setActiveLayer]);
+
+  // Flatten all layers
+  const flattenLayers = useCallback(() => {
+    if (layers.length < 2) return;
+
+    const flattenedLayer: Layer = {
+      id: `flattened-${Date.now()}`,
+      name: 'Flattened',
+      type: 'raster',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      // TODO: Flatten all layers into one image
+    };
+
+    setLayers([flattenedLayer]);
+    setActiveLayer(flattenedLayer.id);
+  }, [layers, setLayers, setActiveLayer]);
+
+  // Rasterize layer (convert vector/text/shape to raster)
+  const rasterizeLayer = useCallback((layerId: string) => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || layer.type === 'raster') return;
+
+    // Convert to raster layer
+    updateLayer(layerId, {
+      type: 'raster',
+      name: `${layer.name} (Rasterized)`,
+      // Text/shape content is removed after rasterization
+      textContent: undefined,
+      shapeContent: undefined,
+      // TODO: Render the vector/text/shape to imageData
+    });
+  }, [layers, updateLayer]);
+
+  // Generate normal map from layer
+  const generateNormalMap = useCallback((layerId: string) => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer) return;
+
+    const normalMapLayer: Layer = {
+      id: `normal-${Date.now()}`,
+      name: `${layer.name} Normal`,
+      type: 'normal',
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      // TODO: Generate normal map from height/grayscale
+    };
+
+    // Insert after the source layer
+    const layerIndex = layers.findIndex(l => l.id === layerId);
+    const newLayers = [...layers];
+    newLayers.splice(layerIndex, 0, normalMapLayer);
+
+    setLayers(newLayers);
+    setActiveLayer(normalMapLayer.id);
+  }, [layers, setLayers, setActiveLayer]);
+
+  // Convert to grayscale (for roughness/metalness)
+  const convertToGrayscale = useCallback((layerId: string, mapType: 'roughness' | 'metalness') => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer) return;
+
+    const newLayer: Layer = {
+      id: `${mapType}-${Date.now()}`,
+      name: `${layer.name} ${mapType.charAt(0).toUpperCase() + mapType.slice(1)}`,
+      type: mapType,
+      visible: true,
+      locked: false,
+      opacity: 100,
+      blendMode: 'normal',
+      // TODO: Convert to grayscale
+    };
+
+    const layerIndex = layers.findIndex(l => l.id === layerId);
+    const newLayers = [...layers];
+    newLayers.splice(layerIndex, 0, newLayer);
+
+    setLayers(newLayers);
+    setActiveLayer(newLayer.id);
+  }, [layers, setLayers, setActiveLayer]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 border-t border-white/10">
       {/* Header */}
@@ -294,6 +435,23 @@ export function StudioLayersPanel() {
               >
                 <CircleDot className="w-4 h-4 mr-2" />
                 Roughness Layer
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuItem
+                onClick={mergeVisibleLayers}
+                className="text-white hover:bg-white/10"
+                disabled={layers.filter(l => l.visible).length < 2}
+              >
+                <Merge className="w-4 h-4 mr-2" />
+                Merge Visible
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={flattenLayers}
+                className="text-white hover:bg-white/10"
+                disabled={layers.length < 2}
+              >
+                <Layers className="w-4 h-4 mr-2" />
+                Flatten Image
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -547,6 +705,52 @@ export function StudioLayersPanel() {
                                 className="text-white hover:bg-white/10 text-xs"
                               >
                                 Remove Mask
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          <DropdownMenuSeparator className="bg-white/10" />
+                          {/* Merge options */}
+                          <DropdownMenuItem
+                            onClick={() => mergeLayerDown(layer.id)}
+                            className="text-white hover:bg-white/10 text-xs"
+                            disabled={layers.indexOf(layer) >= layers.length - 1}
+                          >
+                            <Merge className="w-3 h-3 mr-2" />
+                            Merge Down
+                          </DropdownMenuItem>
+                          {/* Rasterize option for non-raster layers */}
+                          {(layer.type === 'text' || layer.type === 'shape' || layer.type === 'vector') && (
+                            <DropdownMenuItem
+                              onClick={() => rasterizeLayer(layer.id)}
+                              className="text-white hover:bg-white/10 text-xs"
+                            >
+                              <Grid2x2 className="w-3 h-3 mr-2" />
+                              Rasterize Layer
+                            </DropdownMenuItem>
+                          )}
+                          {/* Generate maps options */}
+                          {layer.type === 'raster' && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => generateNormalMap(layer.id)}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <Wand2 className="w-3 h-3 mr-2" />
+                                Generate Normal Map
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => convertToGrayscale(layer.id, 'roughness')}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <CircleDot className="w-3 h-3 mr-2" />
+                                To Roughness Map
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => convertToGrayscale(layer.id, 'metalness')}
+                                className="text-white hover:bg-white/10 text-xs"
+                              >
+                                <Sparkles className="w-3 h-3 mr-2" />
+                                To Metalness Map
                               </DropdownMenuItem>
                             </>
                           )}
