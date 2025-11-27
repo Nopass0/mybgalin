@@ -8,6 +8,7 @@ mod models;
 mod portfolio;
 mod routes;
 mod steam;
+mod studio;
 mod telegram;
 
 use rocket::{launch, routes};
@@ -61,6 +62,7 @@ async fn rocket() -> _ {
     println!("🎮 Steam ID: {}", steam_id);
     println!("🎯 Faceit API: {}", if faceit_api_key.is_some() { "enabled" } else { "disabled" });
     println!("💼 Job search system: ready");
+    println!("🎨 CS2 Skin Studio: ready");
     println!("✅ All systems ready");
 
     // Configure CORS
@@ -197,6 +199,20 @@ async fn rocket() -> _ {
                 routes::anime::get_watched_anime,
                 routes::anime::sync_anime_data,
                 routes::anime::get_sync_progress,
+            ],
+        )
+        // CS2 Skin Studio routes
+        .mount(
+            "/api",
+            routes![
+                routes::studio::steam_auth,
+                routes::studio::steam_auth_callback,
+                routes::studio::get_me,
+                routes::studio::get_projects,
+                routes::studio::create_project,
+                routes::studio::get_project,
+                routes::studio::update_project,
+                routes::studio::delete_project,
             ],
         )
 }

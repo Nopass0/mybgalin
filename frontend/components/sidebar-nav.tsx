@@ -17,6 +17,7 @@ import {
   User,
   Tv,
   PackageOpen,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,12 @@ const routes = [
     label: "Steam Workshop",
     icon: PackageOpen,
     href: "/workshop",
+  },
+  {
+    label: "CS2 Skin Studio",
+    icon: Palette,
+    href: "/studio",
+    isExternal: true,
   },
   {
     label: "Админка",
