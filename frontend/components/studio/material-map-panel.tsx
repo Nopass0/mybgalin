@@ -51,7 +51,7 @@ const NORMAL_MODES = [
 ];
 
 export function MaterialMapPanel({ mapType, className }: MaterialMapPanelProps) {
-  const { layers, activeLayerId, updateLayer, pushHistory } = useStudioEditor();
+  const { layers, activeLayerId, updateLayer, pushHistory, addLayer } = useStudioEditor();
 
   // Metalness settings
   const [metalnessValue, setMetalnessValue] = useState(0.5);
@@ -110,16 +110,24 @@ export function MaterialMapPanel({ mapType, className }: MaterialMapPanelProps) 
 
       ctx.putImageData(imageData, 0, 0);
 
-      // Update or create metalness layer
+      const imageDataUrl = canvas.toDataURL();
+
+      // Update the special metalness layer (for material maps)
       const metalnessLayer = layers.find(l => l.type === 'metalness');
       if (metalnessLayer) {
-        updateLayer(metalnessLayer.id, { imageData: canvas.toDataURL() });
+        updateLayer(metalnessLayer.id, { imageData: imageDataUrl });
+      }
+
+      // Also create a visible raster layer on the canvas
+      const newLayer = addLayer('raster', 'Metalness Map');
+      if (newLayer) {
+        updateLayer(newLayer.id, { imageData: imageDataUrl });
       }
 
       pushHistory('Generate metalness map');
     };
     img.src = activeLayer.imageData;
-  }, [activeLayerId, layers, metalnessValue, updateLayer, pushHistory]);
+  }, [activeLayerId, layers, metalnessValue, updateLayer, pushHistory, addLayer]);
 
   // Generate normal map from color layer
   const generateNormalFromColor = useCallback(() => {
@@ -219,16 +227,24 @@ export function MaterialMapPanel({ mapType, className }: MaterialMapPanelProps) 
 
       ctx.putImageData(imageData, 0, 0);
 
-      // Update or create normal layer
+      const imageDataUrl = canvas.toDataURL();
+
+      // Update the special normal layer (for material maps)
       const normalLayer = layers.find(l => l.type === 'normal');
       if (normalLayer) {
-        updateLayer(normalLayer.id, { imageData: canvas.toDataURL() });
+        updateLayer(normalLayer.id, { imageData: imageDataUrl });
+      }
+
+      // Also create a visible raster layer on the canvas
+      const newLayer = addLayer('raster', 'Normal Map');
+      if (newLayer) {
+        updateLayer(newLayer.id, { imageData: imageDataUrl });
       }
 
       pushHistory('Generate normal map');
     };
     img.src = activeLayer.imageData;
-  }, [activeLayerId, layers, normalStrength, normalBlur, invertNormals, updateLayer, pushHistory]);
+  }, [activeLayerId, layers, normalStrength, normalBlur, invertNormals, updateLayer, pushHistory, addLayer]);
 
   // Fill with preset
   const applyMetalnessPreset = useCallback((preset: typeof METALNESS_PRESETS[0]) => {

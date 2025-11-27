@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
-import type { Transform, Layer, BlendMode, LayerEffect } from '@/types/studio';
+import type { Transform, Layer, BlendMode, LayerEffect, VectorPoint, VectorPath } from '@/types/studio';
 import { BrushContextMenu, TextContextMenu, FilterContextMenu, ContextMenu, ContextMenuItem } from './context-menu';
 
 // Map BlendMode to valid Canvas 2D GlobalCompositeOperation
@@ -70,6 +70,54 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const compositeRAFRef = useRef<number | null>(null);
   // Track if composite is pending
   const compositePendingRef = useRef(false);
+
+  // GPU optimization: Pre-computed brush texture cache
+  const brushTextureCache = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+  // Create or get cached brush texture for soft brushes
+  const getBrushTexture = useCallback((size: number, hardness: number, color: string): HTMLCanvasElement => {
+    const key = `${Math.round(size)}-${Math.round(hardness)}-${color}`;
+    let texture = brushTextureCache.current.get(key);
+
+    if (!texture) {
+      texture = document.createElement('canvas');
+      const texSize = Math.max(4, Math.ceil(size));
+      texture.width = texSize;
+      texture.height = texSize;
+      const ctx = texture.getContext('2d')!;
+
+      const center = texSize / 2;
+      const radius = texSize / 2;
+
+      if (hardness >= 99) {
+        // Hard edge
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      } else {
+        // Soft edge with gradient
+        const gradient = ctx.createRadialGradient(center, center, 0, center, center, radius);
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(hardness / 100, color);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // Limit cache size
+      if (brushTextureCache.current.size > 100) {
+        const firstKey = brushTextureCache.current.keys().next().value;
+        if (firstKey) brushTextureCache.current.delete(firstKey);
+      }
+
+      brushTextureCache.current.set(key, texture);
+    }
+
+    return texture;
+  }, []);
 
   const {
     layers,
@@ -170,7 +218,25 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
   // Snap to guides setting
   const [snapToGuides, setSnapToGuides] = useState(true);
-  const SNAP_THRESHOLD = 10; // pixels
+
+  // Pen tool state for vector paths
+  const [penToolPath, setPenToolPath] = useState<{
+    points: Array<{
+      x: number;
+      y: number;
+      handleIn?: { x: number; y: number };
+      handleOut?: { x: number; y: number };
+    }>;
+    closed: boolean;
+  } | null>(null);
+  const [penToolDragging, setPenToolDragging] = useState<{
+    type: 'handleOut' | 'handleIn' | 'point';
+    pointIndex: number;
+  } | null>(null);
+  const [penToolHover, setPenToolHover] = useState<{
+    type: 'point' | 'firstPoint' | 'handle';
+    pointIndex: number;
+  } | null>(null);
 
   // Snap a point to nearby guides
   const snapPointToGuides = useCallback((x: number, y: number): { x: number; y: number; snapped: boolean } => {
@@ -178,39 +244,47 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       return { x, y, snapped: false };
     }
 
+    // Threshold in canvas pixels - larger for better UX
+    const SNAP_THRESHOLD = 15;
     let snappedX = x;
     let snappedY = y;
     let didSnap = false;
+    let closestDist = SNAP_THRESHOLD;
 
     for (const guide of guides) {
       if (guide.type === 'horizontal' && guide.position !== undefined) {
         // Snap to horizontal guide
-        if (Math.abs(y - guide.position) < SNAP_THRESHOLD) {
+        const dist = Math.abs(y - guide.position);
+        if (dist < closestDist) {
           snappedY = guide.position;
+          closestDist = dist;
           didSnap = true;
         }
       } else if (guide.type === 'vertical' && guide.position !== undefined) {
         // Snap to vertical guide
-        if (Math.abs(x - guide.position) < SNAP_THRESHOLD) {
+        const dist = Math.abs(x - guide.position);
+        if (dist < closestDist) {
           snappedX = guide.position;
+          closestDist = dist;
           didSnap = true;
         }
       } else if (guide.type === 'line' && guide.start && guide.end) {
-        // Snap to line guide - find closest point on line
+        // Snap to line guide - find closest point on INFINITE line (not segment)
         const dx = guide.end.x - guide.start.x;
         const dy = guide.end.y - guide.start.y;
         const lengthSq = dx * dx + dy * dy;
 
         if (lengthSq > 0) {
-          // Project point onto line
-          const t = Math.max(0, Math.min(1, ((x - guide.start.x) * dx + (y - guide.start.y) * dy) / lengthSq));
+          // Project point onto infinite line (no clamping)
+          const t = ((x - guide.start.x) * dx + (y - guide.start.y) * dy) / lengthSq;
           const closestX = guide.start.x + t * dx;
           const closestY = guide.start.y + t * dy;
           const dist = Math.sqrt(Math.pow(x - closestX, 2) + Math.pow(y - closestY, 2));
 
-          if (dist < SNAP_THRESHOLD) {
+          if (dist < closestDist) {
             snappedX = closestX;
             snappedY = closestY;
+            closestDist = dist;
             didSnap = true;
           }
         }
@@ -247,27 +321,27 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             const img = new Image();
             img.onload = () => {
               // Scale image to fit canvas while preserving aspect ratio
-              const canvas = document.createElement('canvas');
-              canvas.width = CANVAS_SIZE;
-              canvas.height = CANVAS_SIZE;
-              const ctx = canvas.getContext('2d')!;
-
-              // Calculate scaling to fit while preserving aspect ratio
-              const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
+              const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height) * 0.8; // 80% of canvas
               const scaledWidth = img.width * scale;
               const scaledHeight = img.height * scale;
               const offsetX = (CANVAS_SIZE - scaledWidth) / 2;
               const offsetY = (CANVAS_SIZE - scaledHeight) / 2;
 
-              // Clear with transparent background
-              ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-              ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+              // Create canvas at the scaled size (not full canvas size)
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.ceil(scaledWidth);
+              canvas.height = Math.ceil(scaledHeight);
+              const ctx = canvas.getContext('2d')!;
+
+              // Draw image at natural size (scaled) - no offset baked in
+              ctx.drawImage(img, 0, 0, scaledWidth, scaledHeight);
 
               const scaledDataUrl = canvas.toDataURL('image/png');
 
               // Create new layer with pasted image
               const newLayer = addLayer('raster', 'Pasted Image');
               if (newLayer) {
+                // Transform contains position - layer canvas contains just the image
                 updateLayer(newLayer.id, {
                   imageData: scaledDataUrl,
                   transform: {
@@ -297,6 +371,114 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     return () => window.removeEventListener('paste', handlePaste);
   }, [addLayer, updateLayer, pushHistory]);
 
+  // Copy selection to clipboard as new layer
+  const copySelectionAsLayer = useCallback(() => {
+    if (!selection || !activeLayerId) return;
+
+    const layerCanvas = layerCanvasesRef.current.get(activeLayerId);
+    if (!layerCanvas) return;
+
+    // Get selection bounds
+    let bounds: { x: number; y: number; width: number; height: number };
+    if (selection.type === 'rect' && selection.bounds) {
+      bounds = selection.bounds;
+    } else if (selection.type === 'ellipse' && selection.bounds) {
+      bounds = selection.bounds;
+    } else {
+      // For lasso, get bounding box of path
+      bounds = { x: 0, y: 0, width: CANVAS_SIZE, height: CANVAS_SIZE };
+      if (selection.path && selection.path.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const pt of selection.path) {
+          minX = Math.min(minX, pt.x);
+          minY = Math.min(minY, pt.y);
+          maxX = Math.max(maxX, pt.x);
+          maxY = Math.max(maxY, pt.y);
+        }
+        bounds = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      }
+    }
+
+    // Create a canvas with just the selected area
+    const selCanvas = document.createElement('canvas');
+    selCanvas.width = Math.ceil(bounds.width);
+    selCanvas.height = Math.ceil(bounds.height);
+    const selCtx = selCanvas.getContext('2d')!;
+
+    // Copy the selected region
+    selCtx.drawImage(
+      layerCanvas,
+      bounds.x, bounds.y, bounds.width, bounds.height,
+      0, 0, bounds.width, bounds.height
+    );
+
+    const dataUrl = selCanvas.toDataURL('image/png');
+
+    // Create new layer with the copied content
+    const newLayer = addLayer('raster', 'Copied Selection');
+    if (newLayer) {
+      updateLayer(newLayer.id, {
+        imageData: dataUrl,
+        transform: {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          skewX: 0,
+          skewY: 0,
+        }
+      });
+      pushHistory('Copy selection as layer');
+    }
+  }, [selection, activeLayerId, addLayer, updateLayer, pushHistory]);
+
+  // Finalize pen tool path and create vector layer
+  const finalizePenPath = useCallback((closed: boolean = false) => {
+    if (!penToolPath || penToolPath.points.length < 2) {
+      setPenToolPath(null);
+      setPenToolDragging(null);
+      return;
+    }
+
+    // Create a vector layer with the path
+    const vectorPath: VectorPath = {
+      id: `path-${Date.now()}`,
+      points: penToolPath.points.map(pt => ({
+        x: pt.x,
+        y: pt.y,
+        handleIn: pt.handleIn,
+        handleOut: pt.handleOut,
+        cornerType: 'smooth' as const,
+      })),
+      closed,
+      stroke: {
+        color: primaryColor,
+        width: 2,
+        cap: 'round',
+        join: 'round',
+      },
+    };
+
+    const newLayer = addLayer('vector', 'Vector Path');
+    if (newLayer) {
+      updateLayer(newLayer.id, {
+        vectorContent: {
+          paths: [vectorPath],
+          activePath: vectorPath.id,
+        },
+      });
+      pushHistory('Create vector path');
+    }
+
+    // Clear pen tool state
+    setPenToolPath(null);
+    setPenToolDragging(null);
+    setPenToolHover(null);
+  }, [penToolPath, primaryColor, addLayer, updateLayer, pushHistory]);
+
   // Handle keyboard events for rulers (Ctrl), shift constraint, and alt for panning
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -308,6 +490,26 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
       if (e.key === 'Alt') {
         setAltHeld(true);
+      }
+      // Ctrl+C - Copy selection as new layer
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+        e.preventDefault();
+        copySelectionAsLayer();
+      }
+      // Escape - Cancel pen tool path or finalize as open path
+      if (e.key === 'Escape' && penToolPath) {
+        e.preventDefault();
+        if (penToolPath.points.length >= 2) {
+          finalizePenPath(false); // Create open path
+        } else {
+          setPenToolPath(null);
+          setPenToolDragging(null);
+        }
+      }
+      // Enter - Finalize pen tool path as closed
+      if (e.key === 'Enter' && penToolPath && penToolPath.points.length >= 2) {
+        e.preventDefault();
+        finalizePenPath(true); // Create closed path
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -331,7 +533,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [copySelectionAsLayer, selection, penToolPath, finalizePenPath]);
 
   // Get or create layer canvas
   const getLayerCanvas = useCallback((layerId: string): HTMLCanvasElement => {
@@ -666,6 +868,69 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     ctx.restore();
   };
 
+  // Draw vector path on canvas
+  const drawVectorPath = useCallback((ctx: CanvasRenderingContext2D, path: VectorPath) => {
+    const { points, closed, fill, stroke } = path;
+    if (points.length < 2) return;
+
+    ctx.beginPath();
+
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+
+      if (i === 0) {
+        ctx.moveTo(pt.x, pt.y);
+      } else {
+        const prevPt = points[i - 1];
+
+        // Use bezier curve if handles exist
+        if (prevPt.handleOut || pt.handleIn) {
+          const cp1x = prevPt.x + (prevPt.handleOut?.x || 0);
+          const cp1y = prevPt.y + (prevPt.handleOut?.y || 0);
+          const cp2x = pt.x + (pt.handleIn?.x || 0);
+          const cp2y = pt.y + (pt.handleIn?.y || 0);
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, pt.x, pt.y);
+        } else {
+          ctx.lineTo(pt.x, pt.y);
+        }
+      }
+    }
+
+    // Close path if needed
+    if (closed && points.length > 2) {
+      const lastPt = points[points.length - 1];
+      const firstPt = points[0];
+
+      if (lastPt.handleOut || firstPt.handleIn) {
+        const cp1x = lastPt.x + (lastPt.handleOut?.x || 0);
+        const cp1y = lastPt.y + (lastPt.handleOut?.y || 0);
+        const cp2x = firstPt.x + (firstPt.handleIn?.x || 0);
+        const cp2y = firstPt.y + (firstPt.handleIn?.y || 0);
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, firstPt.x, firstPt.y);
+      }
+      ctx.closePath();
+    }
+
+    // Fill if specified
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+
+    // Stroke if specified
+    if (stroke) {
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = stroke.width;
+      ctx.lineCap = stroke.cap || 'round';
+      ctx.lineJoin = stroke.join || 'round';
+      if (stroke.dashArray) {
+        ctx.setLineDash(stroke.dashArray);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]); // Reset dash
+    }
+  }, []);
+
   // Composite all layers to main canvas
   const compositeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -692,6 +957,32 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       const layer = layers[i];
       if (!layer.visible) continue;
 
+      // Handle vector layers
+      if (layer.type === 'vector' && layer.vectorContent) {
+        ctx.save();
+        ctx.globalAlpha = layer.opacity / 100;
+        ctx.globalCompositeOperation = blendModeToCompositeOp(layer.blendMode);
+
+        // Apply layer transform if exists
+        const transform = layer.transform;
+        if (transform) {
+          const cx = transform.x + transform.width / 2;
+          const cy = transform.y + transform.height / 2;
+          ctx.translate(cx, cy);
+          ctx.rotate((transform.rotation || 0) * Math.PI / 180);
+          ctx.scale(transform.scaleX || 1, transform.scaleY || 1);
+          ctx.translate(-transform.width / 2, -transform.height / 2);
+        }
+
+        // Draw each vector path
+        for (const path of layer.vectorContent.paths) {
+          drawVectorPath(ctx, path);
+        }
+
+        ctx.restore();
+        continue;
+      }
+
       let layerCanvas = layerCanvasesRef.current.get(layer.id);
       if (!layerCanvas) continue;
 
@@ -703,6 +994,27 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       ctx.save();
       ctx.globalAlpha = layer.opacity / 100;
       ctx.globalCompositeOperation = blendModeToCompositeOp(layer.blendMode);
+
+      // Apply layer transform if exists
+      const transform = layer.transform;
+      if (transform && (transform.x !== 0 || transform.y !== 0 || transform.rotation !== 0 ||
+          transform.scaleX !== 1 || transform.scaleY !== 1 || transform.width !== CANVAS_SIZE || transform.height !== CANVAS_SIZE)) {
+        // Calculate center for rotation
+        const cx = transform.x + transform.width / 2;
+        const cy = transform.y + transform.height / 2;
+
+        ctx.translate(cx, cy);
+        ctx.rotate((transform.rotation || 0) * Math.PI / 180);
+        ctx.scale(transform.scaleX || 1, transform.scaleY || 1);
+        ctx.translate(-transform.width / 2, -transform.height / 2);
+
+        // Draw transformed layer - use source canvas dimensions
+        const srcWidth = layerCanvas.width;
+        const srcHeight = layerCanvas.height;
+        ctx.drawImage(layerCanvas, 0, 0, srcWidth, srcHeight, 0, 0, transform.width, transform.height);
+        ctx.restore();
+        continue; // Skip the normal drawing below
+      }
 
       // Apply mask if exists
       if (layer.mask?.enabled && layer.mask.imageData) {
@@ -773,7 +1085,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         drawTransformHandles(ctx, transform);
       }
     }
-  }, [layers, showGrid, activeTool, activeLayerId, applyLayerEffects]);
+  }, [layers, showGrid, activeTool, activeLayerId, applyLayerEffects, drawVectorPath]);
 
   // Batched composite using requestAnimationFrame for GPU-optimized rendering
   const scheduleComposite = useCallback(() => {
@@ -935,7 +1247,12 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
                 resolve();
                 return;
               }
-              ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+              // Resize layer canvas to match image size (important for transformed layers)
+              if (img.width !== layerCanvas.width || img.height !== layerCanvas.height) {
+                layerCanvas.width = img.width;
+                layerCanvas.height = img.height;
+              }
+              ctx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
               ctx.drawImage(img, 0, 0);
               layerImageDataRef.current.set(layer.id, layer.imageData!);
               loadedAny = true;
@@ -1022,7 +1339,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     return { x, y };
   }, [zoom, pan]);
 
-  // Draw brush stroke
+  // Draw brush stroke - GPU accelerated with cached textures
   const drawStroke = useCallback((
     ctx: CanvasRenderingContext2D,
     x1: number,
@@ -1032,7 +1349,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     pressure: number
   ) => {
     const brush = currentBrush;
-    const color = activeTool === 'eraser' ? 'rgba(0,0,0,0)' : primaryColor;
+    const color = activeTool === 'eraser' ? '#ffffff' : primaryColor;
 
     // Calculate actual size based on pressure
     const size = brush.pressureSize
@@ -1059,10 +1376,17 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
     ctx.globalAlpha = opacity * flow;
 
-    // Draw interpolated points
+    // Get cached brush texture (GPU optimization)
+    const brushTexture = getBrushTexture(size, brush.hardness, color);
+
+    // Calculate spacing - increase for larger brushes to reduce operations
     const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-    const spacing = Math.max(1, (brush.spacing / 100) * size);
-    const steps = Math.ceil(distance / spacing);
+    const baseSpacing = Math.max(1, (brush.spacing / 100) * size);
+    // Adaptive spacing for performance - larger brushes need fewer samples
+    const spacing = size > 100 ? Math.max(baseSpacing, size * 0.15) : baseSpacing;
+    const steps = Math.max(1, Math.ceil(distance / spacing));
+
+    const halfSize = size / 2;
 
     for (let i = 0; i <= steps; i++) {
       const t = steps === 0 ? 0 : i / steps;
@@ -1072,31 +1396,15 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       // Apply scatter
       const scatterX = (Math.random() - 0.5) * 2 * brush.scatterX;
       const scatterY = (Math.random() - 0.5) * 2 * brush.scatterY;
-      const px = x + scatterX;
-      const py = y + scatterY;
+      const px = x + scatterX - halfSize;
+      const py = y + scatterY - halfSize;
 
-      // Draw brush tip
-      ctx.beginPath();
-
-      if (brush.hardness >= 99) {
-        // Hard edge brush
-        ctx.arc(px, py, size / 2, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-      } else {
-        // Soft edge brush with gradient
-        const gradient = ctx.createRadialGradient(px, py, 0, px, py, size / 2);
-        gradient.addColorStop(0, color);
-        gradient.addColorStop(brush.hardness / 100, color);
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.arc(px, py, size / 2, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.fill();
-      }
+      // Draw using cached texture (much faster than creating gradients)
+      ctx.drawImage(brushTexture, px, py, size, size);
     }
 
     ctx.restore();
-  }, [currentBrush, primaryColor, activeTool]);
+  }, [currentBrush, primaryColor, activeTool, getBrushTexture]);
 
   // Apply blur effect at a point
   const applyBlurAtPoint = useCallback((
@@ -2021,6 +2329,71 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       setPerspectiveGuides(prev => [...prev, newGuide]);
       compositeCanvas();
     }
+
+    // Handle pen tool (vector path creation)
+    if (activeTool === 'vector-pen') {
+      // Check if clicking on first point to close path
+      if (penToolPath && penToolPath.points.length > 2) {
+        const firstPoint = penToolPath.points[0];
+        const dist = Math.sqrt(Math.pow(x - firstPoint.x, 2) + Math.pow(y - firstPoint.y, 2));
+        if (dist < 10) {
+          // Close the path and create vector layer
+          finalizePenPath(true);
+          return;
+        }
+      }
+
+      // Check if dragging existing point handle
+      if (penToolPath) {
+        for (let i = 0; i < penToolPath.points.length; i++) {
+          const pt = penToolPath.points[i];
+          const dist = Math.sqrt(Math.pow(x - pt.x, 2) + Math.pow(y - pt.y, 2));
+          if (dist < 8) {
+            // Start dragging this point
+            setPenToolDragging({ type: 'point', pointIndex: i });
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+            return;
+          }
+          // Check handles
+          if (pt.handleOut) {
+            const hx = pt.x + pt.handleOut.x;
+            const hy = pt.y + pt.handleOut.y;
+            if (Math.sqrt(Math.pow(x - hx, 2) + Math.pow(y - hy, 2)) < 8) {
+              setPenToolDragging({ type: 'handleOut', pointIndex: i });
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              return;
+            }
+          }
+          if (pt.handleIn) {
+            const hx = pt.x + pt.handleIn.x;
+            const hy = pt.y + pt.handleIn.y;
+            if (Math.sqrt(Math.pow(x - hx, 2) + Math.pow(y - hy, 2)) < 8) {
+              setPenToolDragging({ type: 'handleIn', pointIndex: i });
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              return;
+            }
+          }
+        }
+      }
+
+      // Add new point
+      const newPoint = { x, y, handleIn: undefined, handleOut: undefined };
+      if (penToolPath) {
+        setPenToolPath({
+          ...penToolPath,
+          points: [...penToolPath.points, newPoint],
+        });
+      } else {
+        setPenToolPath({
+          points: [newPoint],
+          closed: false,
+        });
+      }
+
+      // Start dragging to create handle
+      setPenToolDragging({ type: 'handleOut', pointIndex: penToolPath ? penToolPath.points.length : 0 });
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -2048,6 +2421,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     guideStartPoint,
     warpMode,
     snapPointToGuides,
+    penToolPath,
+    finalizePenPath,
   ]);
 
   // Magic wand selection algorithm
@@ -2379,6 +2754,66 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
       setLastPoint({ x, y });
     }
+
+    // Handle pen tool dragging (for handles)
+    if (activeTool === 'vector-pen' && penToolDragging && penToolPath) {
+      const pointIndex = penToolDragging.pointIndex;
+      const points = [...penToolPath.points];
+      const pt = points[pointIndex];
+
+      if (penToolDragging.type === 'handleOut') {
+        // Update handleOut relative to point
+        const handleOut = { x: x - pt.x, y: y - pt.y };
+        points[pointIndex] = {
+          ...pt,
+          handleOut,
+          // Mirror handleIn for smooth curves
+          handleIn: pt.handleIn || { x: -handleOut.x, y: -handleOut.y },
+        };
+      } else if (penToolDragging.type === 'handleIn') {
+        // Update handleIn
+        const handleIn = { x: x - pt.x, y: y - pt.y };
+        points[pointIndex] = {
+          ...pt,
+          handleIn,
+          // Mirror handleOut
+          handleOut: pt.handleOut || { x: -handleIn.x, y: -handleIn.y },
+        };
+      } else if (penToolDragging.type === 'point') {
+        // Move the entire point with its handles
+        points[pointIndex] = { ...pt, x, y };
+      }
+
+      setPenToolPath({ ...penToolPath, points });
+    }
+
+    // Handle pen tool hover detection for visual feedback
+    if (activeTool === 'vector-pen' && penToolPath && !penToolDragging) {
+      let hover: typeof penToolHover = null;
+
+      // Check first point for closing
+      if (penToolPath.points.length > 2) {
+        const firstPoint = penToolPath.points[0];
+        const dist = Math.sqrt(Math.pow(x - firstPoint.x, 2) + Math.pow(y - firstPoint.y, 2));
+        if (dist < 10) {
+          hover = { type: 'firstPoint', pointIndex: 0 };
+        }
+      }
+
+      // Check other points
+      if (!hover) {
+        for (let i = 0; i < penToolPath.points.length; i++) {
+          const pt = penToolPath.points[i];
+          const dist = Math.sqrt(Math.pow(x - pt.x, 2) + Math.pow(y - pt.y, 2));
+          if (dist < 8) {
+            hover = { type: 'point', pointIndex: i };
+            break;
+          }
+        }
+      }
+
+      setPenToolHover(hover);
+    }
   }, [
     screenToCanvas,
     activeTool,
@@ -2418,6 +2853,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     applyWarpAtPoint,
     snapPointToGuides,
     scheduleComposite,
+    penToolDragging,
+    penToolPath,
   ]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -2536,10 +2973,15 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       }
     }
 
+    // Finish pen tool handle dragging
+    if (penToolDragging) {
+      setPenToolDragging(null);
+    }
+
     setIsPanning(false);
     setLastPoint(null);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas, isSelecting, activeTool, lassoPoints, selectionStart, screenToCanvas, isWarping]);
+  }, [isDrawing, pushHistory, activeLayerId, updateLayer, transformState, isDrawingGradient, gradientStart, gradientEnd, primaryColor, secondaryColor, getLayerCanvas, compositeCanvas, isSelecting, activeTool, lassoPoints, selectionStart, screenToCanvas, isWarping, penToolDragging]);
 
   // Get bounds from lasso points
   const getLassoBounds = useCallback((points: { x: number; y: number }[]): { x: number; y: number; width: number; height: number } => {
@@ -2912,6 +3354,141 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
               className="animate-[dash_0.5s_linear_infinite]"
             />
           )}
+        </svg>
+      )}
+
+      {/* Pen tool path overlay */}
+      {activeTool === 'vector-pen' && penToolPath && penToolPath.points.length > 0 && (
+        <svg
+          className="absolute inset-0 pointer-events-none z-40"
+          width="100%"
+          height="100%"
+        >
+          {/* Draw the path */}
+          <path
+            d={(() => {
+              const points = penToolPath.points;
+              if (points.length === 0) return '';
+
+              let d = '';
+              for (let i = 0; i < points.length; i++) {
+                const pt = points[i];
+                const screenX = `calc(50% + ${(pt.x - CANVAS_SIZE / 2) * zoom + pan.x}px)`;
+                const screenY = `calc(50% + ${(pt.y - CANVAS_SIZE / 2) * zoom + pan.y}px)`;
+
+                if (i === 0) {
+                  d += `M ${(pt.x - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetWidth || 800) / 2 + pan.x} ${(pt.y - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetHeight || 600) / 2 + pan.y}`;
+                } else {
+                  const prevPt = points[i - 1];
+                  const prevScreenX = (prevPt.x - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetWidth || 800) / 2 + pan.x;
+                  const prevScreenY = (prevPt.y - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetHeight || 600) / 2 + pan.y;
+                  const currScreenX = (pt.x - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetWidth || 800) / 2 + pan.x;
+                  const currScreenY = (pt.y - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetHeight || 600) / 2 + pan.y;
+
+                  // Use bezier curve if handles exist
+                  if (prevPt.handleOut || pt.handleIn) {
+                    const cp1x = prevScreenX + (prevPt.handleOut?.x || 0) * zoom;
+                    const cp1y = prevScreenY + (prevPt.handleOut?.y || 0) * zoom;
+                    const cp2x = currScreenX + (pt.handleIn?.x || 0) * zoom;
+                    const cp2y = currScreenY + (pt.handleIn?.y || 0) * zoom;
+                    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${currScreenX} ${currScreenY}`;
+                  } else {
+                    d += ` L ${currScreenX} ${currScreenY}`;
+                  }
+                }
+              }
+
+              // Close path if needed
+              if (penToolPath.closed && points.length > 2) {
+                const lastPt = points[points.length - 1];
+                const firstPt = points[0];
+                const lastScreenX = (lastPt.x - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetWidth || 800) / 2 + pan.x;
+                const lastScreenY = (lastPt.y - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetHeight || 600) / 2 + pan.y;
+                const firstScreenX = (firstPt.x - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetWidth || 800) / 2 + pan.x;
+                const firstScreenY = (firstPt.y - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetHeight || 600) / 2 + pan.y;
+
+                if (lastPt.handleOut || firstPt.handleIn) {
+                  const cp1x = lastScreenX + (lastPt.handleOut?.x || 0) * zoom;
+                  const cp1y = lastScreenY + (lastPt.handleOut?.y || 0) * zoom;
+                  const cp2x = firstScreenX + (firstPt.handleIn?.x || 0) * zoom;
+                  const cp2y = firstScreenY + (firstPt.handleIn?.y || 0) * zoom;
+                  d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${firstScreenX} ${firstScreenY}`;
+                } else {
+                  d += ' Z';
+                }
+              }
+
+              return d;
+            })()}
+            fill="none"
+            stroke={primaryColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* Draw control points and handles */}
+          {penToolPath.points.map((pt, i) => {
+            const screenX = (pt.x - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetWidth || 800) / 2 + pan.x;
+            const screenY = (pt.y - CANVAS_SIZE / 2) * zoom + (containerRef.current?.offsetHeight || 600) / 2 + pan.y;
+            const isFirst = i === 0;
+            const isHovered = penToolHover?.pointIndex === i;
+
+            return (
+              <g key={i}>
+                {/* Handle lines */}
+                {pt.handleIn && (
+                  <>
+                    <line
+                      x1={screenX}
+                      y1={screenY}
+                      x2={screenX + pt.handleIn.x * zoom}
+                      y2={screenY + pt.handleIn.y * zoom}
+                      stroke="rgba(0, 200, 255, 0.6)"
+                      strokeWidth="1"
+                    />
+                    <circle
+                      cx={screenX + pt.handleIn.x * zoom}
+                      cy={screenY + pt.handleIn.y * zoom}
+                      r="4"
+                      fill="white"
+                      stroke="rgba(0, 200, 255, 0.8)"
+                      strokeWidth="1.5"
+                    />
+                  </>
+                )}
+                {pt.handleOut && (
+                  <>
+                    <line
+                      x1={screenX}
+                      y1={screenY}
+                      x2={screenX + pt.handleOut.x * zoom}
+                      y2={screenY + pt.handleOut.y * zoom}
+                      stroke="rgba(0, 200, 255, 0.6)"
+                      strokeWidth="1"
+                    />
+                    <circle
+                      cx={screenX + pt.handleOut.x * zoom}
+                      cy={screenY + pt.handleOut.y * zoom}
+                      r="4"
+                      fill="white"
+                      stroke="rgba(0, 200, 255, 0.8)"
+                      strokeWidth="1.5"
+                    />
+                  </>
+                )}
+                {/* Main point */}
+                <circle
+                  cx={screenX}
+                  cy={screenY}
+                  r={isFirst && penToolHover?.type === 'firstPoint' ? 8 : 6}
+                  fill={isFirst ? '#00c8ff' : 'white'}
+                  stroke={isHovered ? '#00ff00' : primaryColor}
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })}
         </svg>
       )}
 
