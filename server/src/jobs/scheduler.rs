@@ -118,15 +118,15 @@ impl JobScheduler {
     async fn run_job_search(&self) -> Result<(), String> {
         println!("🔍 Starting job search cycle...");
 
-        // Get settings
-        let settings: Option<(String, String, Option<i64>)> = sqlx::query_as(
-            "SELECT search_text, area_ids, salary_from FROM job_search_settings WHERE id = 1"
+        // Get all settings
+        let settings: Option<(String, String, Option<i64>, Option<String>, Option<String>, Option<String>, bool)> = sqlx::query_as(
+            "SELECT search_text, area_ids, salary_from, experience, schedule, employment, only_with_salary FROM job_search_settings WHERE id = 1"
         )
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| e.to_string())?;
 
-        let (search_text, area_ids_json, salary_from) = match settings {
+        let (search_text, area_ids_json, salary_from, experience, schedule, employment, only_with_salary) = match settings {
             Some(s) => s,
             None => {
                 println!("⚠️  No search settings configured");
@@ -168,9 +168,17 @@ impl JobScheduler {
         let mut hh_client = HHClient::new();
         hh_client.set_token(access_token.clone());
 
-        // Search vacancies
+        // Search vacancies with all filters
         let vacancies = hh_client
-            .search_vacancies(&search_text, area_param.as_deref(), salary_from)
+            .search_vacancies(
+                &search_text,
+                area_param.as_deref(),
+                salary_from,
+                experience.as_deref(),
+                schedule.as_deref(),
+                employment.as_deref(),
+                only_with_salary,
+            )
             .await
             .map_err(|e| e.to_string())?;
 

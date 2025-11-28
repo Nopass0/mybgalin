@@ -299,9 +299,10 @@ pub async fn hh_oauth_callback(
 }
 
 #[get("/jobs/auth/hh")]
-pub async fn start_hh_auth(_auth: AuthGuard) -> String {
+pub async fn start_hh_auth(_auth: AuthGuard) -> Json<ApiResponse<String>> {
     let client_id = std::env::var("HH_CLIENT_ID").unwrap_or_default();
     let redirect_uri = std::env::var("HH_REDIRECT_URI").unwrap_or_default();
 
-    HHClient::get_auth_url(&client_id, &redirect_uri)
+    let url = HHClient::get_auth_url(&client_id, &redirect_uri);
+    Json(ApiResponse::success(url))
 }

@@ -59,21 +59,42 @@ impl HHClient {
         Ok((access_token, refresh_token, expires_in))
     }
 
-    // Search vacancies
+    // Search vacancies with advanced filters
     pub async fn search_vacancies(
         &self,
         text: &str,
         area: Option<&str>,
         salary: Option<i64>,
+        experience: Option<&str>,
+        schedule: Option<&str>,
+        employment: Option<&str>,
+        only_with_salary: bool,
     ) -> Result<Vec<serde_json::Value>, String> {
         let token = self.access_token.as_ref().ok_or("Not authorized")?;
 
-        let mut params = vec![("text", text.to_string()), ("per_page", "50".to_string())];
+        let mut params = vec![
+            ("text", text.to_string()),
+            ("per_page", "100".to_string()),
+            ("order_by", "publication_time".to_string()),
+        ];
+
         if let Some(area) = area {
             params.push(("area", area.to_string()));
         }
         if let Some(salary) = salary {
             params.push(("salary", salary.to_string()));
+        }
+        if let Some(exp) = experience {
+            params.push(("experience", exp.to_string()));
+        }
+        if let Some(sched) = schedule {
+            params.push(("schedule", sched.to_string()));
+        }
+        if let Some(empl) = employment {
+            params.push(("employment", empl.to_string()));
+        }
+        if only_with_salary {
+            params.push(("only_with_salary", "true".to_string()));
         }
 
         let res = self
@@ -86,8 +107,10 @@ impl HHClient {
             .await
             .map_err(|e| e.to_string())?;
 
-        if !res.status().is_success() {
-            return Err(format!("HH API error: {}", res.status()));
+        let status = res.status();
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("HH API error: {} - {}", status, error_body));
         }
 
         let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
@@ -110,7 +133,7 @@ impl HHClient {
 
         let res = self
             .client
-            .post(format!("https://api.hh.ru/negotiations"))
+            .post("https://api.hh.ru/negotiations")
             .header("Authorization", format!("Bearer {}", token))
             .header("HH-User-Agent", "bgalin.ru (contact@bgalin.ru)")
             .json(&json!({
@@ -122,12 +145,40 @@ impl HHClient {
             .await
             .map_err(|e| e.to_string())?;
 
-        if !res.status().is_success() {
-            return Err(format!("Apply error: {}", res.status()));
+        let status = res.status();
+
+        // HH.ru API returns 201 Created with Location header containing negotiation URL
+        // or 303 See Other for redirects
+        if status == reqwest::StatusCode::CREATED || status == reqwest::StatusCode::SEE_OTHER {
+            // Try to get negotiation ID from Location header
+            if let Some(location) = res.headers().get("Location") {
+                if let Ok(location_str) = location.to_str() {
+                    // Location format: https://api.hh.ru/negotiations/{id}
+                    if let Some(id) = location_str.rsplit('/').next() {
+                        return Ok(id.to_string());
+                    }
+                }
+            }
+            // Generate a placeholder ID based on vacancy_id if Location header is missing
+            return Ok(format!("neg_{}", vacancy_id));
         }
 
-        let data: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
-        Ok(data["id"].as_str().unwrap_or("").to_string())
+        if !status.is_success() {
+            let error_body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Apply error: {} - {}", status, error_body));
+        }
+
+        // Try to parse JSON response if body is not empty
+        let body = res.text().await.unwrap_or_default();
+        if !body.is_empty() {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(id) = data["id"].as_str() {
+                    return Ok(id.to_string());
+                }
+            }
+        }
+
+        Ok(format!("neg_{}", vacancy_id))
     }
 
     // Get my negotiations (responses)
