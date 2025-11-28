@@ -43,6 +43,7 @@ pub struct JobSearchSettings {
     pub updated_at: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct HHToken {
     pub id: i64,

@@ -391,7 +391,7 @@ impl SyncService {
 
         let mut upload = Vec::new();
         let mut download = Vec::new();
-        let mut delete = Vec::new();
+        let delete = Vec::new();
 
         // Check client files
         for client_file in client_files {

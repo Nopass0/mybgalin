@@ -367,6 +367,7 @@ impl FileService {
     }
 
     /// Get all public files
+    #[allow(dead_code)]
     pub async fn get_public_files(pool: &SqlitePool) -> Result<Vec<StoredFile>, String> {
         let files: Vec<StoredFile> = sqlx::query_as(
             "SELECT * FROM stored_files WHERE is_public = 1 ORDER BY created_at DESC"

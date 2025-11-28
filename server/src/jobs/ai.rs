@@ -172,6 +172,7 @@ impl AIClient {
         bot_patterns.iter().any(|pattern| message_lower.contains(pattern))
     }
 
+    #[allow(dead_code)]
     pub async fn parse_hh_resume(&self, resume_html: &str) -> Result<String, String> {
         let system_prompt = "Ты помощник по парсингу резюме с HH.ru. Извлеки данные из HTML и верни ТОЛЬКО JSON без дополнительного текста.";
 

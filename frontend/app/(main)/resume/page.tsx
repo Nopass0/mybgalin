@@ -15,16 +15,9 @@ import {
   Building,
   Loader2,
   Send,
+  FileText,
+  User,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 
@@ -37,8 +30,9 @@ export default function ResumePage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500 mb-4" />
+        <p className="text-white/60">Загрузка резюме...</p>
       </div>
     );
   }
@@ -110,11 +104,20 @@ export default function ResumePage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-500/20 via-transparent to-cyan-500/20 border border-white/10 p-8"
       >
-        <h1 className="text-4xl font-bold tracking-tight">Резюме</h1>
-        <p className="mt-2 text-lg text-muted-foreground">
-          Мой опыт работы, навыки и проекты
-        </p>
+        <div className="absolute inset-0 bg-[#0a0a0b]/50" />
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-cyan-600 flex items-center justify-center">
+              <FileText className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <h1 className="text-4xl font-bold tracking-tight text-white mb-2">Резюме</h1>
+          <p className="text-lg text-white/60">
+            Мой опыт работы, навыки и проекты
+          </p>
+        </div>
       </motion.div>
 
       {/* About */}
@@ -123,10 +126,15 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="space-y-3"
+          className="bg-white/5 rounded-xl border border-white/10 p-6"
         >
-          <h2 className="text-3xl font-bold">О себе</h2>
-          <div className="prose prose-base dark:prose-invert text-xl max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3 prose-p:leading-relaxed prose-p:my-3 prose-strong:font-semibold prose-strong:text-foreground prose-ul:my-3 prose-ul:list-disc prose-ul:pl-6 prose-ol:my-3 prose-ol:list-decimal prose-ol:pl-6 prose-li:my-1">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <User className="w-5 h-5 text-blue-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-white">О себе</h2>
+          </div>
+          <div className="prose prose-base prose-invert max-w-none text-white/70 prose-headings:text-white prose-strong:text-white prose-a:text-orange-400">
             <ReactMarkdown>{portfolio.about}</ReactMarkdown>
           </div>
         </motion.div>
@@ -138,10 +146,15 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="space-y-3"
+          className="bg-white/5 rounded-xl border border-white/10 p-6"
         >
-          <h2 className="text-2xl font-semibold">Контакты</h2>
-          <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+              <Mail className="w-5 h-5 text-purple-400" />
+            </div>
+            <h2 className="text-2xl font-semibold text-white">Контакты</h2>
+          </div>
+          <div className="flex flex-wrap gap-4">
             {portfolio.contacts.map((contact) => {
               const link = getContactLink(contact.contact_type, contact.value);
               const displayValue = formatContactValue(
@@ -150,25 +163,28 @@ export default function ResumePage() {
               );
 
               return (
-                <div key={contact.id} className="flex items-center gap-3">
-                  {getContactIcon(contact.contact_type)}
-                  <div className="flex-1">
+                <div
+                  key={contact.id}
+                  className="flex items-center gap-3 bg-white/5 rounded-lg px-4 py-3 border border-white/10"
+                >
+                  <div className="text-white/40">
+                    {getContactIcon(contact.contact_type)}
+                  </div>
+                  <div>
                     {contact.label && (
-                      <p className="text-sm text-muted-foreground">
-                        {contact.label}
-                      </p>
+                      <p className="text-xs text-white/40">{contact.label}</p>
                     )}
                     {link ? (
                       <a
                         href={link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-base hover:underline hover:text-primary"
+                        className="text-sm text-white hover:text-orange-400 transition-colors"
                       >
                         {displayValue}
                       </a>
                     ) : (
-                      <p className="text-base">{displayValue}</p>
+                      <p className="text-sm text-white">{displayValue}</p>
                     )}
                   </div>
                 </div>
@@ -184,34 +200,34 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
-          className="space-y-4"
+          className="bg-white/5 rounded-xl border border-white/10 p-6"
         >
-          <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <Briefcase className="h-6 w-6" />
-            Опыт работы
-          </h2>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+              <Briefcase className="w-5 h-5 text-orange-400" />
+            </div>
+            <h2 className="text-2xl font-semibold text-white">Опыт работы</h2>
+          </div>
           <div className="space-y-6">
             {portfolio.experience.map((exp, index) => (
               <div key={exp.id}>
-                {index > 0 && <Separator className="my-4" />}
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold">{exp.title}</h3>
-                      <div className="flex items-center gap-2 mt-1 text-base text-muted-foreground">
-                        <Building className="h-5 w-5" />
-                        {exp.company}
+                {index > 0 && <div className="border-t border-white/10 my-6" />}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold text-white">{exp.title}</h3>
+                      <div className="flex items-center gap-2 mt-1 text-white/60">
+                        <Building className="h-4 w-4" />
+                        <span>{exp.company}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-base text-muted-foreground whitespace-nowrap">
-                      <Calendar className="h-5 w-5" />
-                      {exp.date_from} — {exp.date_to || "настоящее время"}
+                    <div className="flex items-center gap-2 text-sm text-white/40 whitespace-nowrap">
+                      <Calendar className="h-4 w-4" />
+                      <span>{exp.date_from} — {exp.date_to || "настоящее время"}</span>
                     </div>
                   </div>
                   {exp.description && (
-                    <p className="text-base text-muted-foreground mt-2 whitespace-pre-wrap">
-                      {exp.description}
-                    </p>
+                    <p className="text-white/60 whitespace-pre-wrap">{exp.description}</p>
                   )}
                 </div>
               </div>
@@ -226,26 +242,27 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="space-y-4"
+          className="bg-white/5 rounded-xl border border-white/10 p-6"
         >
-          <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <Code className="h-6 w-6" />
-            Навыки
-          </h2>
-          <div className="space-y-4">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+              <Code className="w-5 h-5 text-cyan-400" />
+            </div>
+            <h2 className="text-2xl font-semibold text-white">Навыки</h2>
+          </div>
+          <div className="space-y-6">
             {Object.entries(groupSkillsByCategory()).map(
               ([category, skills]) => (
                 <div key={category}>
-                  <h4 className="text-base font-semibold mb-2">{category}</h4>
+                  <h4 className="text-sm font-semibold text-white/60 mb-3 uppercase tracking-wider">{category}</h4>
                   <div className="flex flex-wrap gap-2">
                     {skills.map((skill, index) => (
-                      <Badge
+                      <span
                         key={index}
-                        variant="secondary"
-                        className="text-sm px-3 py-1"
+                        className="px-3 py-1.5 text-sm bg-white/5 border border-white/10 rounded-lg text-white/80"
                       >
                         {skill}
-                      </Badge>
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -261,14 +278,17 @@ export default function ResumePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.5 }}
-          className="space-y-4"
+          className="space-y-6"
         >
-          <h2 className="text-2xl font-semibold">Проекты</h2>
+          <h2 className="text-2xl font-semibold text-white">Проекты</h2>
           <div className="grid gap-6 md:grid-cols-2">
             {portfolio.cases.map((projectCase) => (
-              <div key={projectCase.id} className="space-y-3">
+              <div
+                key={projectCase.id}
+                className="bg-white/5 rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all"
+              >
                 {projectCase.main_image && (
-                  <div className="relative h-48 w-full bg-muted rounded-lg overflow-hidden">
+                  <div className="relative h-48 w-full bg-[#121214]">
                     <Image
                       src={projectCase.main_image}
                       alt={projectCase.title}
@@ -277,44 +297,42 @@ export default function ResumePage() {
                     />
                   </div>
                 )}
-                <div>
-                  <h3 className="text-lg font-semibold">{projectCase.title}</h3>
+                <div className="p-4 space-y-3">
+                  <h3 className="text-lg font-semibold text-white">{projectCase.title}</h3>
                   {projectCase.website_url && (
                     <a
                       href={projectCase.website_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-sm text-muted-foreground hover:underline hover:text-primary mt-1"
+                      className="flex items-center gap-1 text-sm text-white/40 hover:text-orange-400 transition-colors"
                     >
                       <Globe className="h-4 w-4" />
                       {projectCase.website_url}
                     </a>
                   )}
-                </div>
-                {projectCase.description && (
-                  <div>
-                    <p className="text-base text-muted-foreground whitespace-pre-wrap">
+                  {projectCase.description && (
+                    <p className="text-sm text-white/60 whitespace-pre-wrap">
                       {projectCase.description}
                     </p>
-                    {projectCase.images && projectCase.images.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2 mt-4">
-                        {projectCase.images.slice(0, 3).map((image, index) => (
-                          <div
-                            key={index}
-                            className="relative h-20 rounded-md overflow-hidden bg-muted"
-                          >
-                            <Image
-                              src={image}
-                              alt={`${projectCase.title} ${index + 1}`}
-                              fill
-                              className="object-cover"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                  )}
+                  {projectCase.images && projectCase.images.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 pt-2">
+                      {projectCase.images.slice(0, 3).map((image, index) => (
+                        <div
+                          key={index}
+                          className="relative h-16 rounded-md overflow-hidden bg-[#121214]"
+                        >
+                          <Image
+                            src={image}
+                            alt={`${projectCase.title} ${index + 1}`}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

@@ -156,6 +156,7 @@ pub struct SteamPlayersData {
     pub players: Vec<SteamPlayer>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct SteamPlayer {
     pub steamid: String,

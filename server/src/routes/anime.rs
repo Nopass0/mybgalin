@@ -79,6 +79,7 @@ pub async fn get_watched_anime(
     Json(ApiResponse::success(response))
 }
 
+#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct SyncResponse {
     pub synced: usize,

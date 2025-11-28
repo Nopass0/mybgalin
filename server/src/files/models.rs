@@ -106,6 +106,7 @@ pub struct CreateFolderRequest {
     pub parent_id: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct UploadFileRequest {
     #[serde(rename = "folderId")]

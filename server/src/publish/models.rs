@@ -25,6 +25,7 @@ pub enum JobStatus {
     Error,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ConvertRequest {
     pub start: Option<f64>,
@@ -41,6 +42,7 @@ pub struct ConvertRequest {
     pub show_label: Option<bool>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct OptimizeRequest {
     pub target_size: Option<u64>,
@@ -54,6 +56,7 @@ pub struct OptimizeRequest {
     pub show_label: Option<bool>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct JobResponse {
     #[serde(rename = "jobId")]
@@ -72,6 +75,7 @@ pub struct StatusResponse {
     pub frame_count: Option<u32>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FrameSettings {
     pub enabled: bool,

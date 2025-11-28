@@ -14,6 +14,7 @@ use std::env;
 use uuid::Uuid;
 
 // Admin guard - checks if Steam ID matches admin
+#[allow(dead_code)]
 pub struct AdminAuth {
     pub steam_id: String,
 }
