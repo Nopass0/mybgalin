@@ -80,6 +80,8 @@ impl SyncService {
     }
 
     pub async fn list_folders(pool: &SqlitePool) -> Result<Vec<SyncFolderResponse>, String> {
+        use crate::sync::SyncClientResponse;
+
         let folders: Vec<SyncFolder> =
             sqlx::query_as("SELECT * FROM sync_folders ORDER BY created_at DESC")
                 .fetch_all(pool)
@@ -89,6 +91,12 @@ impl SyncService {
         let mut result = Vec::new();
         for folder in folders {
             let stats = Self::get_folder_stats(pool, &folder.id).await?;
+            let clients = Self::list_clients(pool, &folder.id)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(SyncClientResponse::from)
+                .collect();
             let api_url = format!("/api/sync/{}", &folder.id);
             result.push(SyncFolderResponse {
                 id: folder.id,
@@ -99,6 +107,8 @@ impl SyncService {
                 total_size: stats.1,
                 client_count: stats.2,
                 created_at: folder.created_at,
+                updated_at: folder.updated_at,
+                clients,
             });
         }
 

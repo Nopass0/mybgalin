@@ -50,6 +50,9 @@ pub struct SyncFolderResponse {
     pub client_count: i64,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    pub clients: Vec<SyncClientResponse>,
 }
 
 #[derive(Debug, Serialize)]
