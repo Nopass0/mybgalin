@@ -2389,7 +2389,18 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       case 'math-lerp': {
         const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
         const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
-        const factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+        // Check for connected factor input, otherwise use parameter
+        const facInput = getInputValue('fac') as { r: number; g: number; b: number } | number | undefined;
+        let factor: number;
+        if (facInput !== undefined) {
+          if (typeof facInput === 'number') {
+            factor = facInput;
+          } else {
+            factor = (facInput.r + facInput.g + facInput.b) / 3;
+          }
+        } else {
+          factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+        }
         return {
           r: a.r + (b.r - a.r) * factor,
           g: a.g + (b.g - a.g) * factor,
