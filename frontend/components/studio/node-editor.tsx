@@ -1218,15 +1218,36 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             return { r: adjust(input.r), g: adjust(input.g), b: adjust(input.b) };
           }
 
-          // Output nodes - pass through input
-          case 'output-color':
-          case 'output-normal':
+          // Output nodes - pass through input with correct port IDs
+          case 'output-color': {
+            const input = getInputValue('color') as { r: number; g: number; b: number };
+            return input || { r: 0.5, g: 0.5, b: 0.5 };
+          }
+          case 'output-normal': {
+            // Normal maps use blue as default (pointing up)
+            const normalInput = getInputValue('normal') as { r: number; g: number; b: number };
+            if (normalInput) return normalInput;
+            const heightInput = getInputValue('height') as { r: number; g: number; b: number };
+            if (heightInput) return heightInput;
+            return { r: 0.5, g: 0.5, b: 1 };
+          }
           case 'output-roughness':
           case 'output-metalness':
           case 'output-ao':
-          case 'output-emission':
-          case 'output-height': {
-            const input = getInputValue('input') as { r: number; g: number; b: number };
+          case 'output-height':
+          case 'output-opacity': {
+            const input = getInputValue('value') as { r: number; g: number; b: number } | number;
+            if (typeof input === 'number') {
+              return { r: input, g: input, b: input };
+            }
+            return input || { r: 0.5, g: 0.5, b: 0.5 };
+          }
+          case 'output-emission': {
+            const input = getInputValue('color') as { r: number; g: number; b: number };
+            return input || { r: 0, g: 0, b: 0 };
+          }
+          case 'output-combined': {
+            const input = getInputValue('color') as { r: number; g: number; b: number };
             return input || { r: 0.5, g: 0.5, b: 0.5 };
           }
 

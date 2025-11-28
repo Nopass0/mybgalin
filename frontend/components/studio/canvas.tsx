@@ -4229,6 +4229,55 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         />
       )}
 
+      {contextMenu?.type === 'text' && (() => {
+        const activeLayer = layers.find(l => l.id === activeLayerId);
+        const textContent = activeLayer?.textContent || {
+          fontFamily: 'Arial',
+          fontSize: 48,
+          fontWeight: 400,
+          color: primaryColor,
+        };
+        return (
+          <TextContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            fontSize={textContent.fontSize}
+            fontFamily={textContent.fontFamily}
+            fontWeight={textContent.fontWeight}
+            textColor={textContent.color}
+            onFontSizeChange={(size) => {
+              if (activeLayerId && activeLayer?.textContent) {
+                updateLayer(activeLayerId, {
+                  textContent: { ...activeLayer.textContent, fontSize: size }
+                });
+              }
+            }}
+            onFontFamilyChange={(family) => {
+              if (activeLayerId && activeLayer?.textContent) {
+                updateLayer(activeLayerId, {
+                  textContent: { ...activeLayer.textContent, fontFamily: family }
+                });
+              }
+            }}
+            onFontWeightChange={(weight) => {
+              if (activeLayerId && activeLayer?.textContent) {
+                updateLayer(activeLayerId, {
+                  textContent: { ...activeLayer.textContent, fontWeight: weight }
+                });
+              }
+            }}
+            onTextColorChange={(color) => {
+              if (activeLayerId && activeLayer?.textContent) {
+                updateLayer(activeLayerId, {
+                  textContent: { ...activeLayer.textContent, color }
+                });
+              }
+            }}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
+
       {contextMenu?.type === 'canvas' && (
         <ContextMenu
           items={[
