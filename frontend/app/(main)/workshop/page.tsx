@@ -2,16 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { WorkshopCard } from "@/components/workshop-card";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, PackageOpen } from "lucide-react";
+import { AlertCircle, PackageOpen, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 
 interface WorkshopTag {
@@ -99,39 +90,27 @@ export default function WorkshopPage() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500/20 via-transparent to-purple-500/20 border border-white/10 p-8"
       >
-        <div className="flex items-center gap-3 mb-2">
-          <PackageOpen className="h-8 w-8 text-primary" />
-          <h1 className="text-4xl font-bold">Steam Workshop</h1>
+        <div className="absolute inset-0 bg-[#0a0a0b]/50" />
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <PackageOpen className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-2">Steam Workshop</h1>
+          <p className="text-white/60 text-lg">
+            Мои работы в Steam Workshop
+          </p>
         </div>
-        <p className="text-muted-foreground text-lg">
-          Мои работы в Steam Workshop
-        </p>
       </motion.div>
 
       {/* Loading State */}
       {loading && (
-        <div className="space-y-8">
-          {[1, 2].map((i) => (
-            <Card key={i} className="bg-background/40">
-              <CardHeader>
-                <Skeleton className="h-8 w-48" />
-                <Skeleton className="h-4 w-32" />
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {[1, 2, 3].map((j) => (
-                    <div key={j} className="space-y-3">
-                      <Skeleton className="aspect-video w-full" />
-                      <Skeleton className="h-6 w-3/4" />
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-2/3" />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="flex flex-col items-center justify-center py-24">
+          <Loader2 className="w-8 h-8 animate-spin text-orange-500 mb-4" />
+          <p className="text-white/60">Загрузка работ...</p>
         </div>
       )}
 
@@ -140,21 +119,20 @@ export default function WorkshopPage() {
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
+          className="bg-red-500/10 border border-red-500/30 rounded-xl p-6"
         >
-          <Alert
-            variant="destructive"
-            className="backdrop-blur-xl bg-background/40 border-red-500/50"
-          >
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Ошибка загрузки</AlertTitle>
-            <AlertDescription>
-              Не удалось загрузить данные Workshop: {error}
-              <br />
-              <span className="text-sm mt-2 block">
+          <div className="flex items-start gap-4">
+            <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-lg font-semibold text-red-400 mb-1">Ошибка загрузки</h3>
+              <p className="text-white/60">
+                Не удалось загрузить данные Workshop: {error}
+              </p>
+              <p className="text-white/40 text-sm mt-2">
                 Проверьте настройки STEAM_API_KEY и STEAM_ID в server/.env
-              </span>
-            </AlertDescription>
-          </Alert>
+              </p>
+            </div>
+          </div>
         </motion.div>
       )}
 
@@ -163,18 +141,17 @@ export default function WorkshopPage() {
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center justify-center py-24"
         >
-          <Card className="backdrop-blur-xl bg-background/40 border-white/10">
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <PackageOpen className="h-16 w-16 text-muted-foreground mb-4" />
-              <h3 className="text-xl font-semibold mb-2">
-                Нет работ в Workshop
-              </h3>
-              <p className="text-muted-foreground text-center">
-                Пока нет опубликованных работ в Steam Workshop
-              </p>
-            </CardContent>
-          </Card>
+          <div className="w-24 h-24 rounded-2xl bg-white/5 flex items-center justify-center mb-6">
+            <PackageOpen className="w-12 h-12 text-white/20" />
+          </div>
+          <h3 className="text-xl font-semibold text-white mb-2">
+            Нет работ в Workshop
+          </h3>
+          <p className="text-white/40 text-center">
+            Пока нет опубликованных работ в Steam Workshop
+          </p>
         </motion.div>
       )}
 
@@ -186,9 +163,6 @@ export default function WorkshopPage() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="space-y-8"
         >
-          {/* Summary Card removed */}
-
-          {/* Items by Game */}
           {Object.entries(workshopData.by_game).map(
             ([gameKey, items], index) => (
               <motion.div
@@ -197,17 +171,16 @@ export default function WorkshopPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.1 * index }}
               >
-                <Card className="backdrop-blur-xl bg-background/40 border-white/10">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+                  <div className="p-6 border-b border-white/10">
+                    <h2 className="text-xl font-semibold text-white flex items-center gap-3">
                       <span>{GAME_NAMES[gameKey] || gameKey}</span>
-                      <span className="text-sm font-normal text-muted-foreground">
-                        ({items.length}{" "}
-                        {items.length === 1 ? "работа" : "работ"})
+                      <span className="text-sm font-normal px-2 py-0.5 bg-white/10 rounded-full text-white/60">
+                        {items.length} {items.length === 1 ? "работа" : "работ"}
                       </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                    </h2>
+                  </div>
+                  <div className="p-6">
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                       {items.map((item) => (
                         <WorkshopCard
@@ -217,8 +190,8 @@ export default function WorkshopPage() {
                         />
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </motion.div>
             ),
           )}

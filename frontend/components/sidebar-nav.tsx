@@ -19,12 +19,11 @@ import {
   PackageOpen,
   Palette,
   Link2,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useTheme } from "next-themes";
 
 const routes = [
   {
@@ -88,12 +87,6 @@ export function SidebarNav() {
   const [adminExpanded, setAdminExpanded] = React.useState(
     pathname.startsWith("/admin"),
   );
-  const { theme } = useTheme();
-  const [mounted, setMounted] = React.useState(false);
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
 
   React.useEffect(() => {
     // Auto-expand admin menu if on admin page
@@ -104,27 +97,21 @@ export function SidebarNav() {
 
   const NavContent = () => (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between p-6">
-        <Link href="/" className="flex items-center">
-          {mounted && (
-            <Image
-              src="/logo.svg"
-              alt="BGalin Logo"
-              width={40}
-              height={14}
-              className={cn(
-                "transition-all",
-                theme === "dark"
-                  ? "brightness-200 invert drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-                  : "brightness-0",
-              )}
-              priority
-            />
-          )}
+      {/* Logo Section */}
+      <div className="flex items-center gap-3 p-6 border-b border-white/10">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold text-white">BGalin</h1>
+            <p className="text-xs text-white/40">Portfolio</p>
+          </div>
         </Link>
-        <ThemeToggle />
       </div>
-      <nav className="flex-1 space-y-1 px-3">
+
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1 px-3 py-4">
         {routes.map((route, index) => (
           <motion.div
             key={route.href}
@@ -138,10 +125,10 @@ export function SidebarNav() {
                 <button
                   onClick={() => setAdminExpanded(!adminExpanded)}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent cursor-pointer",
+                    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all hover:bg-white/5 cursor-pointer",
                     pathname.startsWith("/admin")
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground",
+                      ? "bg-white/10 text-white"
+                      : "text-white/60",
                   )}
                 >
                   <route.icon className="h-5 w-5" />
@@ -164,17 +151,17 @@ export function SidebarNav() {
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden"
                 >
-                  <div className="ml-3 space-y-1 border-l-2 border-border pl-3 py-1">
+                  <div className="ml-3 space-y-1 border-l-2 border-white/10 pl-3 py-1">
                     {route.submenu.map((subRoute) => (
                       <Link
                         key={subRoute.href}
                         href={subRoute.href}
                         onClick={() => setOpen(false)}
                         className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-white/5",
                           pathname === subRoute.href
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground",
+                            ? "bg-orange-500/20 text-orange-400"
+                            : "text-white/60",
                         )}
                       >
                         <subRoute.icon className="h-4 w-4" />
@@ -190,10 +177,10 @@ export function SidebarNav() {
                 href={route.href}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all hover:bg-white/5",
                   pathname === route.href
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground",
+                    ? "bg-orange-500/20 text-orange-400"
+                    : "text-white/60",
                 )}
               >
                 <route.icon className="h-5 w-5" />
@@ -203,6 +190,13 @@ export function SidebarNav() {
           </motion.div>
         ))}
       </nav>
+
+      {/* Footer */}
+      <div className="p-4 border-t border-white/10">
+        <p className="text-xs text-white/30 text-center">
+          © 2024 BGalin
+        </p>
+      </div>
     </div>
   );
 
@@ -214,32 +208,21 @@ export function SidebarNav() {
           <Button
             variant="ghost"
             size="icon"
-            className="fixed left-4 top-4 z-40"
+            className="fixed left-4 top-4 z-40 bg-white/5 hover:bg-white/10 text-white border border-white/10"
           >
             <Menu className="h-6 w-6" />
           </Button>
         </SheetTrigger>
         <SheetContent
           side="left"
-          className={cn(
-            "w-64 p-0",
-            theme === "dark" &&
-              "bg-background/40 backdrop-blur-xl border-white/10",
-          )}
+          className="w-64 p-0 bg-[#0a0a0b] border-white/10"
         >
           <NavContent />
         </SheetContent>
       </Sheet>
 
       {/* Desktop */}
-      <aside
-        className={cn(
-          "hidden md:fixed md:inset-y-0 md:left-0 md:z-50 md:flex md:w-64 md:flex-col md:border-r",
-          mounted && theme === "dark"
-            ? "bg-background/40 backdrop-blur-xl border-white/10"
-            : "bg-background",
-        )}
-      >
+      <aside className="hidden md:fixed md:inset-y-0 md:left-0 md:z-50 md:flex md:w-64 md:flex-col md:border-r bg-[#0a0a0b]/80 backdrop-blur-xl border-white/10">
         <NavContent />
       </aside>
     </>

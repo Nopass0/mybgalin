@@ -55,16 +55,19 @@ pub struct WorkshopTag {
     pub tag: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct WorkshopResponse {
     response: WorkshopData,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct WorkshopData {
     publishedfiledetails: Vec<WorkshopItemRaw>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct WorkshopItemRaw {
     publishedfileid: String,
@@ -220,6 +223,7 @@ impl SteamClient {
         Ok(items)
     }
 
+    #[allow(dead_code)]
     async fn get_workshop_details(&self, file_ids: &[String]) -> Result<Vec<WorkshopItem>, Box<dyn std::error::Error>> {
         let url = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
 

@@ -37,6 +37,7 @@ struct SteamGame {
     playtime_forever: u32, // in minutes
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SteamPlayerSummary {
     steamid: String,
@@ -65,6 +66,7 @@ struct SteamLevelData {
     player_level: u32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct FaceitPlayerResponse {
     player_id: String,

@@ -47,6 +47,7 @@ pub struct PortfolioCase {
     pub created_at: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioCaseImage {
     pub id: i64,
@@ -121,6 +122,7 @@ pub struct CreateCaseRequest {
     pub images: Vec<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct UpdateCaseRequest {
     pub title: String,

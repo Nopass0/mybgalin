@@ -234,6 +234,7 @@ impl HHClient {
     }
 
     // Get specific negotiation details
+    #[allow(dead_code)]
     pub async fn get_negotiation(&self, negotiation_id: &str) -> Result<serde_json::Value, String> {
         let token = self.access_token.as_ref().ok_or("Not authorized")?;
 

@@ -1,6 +1,5 @@
 use super::models::SheetAnimeRow;
 use reqwest::Client;
-use serde_json::Value;
 
 pub struct GoogleSheetsClient {
     client: Client,

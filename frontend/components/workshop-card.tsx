@@ -1,7 +1,5 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Eye, Heart, Users, ExternalLink, Calendar } from "lucide-react";
 import Image from "next/image";
 import { motion } from "motion/react";
@@ -60,9 +58,9 @@ export function WorkshopCard({ item, gameName }: WorkshopCardProps) {
       transition={{ duration: 0.3 }}
       whileHover={{ y: -4 }}
     >
-      <Card className="group relative h-full backdrop-blur-xl bg-background/40 border-white/10 hover:border-white/20 transition-all duration-300 overflow-hidden">
+      <div className="group relative h-full bg-white/5 rounded-xl border border-white/10 hover:border-white/20 transition-all duration-300 overflow-hidden">
         {/* Preview Image */}
-        <div className="relative aspect-video w-full bg-muted overflow-hidden">
+        <div className="relative aspect-video w-full bg-[#121214] overflow-hidden">
           {item.preview_url ? (
             <Image
               src={item.preview_url}
@@ -73,10 +71,10 @@ export function WorkshopCard({ item, gameName }: WorkshopCardProps) {
             />
           ) : (
             <div className="flex h-full items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
-              <span className="text-muted-foreground">No Preview</span>
+              <span className="text-white/40">No Preview</span>
             </div>
           )}
-          
+
           {/* Overlay with link */}
           <a
             href={workshopUrl}
@@ -91,27 +89,26 @@ export function WorkshopCard({ item, gameName }: WorkshopCardProps) {
           </a>
         </div>
 
-        <CardHeader>
+        <div className="p-4 space-y-3">
+          {/* Title and Badge */}
           <div className="flex items-start justify-between gap-2">
-            <CardTitle className="line-clamp-2 text-lg">{item.title}</CardTitle>
+            <h3 className="font-semibold text-white line-clamp-2">{item.title}</h3>
             {gameName && (
-              <Badge variant="secondary" className="shrink-0">
+              <span className="shrink-0 px-2 py-0.5 text-xs bg-white/10 rounded text-white/60">
                 {gameName.toUpperCase()}
-              </Badge>
+              </span>
             )}
           </div>
-        </CardHeader>
 
-        <CardContent className="space-y-4">
           {/* Description */}
           {truncatedDescription && (
-            <p className="text-sm text-muted-foreground line-clamp-3">
+            <p className="text-sm text-white/40 line-clamp-3">
               {truncatedDescription}
             </p>
           )}
 
           {/* Stats */}
-          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <div className="flex flex-wrap gap-3 text-xs text-white/40">
             <div className="flex items-center gap-1">
               <Eye className="h-3.5 w-3.5" />
               <span>{formatNumber(item.views)}</span>
@@ -130,29 +127,28 @@ export function WorkshopCard({ item, gameName }: WorkshopCardProps) {
           {item.tags && item.tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {item.tags.slice(0, 3).map((tag, index) => (
-                <Badge
+                <span
                   key={index}
-                  variant="outline"
-                  className="text-xs bg-background/50"
+                  className="px-2 py-0.5 text-xs bg-white/5 border border-white/10 rounded text-white/50"
                 >
                   {tag.tag}
-                </Badge>
+                </span>
               ))}
               {item.tags.length > 3 && (
-                <Badge variant="outline" className="text-xs bg-background/50">
+                <span className="px-2 py-0.5 text-xs bg-white/5 border border-white/10 rounded text-white/50">
                   +{item.tags.length - 3}
-                </Badge>
+                </span>
               )}
             </div>
           )}
 
           {/* Dates */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-white/30">
             <Calendar className="h-3.5 w-3.5" />
             <span>Updated {formatDate(item.time_updated)}</span>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </motion.div>
   );
 }

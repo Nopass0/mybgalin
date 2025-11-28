@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
-use tempfile::TempDir;
 use tokio::fs;
 use uuid::Uuid;
 
@@ -407,7 +406,7 @@ impl PublishService {
 
         // Convert hex color to FFmpeg format
         let color = settings.color.trim_start_matches('#');
-        let font_color = format!("0x{}", color);
+        let _font_color = format!("0x{}", color);
 
         // Add text overlay with gradient background
         let drawtext = format!(

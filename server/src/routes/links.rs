@@ -1,6 +1,6 @@
 use crate::guards::AuthGuard;
-use rocket::http::{ContentType, Status};
-use rocket::response::{content::RawHtml, Redirect};
+use rocket::http::Status;
+use rocket::response::content::RawHtml;
 use rocket::serde::json::Json;
 use rocket::{get, post, put, delete, State};
 use rocket::request::{self, FromRequest, Request};
@@ -374,7 +374,7 @@ pub async fn delete_link(
     Ok(Status::NoContent)
 }
 
-#[get("/links/<id>/stats")]
+#[get("/links/<id>/stats", rank = 1)]
 pub async fn get_link_stats(
     _auth: AuthGuard,
     pool: &State<SqlitePool>,
@@ -525,7 +525,7 @@ pub async fn get_link_stats(
     }))
 }
 
-#[post("/links/<id>/regenerate-external")]
+#[post("/links/<id>/regenerate-external", rank = 1)]
 pub async fn regenerate_external_url(
     _auth: AuthGuard,
     pool: &State<SqlitePool>,
@@ -685,7 +685,7 @@ pub async fn redirect_link(
 }
 
 // API endpoint to get redirect info (for SPA usage)
-#[get("/links/resolve/<code>")]
+#[get("/links/resolve/<code>", rank = 2)]
 pub async fn resolve_link(
     pool: &State<SqlitePool>,
     code: &str,
@@ -717,7 +717,7 @@ pub async fn resolve_link(
 }
 
 // Track additional click data (called from client-side JS)
-#[post("/links/track/<code>", data = "<request>")]
+#[post("/links/track/<code>", data = "<request>", rank = 2)]
 pub async fn track_click(
     pool: &State<SqlitePool>,
     code: &str,

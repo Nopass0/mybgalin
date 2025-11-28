@@ -1,8 +1,6 @@
 'use client';
 
 import { SidebarNav } from "@/components/sidebar-nav";
-import { StarfieldBackground } from "@/components/starfield-background";
-import { StarfieldProvider } from "@/components/starfield-context";
 import { StudioRedirectHandler } from "@/components/studio-redirect-handler";
 
 export default function MainLayout({
@@ -11,8 +9,7 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   return (
-    <StarfieldProvider>
-      <StarfieldBackground />
+    <div className="min-h-screen bg-[#0a0a0b]">
       <StudioRedirectHandler />
       <div className="relative flex min-h-screen">
         <SidebarNav />
@@ -22,6 +19,6 @@ export default function MainLayout({
           </div>
         </main>
       </div>
-    </StarfieldProvider>
+    </div>
   );
 }

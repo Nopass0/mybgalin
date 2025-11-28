@@ -35,6 +35,7 @@ pub struct AnimeAuctionResponse {
 }
 
 // Shikimori API models
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ShikimoriAnime {
     pub id: i64,
@@ -49,6 +50,7 @@ pub struct ShikimoriAnime {
     pub released_on: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ShikimoriGenre {
     pub id: i64,
@@ -57,6 +59,7 @@ pub struct ShikimoriGenre {
     pub kind: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ShikimoriAnimeDetails {
     pub id: i64,
@@ -73,6 +76,7 @@ pub struct ShikimoriAnimeDetails {
     pub genres: Option<Vec<ShikimoriGenre>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ShikimoriImage {
     pub original: String,
@@ -82,6 +86,7 @@ pub struct ShikimoriImage {
 }
 
 // Google Sheets row data
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SheetAnimeRow {
     pub date: Option<String>,
