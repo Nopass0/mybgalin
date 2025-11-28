@@ -97,7 +97,7 @@ impl SyncService {
                 .into_iter()
                 .map(SyncClientResponse::from)
                 .collect();
-            let api_url = format!("/api/sync/{}", &folder.id);
+            let api_url = "/api/sync".to_string();
             result.push(SyncFolderResponse {
                 id: folder.id,
                 name: folder.name,

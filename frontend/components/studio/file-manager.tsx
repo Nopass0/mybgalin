@@ -113,6 +113,17 @@ interface SyncFolder {
   clients: SyncClient[];
 }
 
+interface SyncFile {
+  id: string;
+  path: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  checksum: string;
+  version: number;
+  updatedAt: string;
+}
+
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) return Image;
   if (mimeType.startsWith('video/')) return Video;
@@ -163,6 +174,9 @@ export default function FileManager() {
   const [isCreatingSyncFolder, setIsCreatingSyncFolder] = useState(false);
   const [copiedSyncKey, setCopiedSyncKey] = useState<string | null>(null);
   const [expandedSyncFolder, setExpandedSyncFolder] = useState<string | null>(null);
+  const [viewingSyncFolder, setViewingSyncFolder] = useState<SyncFolder | null>(null);
+  const [syncFolderFiles, setSyncFolderFiles] = useState<SyncFile[]>([]);
+  const [isSyncFolderFilesLoading, setIsSyncFolderFilesLoading] = useState(false);
 
   const getToken = () => localStorage.getItem('studio_token');
 
@@ -451,12 +465,53 @@ export default function FileManager() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Load sync folder files
+  const loadSyncFolderFiles = async (folder: SyncFolder) => {
+    setIsSyncFolderFilesLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/sync/files`, {
+        headers: { 'X-API-Key': folder.apiKey },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          setSyncFolderFiles(data.data.files || []);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load sync folder files:', err);
+    } finally {
+      setIsSyncFolderFilesLoading(false);
+    }
+  };
+
+  const openSyncFolder = (folder: SyncFolder) => {
+    setViewingSyncFolder(folder);
+    loadSyncFolderFiles(folder);
+  };
+
+  const closeSyncFolderView = () => {
+    setViewingSyncFolder(null);
+    setSyncFolderFiles([]);
+  };
+
+  const getSyncFileUrl = (folder: SyncFolder, fileId: string) => {
+    // For sync files, we need to use the download endpoint with API key
+    return `${API_BASE}/sync/download/${fileId}`;
+  };
+
   // Load sync folders when dialog opens
   useEffect(() => {
     if (syncDialogOpen) {
       loadSyncFolders();
     }
   }, [syncDialogOpen]);
+
+  // Load sync folders on mount for display in file manager
+  useEffect(() => {
+    loadSyncFolders();
+  }, []);
 
   if (isLoading) {
     return (
@@ -535,7 +590,82 @@ export default function FileManager() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {contents && contents.folders.length === 0 && contents.files.length === 0 ? (
+        {/* Viewing Sync Folder Contents */}
+        {viewingSyncFolder ? (
+          <div className="space-y-4">
+            {/* Sync folder header */}
+            <div className="flex items-center gap-3 p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
+              <button
+                onClick={closeSyncFolderView}
+                className="p-1 hover:bg-white/10 rounded transition-colors"
+              >
+                <ChevronRight className="w-5 h-5 text-white/60 rotate-180" />
+              </button>
+              <Cloud className="w-6 h-6 text-purple-400" />
+              <div className="flex-1">
+                <p className="font-medium text-white">{viewingSyncFolder.name}</p>
+                <p className="text-xs text-white/40">
+                  {viewingSyncFolder.fileCount} files • {formatSyncSize(viewingSyncFolder.totalSize)}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSyncDialogOpen(true);
+                  setExpandedSyncFolder(viewingSyncFolder.id);
+                }}
+                className="text-white/60 hover:text-white"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Copy Credentials
+              </Button>
+            </div>
+
+            {/* Sync folder files */}
+            {isSyncFolderFilesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+              </div>
+            ) : syncFolderFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Cloud className="w-16 h-16 text-white/20 mb-4" />
+                <h3 className="text-lg font-medium text-white mb-2">No synced files</h3>
+                <p className="text-white/40">Files will appear here when synced from your computer</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                {syncFolderFiles.map((file, index) => {
+                  const FileIcon = getFileIcon(file.mimeType);
+                  return (
+                    <motion.div
+                      key={file.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.03 }}
+                      className="group relative bg-white/5 rounded-xl overflow-hidden border border-white/10 hover:border-purple-500/50 cursor-pointer transition-all"
+                    >
+                      <div className="aspect-square bg-[#121214] flex items-center justify-center">
+                        <FileIcon className="w-12 h-12 text-white/20" />
+                      </div>
+                      <div className="p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Cloud className="w-3 h-3 text-purple-400" />
+                          <span className="text-xs text-white truncate flex-1">
+                            {file.name}
+                          </span>
+                        </div>
+                        <span className="text-xs text-white/40">
+                          {formatFileSize(file.size)}
+                        </span>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : contents && contents.folders.length === 0 && contents.files.length === 0 && syncFolders.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Folder className="w-16 h-16 text-white/20 mb-4" />
             <h3 className="text-lg font-medium text-white mb-2">Empty folder</h3>
@@ -543,15 +673,75 @@ export default function FileManager() {
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {/* Folders */}
+            {/* Sync Folders (only at root) */}
             <AnimatePresence mode="popLayout">
+              {currentFolderId === null && syncFolders.map((folder, index) => (
+                <motion.div
+                  key={`sync-${folder.id}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ delay: index * 0.03 }}
+                  className="group relative bg-purple-500/10 rounded-xl p-4 border border-purple-500/30 hover:border-purple-500/60 cursor-pointer transition-all"
+                  onDoubleClick={() => openSyncFolder(folder)}
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="relative">
+                      <Folder className="w-12 h-12 text-purple-400" />
+                      <Cloud className="w-5 h-5 text-purple-300 absolute -bottom-1 -right-1 bg-[#1a1a1c] rounded-full p-0.5" />
+                    </div>
+                    <span className="text-sm text-white truncate w-full text-center">
+                      {folder.name}
+                    </span>
+                    <span className="text-xs text-purple-300/60">
+                      {folder.fileCount} synced
+                    </span>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="absolute top-2 right-2 p-1 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <MoreVertical className="w-4 h-4 text-white/60" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="bg-[#1a1a1c] border-white/10">
+                      <DropdownMenuItem
+                        onClick={() => openSyncFolder(folder)}
+                        className="text-white hover:bg-white/10 cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Files
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSyncDialogOpen(true);
+                          setExpandedSyncFolder(folder.id);
+                        }}
+                        className="text-white hover:bg-white/10 cursor-pointer"
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy Credentials
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-white/10" />
+                      <DropdownMenuItem
+                        onClick={() => handleDeleteSyncFolder(folder.id)}
+                        className="text-red-400 hover:bg-white/10 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </motion.div>
+              ))}
+
+              {/* Regular Folders */}
               {contents?.folders.map((folder, index) => (
                 <motion.div
                   key={folder.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ delay: index * 0.03 }}
+                  transition={{ delay: (currentFolderId === null ? syncFolders.length : 0 + index) * 0.03 }}
                   className="group relative bg-white/5 rounded-xl p-4 border border-white/10 hover:border-purple-500/50 cursor-pointer transition-all"
                   onDoubleClick={() => navigateToFolder(folder.id)}
                 >
