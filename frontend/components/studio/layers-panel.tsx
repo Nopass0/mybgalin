@@ -1,3 +1,21 @@
+/**
+ * Layers Panel Component
+ *
+ * Manages the layer stack for the CS2 Skin Studio canvas.
+ * Provides a Photoshop-like interface for layer management.
+ *
+ * Features:
+ * - Layer creation, deletion, duplication
+ * - Drag-and-drop reordering with Reorder
+ * - Visibility and lock toggles
+ * - Opacity and blend mode controls
+ * - Layer grouping and merging
+ * - Smart mask application
+ * - Image import to layers
+ *
+ * @module components/studio/layers-panel
+ */
+
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
