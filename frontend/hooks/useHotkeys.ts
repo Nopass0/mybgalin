@@ -50,6 +50,10 @@ export function useHotkeys() {
     // Selection
     clearSelection,
     hasSelection,
+    setSelection,
+    // Canvas dimensions
+    canvasWidth,
+    canvasHeight,
     // Brush
     currentBrush,
     updateBrush,
@@ -102,9 +106,11 @@ export function useHotkeys() {
    * Select all (create full canvas selection)
    */
   const handleSelectAll = useCallback(() => {
-    // TODO: Create full canvas selection
-    console.log('Select all');
-  }, []);
+    // Create a rectangular path covering the entire canvas
+    const path = new Path2D();
+    path.rect(0, 0, canvasWidth, canvasHeight);
+    setSelection(path);
+  }, [canvasWidth, canvasHeight, setSelection]);
 
   /**
    * Deselect all
