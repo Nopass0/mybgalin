@@ -6,6 +6,7 @@ mod guards;
 mod jobs;
 mod models;
 mod portfolio;
+mod publish;
 mod routes;
 mod steam;
 mod studio;
@@ -56,6 +57,18 @@ async fn rocket() -> _ {
     // Spawn background job scheduler task
     job_scheduler.clone().spawn_scheduler();
 
+    // Initialize publish service
+    let publish_service = publish::PublishService::new();
+
+    // Spawn cleanup task for expired publish jobs
+    let publish_service_cleanup = publish_service.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(300)).await; // Every 5 minutes
+            publish_service_cleanup.cleanup_expired().await;
+        }
+    });
+
     println!("🚀 Server starting...");
     println!("📊 Database: {}", database_url);
     println!("👤 Admin Telegram ID: {}", admin_telegram_id);
@@ -63,6 +76,7 @@ async fn rocket() -> _ {
     println!("🎯 Faceit API: {}", if faceit_api_key.is_some() { "enabled" } else { "disabled" });
     println!("💼 Job search system: ready");
     println!("🎨 CS2 Skin Studio: ready");
+    println!("📹 Publishing Tools: ready");
     println!("✅ All systems ready");
 
     // Configure CORS
@@ -94,6 +108,7 @@ async fn rocket() -> _ {
         .manage(match_state_manager)
         .manage(job_scheduler)
         .manage(admin_telegram_id)
+        .manage(publish_service)
         // Public routes
         .mount(
             "/",
@@ -213,6 +228,17 @@ async fn rocket() -> _ {
                 routes::studio::get_project,
                 routes::studio::update_project,
                 routes::studio::delete_project,
+            ],
+        )
+        // Publishing tools routes
+        .mount(
+            "/api",
+            routes![
+                routes::publish::convert_video,
+                routes::publish::optimize_gif,
+                routes::publish::get_status,
+                routes::publish::get_result,
+                routes::publish::download_result,
             ],
         )
 }

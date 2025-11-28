@@ -16,6 +16,8 @@ import {
   User,
   Package,
   ChevronDown,
+  Video,
+  Palette,
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { StudioProject, StickerType } from '@/types/studio';
@@ -55,6 +57,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import dynamic from 'next/dynamic';
+
+// Lazy load PublishingTools component
+const PublishingTools = dynamic(
+  () => import('@/components/studio/publishing-tools'),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center h-[600px]">
+        <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+      </div>
+    ),
+    ssr: false
+  }
+);
 
 const stickerTypes: { value: StickerType; label: string; description: string }[] = [
   { value: 'paper', label: 'Paper', description: 'Classic paper sticker' },
@@ -80,6 +97,7 @@ export default function StudioPage() {
     deleteProject,
   } = useStudioAuth();
 
+  const [activeTab, setActiveTab] = useState<'projects' | 'publish'>('projects');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
@@ -302,20 +320,40 @@ export default function StudioPage() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Actions */}
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-white">Projects</h2>
-          <Button
-            onClick={() => setIsCreateOpen(true)}
-            className="bg-orange-500 hover:bg-orange-600 text-white"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            New Project
-          </Button>
-        </div>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
+          <div className="flex items-center justify-between mb-8">
+            <TabsList className="bg-white/5 p-1">
+              <TabsTrigger
+                value="projects"
+                className="data-[state=active]:bg-orange-500 data-[state=active]:text-white px-6"
+              >
+                <Palette className="w-4 h-4 mr-2" />
+                Projects
+              </TabsTrigger>
+              <TabsTrigger
+                value="publish"
+                className="data-[state=active]:bg-purple-500 data-[state=active]:text-white px-6"
+              >
+                <Video className="w-4 h-4 mr-2" />
+                Publishing Tools
+              </TabsTrigger>
+            </TabsList>
+            {activeTab === 'projects' && (
+              <Button
+                onClick={() => setIsCreateOpen(true)}
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Project
+              </Button>
+            )}
+          </div>
 
-        {/* Projects Grid */}
-        <AnimatePresence mode="popLayout">
+          {/* Projects Tab */}
+          <TabsContent value="projects" className="mt-0">
+            {/* Projects Grid */}
+            <AnimatePresence mode="popLayout">
           {projects.length === 0 ? (
             <motion.div
               initial={{ opacity: 0 }}
@@ -399,6 +437,15 @@ export default function StudioPage() {
             </div>
           )}
         </AnimatePresence>
+          </TabsContent>
+
+          {/* Publishing Tools Tab */}
+          <TabsContent value="publish" className="mt-0">
+            <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
+              <PublishingTools />
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Create Project Dialog */}
