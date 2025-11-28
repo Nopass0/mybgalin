@@ -1,3 +1,19 @@
+/**
+ * Smart Masks Panel Component
+ *
+ * Procedural mask generation for the CS2 Skin Studio.
+ * Creates dynamic masks based on geometric and procedural rules.
+ *
+ * Features:
+ * - Curvature-based masks for edge detection
+ * - Position-based masks (gradient, radial)
+ * - Noise-based masks for organic effects
+ * - UV seam detection for texture borders
+ * - Mask inversion and blending options
+ *
+ * @module components/studio/smart-masks-panel
+ */
+
 'use client';
 
 import { useState } from 'react';

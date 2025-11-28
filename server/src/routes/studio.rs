@@ -173,11 +173,16 @@ pub async fn get_me(
     .fetch_one(pool.inner())
     .await;
 
+    // Check if user is admin
+    let admin_steam_id = env::var("ADMIN_STEAM_ID").unwrap_or_default();
+
     match user {
         Ok(u) => {
+            let is_admin = u.steam_id == admin_steam_id;
             let response = StudioUserResponse::from(u);
             Json(ApiResponse::success(serde_json::json!({
-                "user": response
+                "user": response,
+                "isAdmin": is_admin
             })))
         }
         Err(e) => Json(ApiResponse::error(format!("Database error: {}", e))),

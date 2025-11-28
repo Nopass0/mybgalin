@@ -1,3 +1,19 @@
+/**
+ * Material Map Panel Component
+ *
+ * PBR texture channel configuration for the CS2 Skin Studio.
+ * Manages individual texture maps and their properties.
+ *
+ * Features:
+ * - Per-channel texture import
+ * - Channel intensity and blend controls
+ * - Normal map strength adjustment
+ * - Metalness and roughness value editing
+ * - Real-time preview updates
+ *
+ * @module components/studio/material-map-panel
+ */
+
 'use client';
 
 import { useState, useCallback } from 'react';

@@ -1,17 +1,34 @@
+/**
+ * Studio Authentication Hook
+ *
+ * Manages user authentication state for the CS2 Skin Studio.
+ * Uses Steam OpenID for login and JWT tokens for API access.
+ *
+ * Features:
+ * - Steam login/logout
+ * - JWT token management
+ * - Project CRUD operations
+ * - Persistent auth state
+ *
+ * @module hooks/useStudioAuth
+ */
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SteamUser, StudioProject } from '@/types/studio';
 
+/** Authentication state interface */
 interface StudioAuthState {
   user: SteamUser | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
   projects: StudioProject[];
 
   // Actions
   login: () => void;
   logout: () => void;
-  setUser: (user: SteamUser | null) => void;
+  setUser: (user: SteamUser | null, isAdmin?: boolean) => void;
   initialize: () => void;
 
   // Projects
@@ -23,30 +40,58 @@ interface StudioAuthState {
 
 // For fetch requests (proxied through Next.js rewrites)
 const API_BASE = '/api';
-// For redirects (need direct backend URL since window.location doesn't go through rewrites)
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+
+/**
+ * Get the backend URL for direct redirects (not API calls)
+ * Must work both on localhost and production
+ */
+const getBackendUrl = (): string => {
+  // Server-side: use env var or localhost
+  if (typeof window === 'undefined') {
+    return process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+  }
+
+  // Client-side: determine based on current hostname
+  const hostname = window.location.hostname;
+
+  // Production domains
+  if (hostname === 'bgalin.ru' || hostname.endsWith('.bgalin.ru')) {
+    return 'https://bgalin.ru';
+  }
+
+  // Local development
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3001';
+  }
+
+  // Other domains: try to use same origin with port 3001
+  // or fallback to env var
+  return process.env.NEXT_PUBLIC_BACKEND_URL || `${window.location.protocol}//${hostname}:3001`;
+};
 
 export const useStudioAuth = create<StudioAuthState>()(
   persist(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
+      isAdmin: false,
       isLoading: true,
       projects: [],
 
       login: () => {
         // Redirect to Steam OpenID login - must use direct backend URL for page redirects
+        const backendUrl = getBackendUrl();
         const returnUrl = encodeURIComponent(window.location.origin + '/studio/auth/callback');
-        window.location.href = `${BACKEND_URL}/api/studio/auth/steam?return_url=${returnUrl}`;
+        window.location.href = `${backendUrl}/api/studio/auth/steam?return_url=${returnUrl}`;
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false, projects: [] });
+        set({ user: null, isAuthenticated: false, isAdmin: false, projects: [] });
         localStorage.removeItem('studio_token');
       },
 
-      setUser: (user) => {
-        set({ user, isAuthenticated: !!user });
+      setUser: (user, isAdmin = false) => {
+        set({ user, isAuthenticated: !!user, isAdmin });
       },
 
       initialize: async () => {
@@ -54,7 +99,7 @@ export const useStudioAuth = create<StudioAuthState>()(
 
         const token = localStorage.getItem('studio_token');
         if (!token) {
-          set({ isLoading: false, isAuthenticated: false, user: null });
+          set({ isLoading: false, isAuthenticated: false, isAdmin: false, user: null });
           return;
         }
 
@@ -67,14 +112,15 @@ export const useStudioAuth = create<StudioAuthState>()(
 
           if (response.ok) {
             const data = await response.json();
-            // Backend returns ApiResponse: { success, data: { user }, error }
+            // Backend returns ApiResponse: { success, data: { user, isAdmin }, error }
             const user = data.data?.user || data.user;
-            set({ user, isAuthenticated: true, isLoading: false });
+            const isAdmin = data.data?.isAdmin || false;
+            set({ user, isAuthenticated: true, isAdmin, isLoading: false });
             // Load projects after auth
             get().loadProjects();
           } else {
             localStorage.removeItem('studio_token');
-            set({ user: null, isAuthenticated: false, isLoading: false });
+            set({ user: null, isAuthenticated: false, isAdmin: false, isLoading: false });
           }
         } catch {
           set({ isLoading: false });
@@ -197,6 +243,7 @@ export const useStudioAuth = create<StudioAuthState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        isAdmin: state.isAdmin,
       }),
     }
   )

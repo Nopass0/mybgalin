@@ -1,3 +1,21 @@
+/**
+ * Toolbar Component
+ *
+ * Main tool selection toolbar for the CS2 Skin Studio.
+ * Provides quick access to all drawing and editing tools.
+ *
+ * Tools available:
+ * - Selection tools (move, select, lasso)
+ * - Drawing tools (brush, eraser, pencil, airbrush)
+ * - Shape tools (rectangle, ellipse, polygon)
+ * - Text tool
+ * - Fill and gradient tools
+ * - Clone stamp and healing
+ * - Zoom and pan navigation
+ *
+ * @module components/studio/toolbar
+ */
+
 'use client';
 
 import { motion } from 'motion/react';

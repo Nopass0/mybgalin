@@ -1,3 +1,21 @@
+/**
+ * Brush Settings Panel Component
+ *
+ * Advanced brush configuration panel for the CS2 Skin Studio.
+ * Provides detailed control over brush behavior and appearance.
+ *
+ * Features:
+ * - Brush size, hardness, opacity, and flow controls
+ * - Pressure sensitivity settings (size, opacity, flow)
+ * - Brush shape and angle customization
+ * - Scatter and spacing controls
+ * - Brush preset management (save, load, delete)
+ * - ABR brush file import support
+ * - Real-time brush preview
+ *
+ * @module components/studio/brush-settings
+ */
+
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';

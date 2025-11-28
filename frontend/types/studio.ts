@@ -1,5 +1,18 @@
-// CS2 Skin Studio Types
+/**
+ * CS2 Skin Studio Type Definitions
+ *
+ * Comprehensive TypeScript types for the CS2 Skin Studio application.
+ * Includes interfaces for layers, materials, masks, tools, and project data.
+ *
+ * @module types/studio
+ */
 
+// ==================== USER & PROJECT ====================
+
+/**
+ * Steam user profile information
+ * Retrieved via Steam OpenID authentication
+ */
 export interface SteamUser {
   steamId: string;
   personaName: string;
@@ -7,6 +20,10 @@ export interface SteamUser {
   profileUrl: string;
 }
 
+/**
+ * Studio project containing sticker artwork and metadata
+ * Projects are persisted to the backend and can be shared
+ */
 export interface StudioProject {
   id: string;
   name: string;
@@ -18,6 +35,10 @@ export interface StudioProject {
   data?: ProjectData;
 }
 
+/**
+ * CS2 sticker finish types
+ * Determines the visual effect applied to the sticker
+ */
 export type StickerType =
   | 'paper'
   | 'glitter'
@@ -27,6 +48,10 @@ export type StickerType =
   | 'lenticular'
   | 'champion';
 
+/**
+ * Complete project data structure
+ * Contains all canvas state, layers, brushes, materials, and settings
+ */
 export interface ProjectData {
   width: number;
   height: number;
@@ -44,6 +69,11 @@ export interface ProjectData {
 
 // ==================== LAYER SYSTEM ====================
 
+/**
+ * Layer structure for the canvas
+ * Supports raster, vector, text, shape, and group layers
+ * with masks, effects, and transformations
+ */
 export interface Layer {
   id: string;
   name: string;
@@ -74,6 +104,7 @@ export interface Layer {
   mergeSourceIds?: string[];
 }
 
+/** Available layer types in the editor */
 export type LayerType =
   | 'raster'
   | 'vector'
@@ -87,6 +118,7 @@ export type LayerType =
   | 'roughness'
   | 'ao';
 
+/** 2D transformation properties for layers and objects */
 export interface Transform {
   x: number;
   y: number;
@@ -99,6 +131,7 @@ export interface Transform {
   skewY: number;
 }
 
+/** Layer mask for non-destructive masking */
 export interface LayerMask {
   enabled: boolean;
   linked: boolean;
@@ -106,6 +139,7 @@ export interface LayerMask {
   inverted?: boolean;
 }
 
+/** Photoshop-compatible blend modes for layer compositing */
 export type BlendMode =
   | 'normal'
   | 'multiply'
@@ -133,6 +167,10 @@ export type BlendMode =
 
 // ==================== TEXT SYSTEM ====================
 
+/**
+ * Text layer content and styling
+ * Supports fonts, colors, stroke, shadow, gradients, and warping
+ */
 export interface TextLayerContent {
   text: string;
   fontFamily: string;
@@ -157,6 +195,7 @@ export interface TextLayerContent {
   warp?: TextWarp;
 }
 
+/** Text warp/distortion settings for creative text effects */
 export interface TextWarp {
   type: 'none' | 'arc' | 'arch' | 'bulge' | 'flag' | 'wave' | 'fish' | 'rise' | 'fisheye' | 'inflate' | 'squeeze' | 'twist';
   bend: number;
@@ -164,6 +203,7 @@ export interface TextWarp {
   verticalDistortion: number;
 }
 
+/** Google Fonts API font metadata */
 export interface GoogleFont {
   family: string;
   variants: string[];
@@ -172,6 +212,10 @@ export interface GoogleFont {
 
 // ==================== SHAPE SYSTEM ====================
 
+/**
+ * Shape layer content with fill, stroke, and geometry
+ * Supports rectangles, ellipses, polygons, stars, and custom paths
+ */
 export interface ShapeLayerContent {
   type: ShapeType;
   fill?: string | Gradient | SmartMaterialInstance;
@@ -188,10 +232,12 @@ export interface ShapeLayerContent {
   sides?: number;
 }
 
+/** Available shape primitives and custom path types */
 export type ShapeType = 'rectangle' | 'ellipse' | 'polygon' | 'star' | 'line' | 'path' | 'custom';
 
 // ==================== VECTOR PATH SYSTEM ====================
 
+/** Bezier curve point with control handles for vector paths */
 export interface VectorPoint {
   x: number;
   y: number;
@@ -202,6 +248,7 @@ export interface VectorPoint {
   cornerType?: 'smooth' | 'corner' | 'symmetric';
 }
 
+/** Vector path with points, fill, and stroke styling */
 export interface VectorPath {
   id: string;
   points: VectorPoint[];
@@ -216,6 +263,7 @@ export interface VectorPath {
   };
 }
 
+/** Vector layer containing multiple editable paths */
 export interface VectorLayerContent {
   paths: VectorPath[];
   activePath?: string;
@@ -224,6 +272,10 @@ export interface VectorLayerContent {
 
 // ==================== SMART MATERIALS (Node-Based) ====================
 
+/**
+ * Node-based procedural material definition
+ * Materials are built from connected nodes that generate textures
+ */
 export interface SmartMaterial {
   id: string;
   name: string;
@@ -234,11 +286,13 @@ export interface SmartMaterial {
   thumbnail?: string;
 }
 
+/** Instance of a smart material applied to a layer with custom parameters */
 export interface SmartMaterialInstance {
   materialId: string;
   parameters: Record<string, number | string | boolean>;
 }
 
+/** Node in the material graph with inputs, outputs, and parameters */
 export interface MaterialNode {
   id: string;
   type: MaterialNodeType;
@@ -248,6 +302,10 @@ export interface MaterialNode {
   parameters: NodeParameter[];
 }
 
+/**
+ * Available node types for the material graph
+ * Includes input, math, color, pattern, noise, filter, transform, CS2, and output nodes
+ */
 export type MaterialNodeType =
   // Input nodes
   | 'color-input'
@@ -411,6 +469,7 @@ export type MaterialNodeType =
   | 'output-opacity'
   | 'output-combined';
 
+/** Input/output port on a material node for connections */
 export interface NodePort {
   id: string;
   name: string;
@@ -418,6 +477,7 @@ export interface NodePort {
   value?: unknown;
 }
 
+/** Configurable parameter for a material node */
 export interface NodeParameter {
   id: string;
   name: string;
@@ -428,6 +488,7 @@ export interface NodeParameter {
   options?: string[];
 }
 
+/** Connection between two node ports in the material graph */
 export interface NodeConnection {
   id: string;
   fromNodeId: string;
@@ -438,6 +499,10 @@ export interface NodeConnection {
 
 // ==================== SMART MASKS ====================
 
+/**
+ * Procedural mask definition with configurable parameters
+ * Smart masks generate dynamic alpha masks based on algorithms
+ */
 export interface SmartMask {
   id: string;
   name: string;
@@ -446,11 +511,13 @@ export interface SmartMask {
   thumbnail?: string;
 }
 
+/** Instance of a smart mask applied to a layer with custom parameters */
 export interface SmartMaskInstance {
   maskId: string;
   parameters: Record<string, number | string | boolean>;
 }
 
+/** Available smart mask types */
 export type SmartMaskType =
   | 'corner-radius'
   | 'border-gradient'
@@ -463,6 +530,7 @@ export type SmartMaskType =
   | 'distance-field'
   | 'custom-node';
 
+/** Configurable parameters for different smart mask types */
 export interface SmartMaskParameters {
   // Corner radius mask
   cornerRadius?: number;
@@ -493,6 +561,10 @@ export interface SmartMaskParameters {
 
 // ==================== ENVIRONMENT LIGHTING ====================
 
+/**
+ * Environment lighting settings for 3D preview rendering
+ * Controls ambient light, reflections, shadows, and background
+ */
 export interface EnvironmentSettings {
   preset: EnvironmentPreset;
   customHdri?: string;
@@ -505,6 +577,7 @@ export interface EnvironmentSettings {
   aoStrength: number;
 }
 
+/** Built-in environment lighting presets */
 export type EnvironmentPreset =
   | 'studio-soft'
   | 'studio-hard'
@@ -517,6 +590,7 @@ export type EnvironmentPreset =
   | 'product-shot'
   | 'custom';
 
+/** Individual light source for scene illumination */
 export interface LightSource {
   id: string;
   type: 'point' | 'directional' | 'spot' | 'area';
@@ -530,6 +604,7 @@ export interface LightSource {
 
 // ==================== LENTICULAR STICKER ====================
 
+/** Single frame in a lenticular animation sequence */
 export interface LenticularFrame {
   id: string;
   index: number;
@@ -538,6 +613,7 @@ export interface LenticularFrame {
   thumbnail?: string;
 }
 
+/** Settings for lenticular sticker animation behavior */
 export interface LenticularSettings {
   frameCount: number;
   animationType: LenticularAnimationType;
@@ -546,6 +622,7 @@ export interface LenticularSettings {
   fps: number;
 }
 
+/** Animation types for lenticular stickers */
 export type LenticularAnimationType =
   | 'flip'
   | 'morph'
@@ -556,6 +633,7 @@ export type LenticularAnimationType =
 
 // ==================== GENERATORS ====================
 
+/** Procedural texture generator configuration */
 export interface Generator {
   id: string;
   name: string;
@@ -563,6 +641,7 @@ export interface Generator {
   parameters: GeneratorParameters;
 }
 
+/** Available procedural generator types */
 export type GeneratorType =
   | 'noise'
   | 'pattern'
@@ -580,6 +659,7 @@ export type GeneratorType =
   | 'dirt'
   | 'grunge';
 
+/** Parameters for procedural texture generation */
 export interface GeneratorParameters {
   seed?: number;
   scale?: number;
@@ -596,6 +676,7 @@ export interface GeneratorParameters {
 
 // ==================== TOOLS ====================
 
+/** Available drawing and editing tools in the studio */
 export type ToolType =
   | 'brush'
   | 'eraser'
@@ -626,6 +707,10 @@ export type ToolType =
 
 // ==================== BRUSH ====================
 
+/**
+ * Custom brush with full dynamics support
+ * Includes pressure sensitivity, texture, and shape dynamics
+ */
 export interface CustomBrush {
   id: string;
   name: string;
@@ -651,8 +736,10 @@ export interface CustomBrush {
   shapeDynamics?: ShapeDynamics;
 }
 
+/** Available brush tip shapes */
 export type BrushShape = 'round' | 'square' | 'custom';
 
+/** Color variation settings for brush strokes */
 export interface ColorDynamics {
   foregroundBackgroundJitter: number;
   hueJitter: number;
@@ -660,23 +747,27 @@ export interface ColorDynamics {
   brightnessJitter: number;
 }
 
+/** Opacity and flow variation settings for brush strokes */
 export interface TransferDynamics {
   opacityJitter: number;
   flowJitter: number;
 }
 
+/** Size and shape variation settings for brush strokes */
 export interface ShapeDynamics {
   sizeJitter: number;
   angleJitter: number;
   roundnessJitter: number;
 }
 
+/** Complete brush stroke with all points and brush settings */
 export interface BrushStroke {
   points: StrokePoint[];
   brush: CustomBrush;
   color: string;
 }
 
+/** Single point in a brush stroke with pressure and tilt data */
 export interface StrokePoint {
   x: number;
   y: number;
@@ -687,11 +778,13 @@ export interface StrokePoint {
 
 // ==================== GRADIENTS ====================
 
+/** Single color stop in a gradient */
 export interface GradientStop {
   offset: number;
   color: string;
 }
 
+/** Gradient definition with type, stops, and transformation */
 export interface Gradient {
   id?: string;
   name?: string;
@@ -704,6 +797,7 @@ export interface Gradient {
 
 // ==================== SELECTION ====================
 
+/** Active selection with path and bounds */
 export interface Selection {
   type: 'rect' | 'ellipse' | 'lasso' | 'magic' | 'object';
   path?: Path2D;
@@ -719,6 +813,7 @@ export interface Selection {
 
 // ==================== EFFECTS ====================
 
+/** Layer effect (shadow, glow, bevel, etc.) with blend options */
 export interface LayerEffect {
   id: string;
   type: LayerEffectType;
@@ -728,6 +823,7 @@ export interface LayerEffect {
   parameters: Record<string, unknown>;
 }
 
+/** Available layer effect types */
 export type LayerEffectType =
   | 'drop-shadow'
   | 'inner-shadow'
@@ -742,11 +838,13 @@ export type LayerEffectType =
 
 // ==================== ADJUSTMENTS ====================
 
+/** Adjustment layer with color/tone correction parameters */
 export interface AdjustmentLayer {
   type: AdjustmentType;
   parameters: Record<string, unknown>;
 }
 
+/** Available adjustment layer types */
 export type AdjustmentType =
   | 'brightness-contrast'
   | 'levels'
@@ -767,6 +865,7 @@ export type AdjustmentType =
 
 // ==================== NORMAL MAP ====================
 
+/** Settings for generating normal maps from images */
 export interface NormalMapSettings {
   strength: number;
   blurRadius: number;
@@ -777,6 +876,7 @@ export interface NormalMapSettings {
 
 // ==================== EXPORT ====================
 
+/** Export settings for saving project assets in various formats */
 export interface ExportSettings {
   format: 'png' | 'tga' | 'vtf' | 'psd' | 'tiff';
   includeNormalMap: boolean;
@@ -790,6 +890,7 @@ export interface ExportSettings {
 
 // ==================== HISTORY ====================
 
+/** Snapshot of editor state for undo/redo functionality */
 export interface HistoryState {
   layers: Layer[];
   timestamp: number;
@@ -799,12 +900,14 @@ export interface HistoryState {
 
 // ==================== API ====================
 
+/** Request payload for creating a new project */
 export interface CreateProjectRequest {
   name: string;
   type: 'sticker';
   stickerType: StickerType;
 }
 
+/** Request payload for saving project data */
 export interface SaveProjectRequest {
   id: string;
   data: ProjectData;
@@ -813,6 +916,7 @@ export interface SaveProjectRequest {
 
 // ==================== CANVAS OBJECTS ====================
 
+/** Selectable and transformable object on the canvas */
 export interface CanvasObject {
   id: string;
   layerId: string;
@@ -824,6 +928,7 @@ export interface CanvasObject {
 
 // ==================== PRESETS ====================
 
+/** Pre-configured material with thumbnail for quick selection */
 export interface MaterialPreset {
   id: string;
   name: string;
@@ -832,6 +937,7 @@ export interface MaterialPreset {
   thumbnail: string;
 }
 
+/** Pre-configured mask with thumbnail for quick selection */
 export interface MaskPreset {
   id: string;
   name: string;
@@ -840,6 +946,7 @@ export interface MaskPreset {
   thumbnail: string;
 }
 
+/** Pre-configured brush with thumbnail for quick selection */
 export interface BrushPreset {
   id: string;
   name: string;
@@ -848,6 +955,7 @@ export interface BrushPreset {
   thumbnail: string;
 }
 
+/** Pre-configured gradient for quick selection */
 export interface GradientPreset {
   id: string;
   name: string;
@@ -855,7 +963,9 @@ export interface GradientPreset {
   gradient: Gradient;
 }
 
-// Default environment
+// ==================== DEFAULTS ====================
+
+/** Default environment lighting settings */
 export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   preset: 'studio-soft',
   rotation: 0,
@@ -867,7 +977,7 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   aoStrength: 0.3,
 };
 
-// Default smart masks
+/** Built-in smart mask presets */
 export const DEFAULT_SMART_MASKS: SmartMask[] = [
   {
     id: 'corner-soft',

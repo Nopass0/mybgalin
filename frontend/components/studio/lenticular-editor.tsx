@@ -1,3 +1,19 @@
+/**
+ * Lenticular Editor Component
+ *
+ * Editor for creating lenticular/animated sticker effects.
+ * Allows multiple frames that animate based on viewing angle.
+ *
+ * Features:
+ * - Multi-frame timeline management
+ * - Frame reordering and duplication
+ * - Animation preview with playback controls
+ * - Per-frame layer support
+ * - Export to lenticular format
+ *
+ * @module components/studio/lenticular-editor
+ */
+
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';

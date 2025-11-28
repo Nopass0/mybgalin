@@ -1,3 +1,19 @@
+/**
+ * CS2 Render Preview Component
+ *
+ * Real-time 3D preview of CS2 weapon skins using WebGL/Three.js.
+ * Shows how the skin will look in-game on actual weapon models.
+ *
+ * Features:
+ * - 3D weapon model rendering
+ * - PBR material preview (albedo, normal, roughness, metalness)
+ * - Interactive rotation and zoom
+ * - Multiple weapon model support
+ * - Lighting environment presets
+ *
+ * @module components/studio/cs2-render-preview
+ */
+
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';

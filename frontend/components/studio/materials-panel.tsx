@@ -1,3 +1,19 @@
+/**
+ * Materials Panel Component
+ *
+ * Provides a UI for managing Smart Materials in the CS2 Skin Studio.
+ * Features:
+ * - Material creation with presets (Basic Color, Scratched Metal, Holographic, etc.)
+ * - Material list with thumbnails showing node graph preview
+ * - Quick parameter editing for active material
+ * - Drag-and-drop support for applying materials to layers
+ * - Duplicate and delete functionality
+ *
+ * Materials are node-based graphs that generate textures procedurally.
+ *
+ * @module components/studio/materials-panel
+ */
+
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -22,19 +38,23 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { SmartMaterial, MaterialNode } from '@/types/studio';
+import type { SmartMaterial, MaterialNode, NodeConnection } from '@/types/studio';
 
+/** Props for the MaterialsPanel component */
 interface MaterialsPanelProps {
   materials: SmartMaterial[];
   activeMaterialId: string | null;
   onSelectMaterial: (id: string) => void;
-  onCreateMaterial: () => void;
+  onCreateMaterial: (preset?: { name: string; nodes: MaterialNode[]; connections: NodeConnection[] }) => void;
   onDuplicateMaterial: (id: string) => void;
   onDeleteMaterial: (id: string) => void;
   onUpdateMaterial: (material: SmartMaterial) => void;
   onOpenFullEditor: (id: string) => void;
   className?: string;
 }
+
+// Helper to generate unique IDs
+const generateId = () => Math.random().toString(36).slice(2, 11);
 
 /**
  * Simple node preview thumbnail
@@ -255,7 +275,285 @@ function MaterialCard({
 }
 
 /**
- * Built-in material presets for quick use
+ * Creates a preset node configuration for a material template.
+ *
+ * Returns pre-configured nodes and connections for common material types:
+ * - Basic Color: Simple color output
+ * - Scratched Metal: Metal base with scratch overlay
+ * - Holographic: Rainbow iridescent effect
+ * - Carbon Fiber: Checkered pattern
+ * - Worn Plastic: Plastic with wear effect
+ * - Camo Pattern: Voronoi-based camouflage
+ *
+ * @param presetName - Name of the preset to create
+ * @returns Object containing nodes array and connections array
+ */
+const createPresetConfig = (presetName: string): { nodes: MaterialNode[]; connections: NodeConnection[] } => {
+  const colorId = generateId();
+  const outputId = generateId();
+  const noiseId = generateId();
+  const mixId = generateId();
+
+  switch (presetName) {
+    case 'Basic Color':
+      return {
+        nodes: [
+          {
+            id: colorId,
+            type: 'color-input',
+            position: { x: 100, y: 200 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'color', name: 'Color', type: 'color', value: '#ff6600' }],
+          },
+          {
+            id: outputId,
+            type: 'output-color',
+            position: { x: 400, y: 200 },
+            inputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            outputs: [],
+            parameters: [],
+          },
+        ],
+        connections: [
+          { id: generateId(), fromNodeId: colorId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
+        ],
+      };
+
+    case 'Scratched Metal':
+      return {
+        nodes: [
+          {
+            id: colorId,
+            type: 'color-input',
+            position: { x: 100, y: 100 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'color', name: 'Color', type: 'color', value: '#888888' }],
+          },
+          {
+            id: noiseId,
+            type: 'cs2-scratches',
+            position: { x: 100, y: 300 },
+            inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+            outputs: [{ id: 'mask', name: 'Mask', type: 'float' }],
+            parameters: [
+              { id: 'density', name: 'Density', type: 'float', value: 50, min: 1, max: 200 },
+              { id: 'angle', name: 'Angle', type: 'float', value: 45, min: 0, max: 180 },
+              { id: 'seed', name: 'Seed', type: 'int', value: 0, min: 0, max: 9999 },
+            ],
+          },
+          {
+            id: mixId,
+            type: 'color-mix',
+            position: { x: 300, y: 200 },
+            inputs: [
+              { id: 'a', name: 'Color A', type: 'color' },
+              { id: 'b', name: 'Color B', type: 'color' },
+            ],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'factor', name: 'Factor', type: 'float', value: 0.3, min: 0, max: 1 }],
+          },
+          {
+            id: outputId,
+            type: 'output-color',
+            position: { x: 500, y: 200 },
+            inputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            outputs: [],
+            parameters: [],
+          },
+        ],
+        connections: [
+          { id: generateId(), fromNodeId: colorId, fromPortId: 'color', toNodeId: mixId, toPortId: 'a' },
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'mask', toNodeId: mixId, toPortId: 'b' },
+          { id: generateId(), fromNodeId: mixId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
+        ],
+      };
+
+    case 'Holographic':
+      return {
+        nodes: [
+          {
+            id: noiseId,
+            type: 'cs2-holographic',
+            position: { x: 100, y: 200 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [
+              { id: 'scale', name: 'Scale', type: 'float', value: 20, min: 1, max: 100 },
+              { id: 'intensity', name: 'Intensity', type: 'float', value: 1, min: 0, max: 2 },
+            ],
+          },
+          {
+            id: outputId,
+            type: 'output-color',
+            position: { x: 400, y: 200 },
+            inputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            outputs: [],
+            parameters: [],
+          },
+        ],
+        connections: [
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
+        ],
+      };
+
+    case 'Carbon Fiber':
+      return {
+        nodes: [
+          {
+            id: noiseId,
+            type: 'pattern-checker',
+            position: { x: 100, y: 200 },
+            inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+            outputs: [{ id: 'fac', name: 'Factor', type: 'float' }],
+            parameters: [{ id: 'scale', name: 'Scale', type: 'float', value: 32, min: 1, max: 64 }],
+          },
+          {
+            id: outputId,
+            type: 'output-color',
+            position: { x: 400, y: 200 },
+            inputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            outputs: [],
+            parameters: [],
+          },
+        ],
+        connections: [
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'fac', toNodeId: outputId, toPortId: 'color' },
+        ],
+      };
+
+    case 'Worn Plastic': {
+      const color2Id = generateId();
+      return {
+        nodes: [
+          {
+            id: colorId,
+            type: 'color-input',
+            position: { x: 100, y: 100 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'color', name: 'Color', type: 'color', value: '#3366cc' }],
+          },
+          {
+            id: noiseId,
+            type: 'cs2-wear',
+            position: { x: 100, y: 300 },
+            inputs: [],
+            outputs: [{ id: 'wear', name: 'Wear', type: 'float' }],
+            parameters: [
+              { id: 'amount', name: 'Amount', type: 'float', value: 0.4, min: 0, max: 1 },
+              { id: 'scale', name: 'Scale', type: 'float', value: 8, min: 1, max: 32 },
+            ],
+          },
+          {
+            id: color2Id,
+            type: 'color-input',
+            position: { x: 100, y: 200 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'color', name: 'Color', type: 'color', value: '#1a1a1a' }],
+          },
+          {
+            id: mixId,
+            type: 'color-mix',
+            position: { x: 300, y: 200 },
+            inputs: [
+              { id: 'a', name: 'Color A', type: 'color' },
+              { id: 'b', name: 'Color B', type: 'color' },
+            ],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'factor', name: 'Factor', type: 'float', value: 0.5, min: 0, max: 1 }],
+          },
+          {
+            id: outputId,
+            type: 'output-color',
+            position: { x: 500, y: 200 },
+            inputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            outputs: [],
+            parameters: [],
+          },
+        ],
+        connections: [
+          { id: generateId(), fromNodeId: colorId, fromPortId: 'color', toNodeId: mixId, toPortId: 'a' },
+          { id: generateId(), fromNodeId: color2Id, fromPortId: 'color', toNodeId: mixId, toPortId: 'b' },
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'wear', toNodeId: mixId, toPortId: 'fac' },
+          { id: generateId(), fromNodeId: mixId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
+        ],
+      };
+    }
+
+    case 'Camo Pattern': {
+      const noise2Id = generateId();
+      const noise3Id = generateId();
+      return {
+        nodes: [
+          {
+            id: noiseId,
+            type: 'noise-voronoi',
+            position: { x: 100, y: 100 },
+            inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+            outputs: [{ id: 'distance', name: 'Distance', type: 'float' }],
+            parameters: [
+              { id: 'scale', name: 'Scale', type: 'float', value: 5, min: 1, max: 20 },
+              { id: 'randomness', name: 'Randomness', type: 'float', value: 1, min: 0, max: 1 },
+            ],
+          },
+          {
+            id: noise2Id,
+            type: 'color-input',
+            position: { x: 100, y: 250 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'color', name: 'Color', type: 'color', value: '#4a5d23' }],
+          },
+          {
+            id: noise3Id,
+            type: 'color-input',
+            position: { x: 100, y: 400 },
+            inputs: [],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'color', name: 'Color', type: 'color', value: '#2d3319' }],
+          },
+          {
+            id: mixId,
+            type: 'color-mix',
+            position: { x: 300, y: 200 },
+            inputs: [
+              { id: 'a', name: 'Color A', type: 'color' },
+              { id: 'b', name: 'Color B', type: 'color' },
+            ],
+            outputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            parameters: [{ id: 'factor', name: 'Factor', type: 'float', value: 0.5, min: 0, max: 1 }],
+          },
+          {
+            id: outputId,
+            type: 'output-color',
+            position: { x: 500, y: 200 },
+            inputs: [{ id: 'color', name: 'Color', type: 'color' }],
+            outputs: [],
+            parameters: [],
+          },
+        ],
+        connections: [
+          { id: generateId(), fromNodeId: noise2Id, fromPortId: 'color', toNodeId: mixId, toPortId: 'a' },
+          { id: generateId(), fromNodeId: noise3Id, fromPortId: 'color', toNodeId: mixId, toPortId: 'b' },
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'distance', toNodeId: mixId, toPortId: 'fac' },
+          { id: generateId(), fromNodeId: mixId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
+        ],
+      };
+    }
+
+    default:
+      // Default empty material
+      return { nodes: [], connections: [] };
+  }
+};
+
+/**
+ * Built-in material presets for quick material creation.
+ * Each preset has a name, category, and icon for display in the UI.
+ * Actual node configurations are created by createPresetConfig().
  */
 const MATERIAL_PRESETS = [
   { name: 'Basic Color', category: 'basic', icon: Sparkles },
@@ -266,6 +564,10 @@ const MATERIAL_PRESETS = [
   { name: 'Camo Pattern', category: 'pattern', icon: Layers },
 ];
 
+/**
+ * Materials panel for managing smart materials.
+ * Displays material list with previews and provides quick parameter editing.
+ */
 export function MaterialsPanel({
   materials,
   activeMaterialId,
@@ -322,7 +624,7 @@ export function MaterialsPanel({
             <Button
               variant="ghost"
               size="sm"
-              onClick={onCreateMaterial}
+              onClick={() => onCreateMaterial()}
               className="h-7 px-2"
               title="New Material"
             >
@@ -339,8 +641,12 @@ export function MaterialsPanel({
               <button
                 key={i}
                 onClick={() => {
-                  // TODO: Create material from preset
-                  onCreateMaterial();
+                  const presetConfig = createPresetConfig(preset.name);
+                  onCreateMaterial({
+                    name: preset.name,
+                    nodes: presetConfig.nodes,
+                    connections: presetConfig.connections,
+                  });
                   setShowPresets(false);
                 }}
                 className="w-full flex items-center gap-2 p-1.5 rounded hover:bg-white/10 transition-colors text-left"
@@ -363,7 +669,7 @@ export function MaterialsPanel({
               <p className="text-xs text-white/40 mb-2">No materials yet</p>
               <Button
                 size="sm"
-                onClick={onCreateMaterial}
+                onClick={() => onCreateMaterial()}
                 className="bg-orange-500 hover:bg-orange-600"
               >
                 <Plus className="w-3.5 h-3.5 mr-1" />

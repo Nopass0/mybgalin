@@ -857,6 +857,7 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
   const [nodes, setNodes] = useState<MaterialNode[]>(material?.nodes || []);
   const [connections, setConnections] = useState<NodeConnection[]>(material?.connections || []);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<{ nodeId: string; portId: string; isOutput: boolean } | null>(null);
 
@@ -954,16 +955,29 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape: cancel current operation
       if (e.key === 'Escape') {
         setConnecting(null);
         setShowNodePicker(false);
+        setSelectedConnectionId(null);
       }
-      // Delete selected node with Delete or Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
-        // Don't delete if focused on an input
-        if ((e.target as HTMLElement).tagName === 'INPUT') return;
-        deleteSelectedNode();
+
+      // Don't process delete/backspace if focused on an input
+      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+
+      // Delete/Backspace: delete selected connection or node
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedConnectionId) {
+          // Delete selected connection
+          setConnections(prev => prev.filter(c => c.id !== selectedConnectionId));
+          setSelectedConnectionId(null);
+          e.preventDefault();
+        } else if (selectedNodeId) {
+          // Delete selected node
+          deleteSelectedNode();
+        }
       }
+
       // Duplicate with Ctrl/Cmd + D
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedNodeId) {
         e.preventDefault();
@@ -973,7 +987,7 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId]);
+  }, [selectedNodeId, selectedConnectionId]);
 
   // Generate node previews when nodes or connections change
   useEffect(() => {
@@ -1103,7 +1117,20 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
           case 'color-mix': {
             const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
             const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
-            const factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+            // Check for connected factor input, otherwise use parameter
+            const facInput = getInputValue('fac') as { r: number; g: number; b: number } | number | undefined;
+            let factor: number;
+            if (facInput !== undefined) {
+              // Handle both number and color/grayscale values
+              if (typeof facInput === 'number') {
+                factor = facInput;
+              } else {
+                // Use grayscale value from color
+                factor = (facInput.r + facInput.g + facInput.b) / 3;
+              }
+            } else {
+              factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+            }
             return {
               r: a.r + (b.r - a.r) * factor,
               g: a.g + (b.g - a.g) * factor,
@@ -1204,15 +1231,36 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             return { r: adjust(input.r), g: adjust(input.g), b: adjust(input.b) };
           }
 
-          // Output nodes - pass through input
-          case 'output-color':
-          case 'output-normal':
+          // Output nodes - pass through input with correct port IDs
+          case 'output-color': {
+            const input = getInputValue('color') as { r: number; g: number; b: number };
+            return input || { r: 0.5, g: 0.5, b: 0.5 };
+          }
+          case 'output-normal': {
+            // Normal maps use blue as default (pointing up)
+            const normalInput = getInputValue('normal') as { r: number; g: number; b: number };
+            if (normalInput) return normalInput;
+            const heightInput = getInputValue('height') as { r: number; g: number; b: number };
+            if (heightInput) return heightInput;
+            return { r: 0.5, g: 0.5, b: 1 };
+          }
           case 'output-roughness':
           case 'output-metalness':
           case 'output-ao':
-          case 'output-emission':
-          case 'output-height': {
-            const input = getInputValue('input') as { r: number; g: number; b: number };
+          case 'output-height':
+          case 'output-opacity': {
+            const input = getInputValue('value') as { r: number; g: number; b: number } | number;
+            if (typeof input === 'number') {
+              return { r: input, g: input, b: input };
+            }
+            return input || { r: 0.5, g: 0.5, b: 0.5 };
+          }
+          case 'output-emission': {
+            const input = getInputValue('color') as { r: number; g: number; b: number };
+            return input || { r: 0, g: 0, b: 0 };
+          }
+          case 'output-combined': {
+            const input = getInputValue('color') as { r: number; g: number; b: number };
             return input || { r: 0.5, g: 0.5, b: 0.5 };
           }
 
@@ -1531,14 +1579,51 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         return { r: value, g: value, b: value };
       }
 
-      // Output nodes - just show gray
-      case 'output-color':
-      case 'output-normal':
+      // Output nodes - follow input connections for preview
+      case 'output-color': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'color');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
       case 'output-metalness':
       case 'output-roughness':
       case 'output-ao':
-      case 'output-combined':
+      case 'output-height':
+      case 'output-opacity': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'value');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
         return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+      case 'output-normal': {
+        const conn = connections.find(c => c.toNodeId === node.id && (c.toPortId === 'normal' || c.toPortId === 'height'));
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0.5, g: 0.5, b: 1 };
+      }
+      case 'output-emission': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'color');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0, g: 0, b: 0 };
+      }
+      case 'output-combined': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'color');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
 
       // Math operations - show gradient
       case 'math-add':
@@ -1684,8 +1769,9 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       setIsPanning(true);
       e.preventDefault();
     } else if (e.button === 0 && e.target === e.currentTarget) {
-      // Left click on empty space deselects and cancels connecting
+      // Left click on empty space deselects nodes, connections and cancels operations
       setSelectedNodeId(null);
+      setSelectedConnectionId(null);
       setShowNodePicker(false);
       setConnecting(null);
     }
@@ -2018,7 +2104,18 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       case 'color-mix': {
         const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
         const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
-        const factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+        // Check for connected factor input, otherwise use parameter
+        const facInput = getInputValue('fac') as { r: number; g: number; b: number } | number | undefined;
+        let factor: number;
+        if (facInput !== undefined) {
+          if (typeof facInput === 'number') {
+            factor = facInput;
+          } else {
+            factor = (facInput.r + facInput.g + facInput.b) / 3;
+          }
+        } else {
+          factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+        }
         return {
           r: a.r + (b.r - a.r) * factor,
           g: a.g + (b.g - a.g) * factor,
@@ -2135,19 +2232,297 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         };
       }
 
-      // Output node - follow input connection
-      case 'output-color':
-      case 'output-normal':
+      // Output node - follow input connection based on actual port IDs
+      case 'output-color': {
+        const input = getInputValue('color') as { r: number; g: number; b: number };
+        if (input) return input;
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
       case 'output-roughness':
       case 'output-metalness':
       case 'output-ao':
-      case 'output-emission':
       case 'output-height':
-      case 'output-opacity':
-      case 'output-combined': {
-        const input = getInputValue('input') as { r: number; g: number; b: number };
-        if (input) return input;
+      case 'output-opacity': {
+        // These have a 'value' input port
+        const input = getInputValue('value') as { r: number; g: number; b: number } | number;
+        if (input) {
+          if (typeof input === 'number') {
+            return { r: input, g: input, b: input };
+          }
+          return input;
+        }
         return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+      case 'output-normal': {
+        // Has 'normal' and 'height' inputs
+        const normal = getInputValue('normal') as { r: number; g: number; b: number };
+        const height = getInputValue('height') as { r: number; g: number; b: number };
+        if (normal) return normal;
+        if (height) return height;
+        return { r: 0.5, g: 0.5, b: 1 }; // Default normal map blue
+      }
+      case 'output-emission': {
+        const color = getInputValue('color') as { r: number; g: number; b: number };
+        if (color) return color;
+        return { r: 0, g: 0, b: 0 }; // Default no emission
+      }
+      case 'output-combined': {
+        // Show color channel by default
+        const color = getInputValue('color') as { r: number; g: number; b: number };
+        if (color) return color;
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      // Value input node - outputs grayscale based on value parameter
+      case 'value-input': {
+        const value = Number(node.parameters.find(p => p.id === 'value')?.value || 0.5);
+        return { r: value, g: value, b: value };
+      }
+
+      // UV input - outputs UV coordinates as color (R=U, G=V)
+      case 'uv-input': {
+        return { r: uv.x, g: uv.y, b: 0 };
+      }
+
+      // Ridged noise
+      case 'noise-ridged': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const octaves = Number(node.parameters.find(p => p.id === 'octaves')?.value || 4);
+        const sharpness = Number(node.parameters.find(p => p.id === 'sharpness')?.value || 2);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        let value = 0;
+        let amplitude = 1;
+        let frequency = scale;
+        let maxValue = 0;
+        for (let i = 0; i < octaves; i++) {
+          const n = perlinNoise(uv.x * frequency, uv.y * frequency, seed + i);
+          // Ridge function: 1 - abs(n)
+          value += amplitude * Math.pow(1 - Math.abs(n * 2 - 1), sharpness);
+          maxValue += amplitude;
+          amplitude *= 0.5;
+          frequency *= 2;
+        }
+        value = value / maxValue;
+        return { r: value, g: value, b: value };
+      }
+
+      // Brick pattern
+      case 'pattern-brick': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const ratio = Number(node.parameters.find(p => p.id === 'ratio')?.value || 2);
+        const mortar = Number(node.parameters.find(p => p.id === 'mortar')?.value || 0.05);
+        const row = Math.floor(uv.y * scale);
+        const offsetX = (row % 2) * 0.5;
+        const brickX = (uv.x * scale * ratio + offsetX) % 1;
+        const brickY = (uv.y * scale) % 1;
+        const isMortar = brickX < mortar || brickX > 1 - mortar || brickY < mortar || brickY > 1 - mortar;
+        const value = isMortar ? 0 : 1;
+        return { r: value, g: value, b: value };
+      }
+
+      // Hexagon pattern
+      case 'pattern-hexagon': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const gap = Number(node.parameters.find(p => p.id === 'gap')?.value || 0.05);
+        // Hexagonal grid
+        const s = scale;
+        const x = uv.x * s;
+        const y = uv.y * s * 1.1547; // sqrt(4/3)
+        const row = Math.floor(y);
+        const col = Math.floor(x - (row % 2) * 0.5);
+        const cx = col + (row % 2) * 0.5 + 0.5;
+        const cy = row + 0.5;
+        const dx = Math.abs(x - cx);
+        const dy = Math.abs(y - cy);
+        const dist = Math.max(dx * 0.866 + dy * 0.5, dy);
+        const value = dist > 0.5 - gap ? 0 : 1;
+        return { r: value, g: value, b: value };
+      }
+
+      // Math operations
+      case 'math-add': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        return { r: Math.min(1, a.r + b.r), g: Math.min(1, a.g + b.g), b: Math.min(1, a.b + b.b) };
+      }
+
+      case 'math-subtract': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        return { r: Math.max(0, a.r - b.r), g: Math.max(0, a.g - b.g), b: Math.max(0, a.b - b.b) };
+      }
+
+      case 'math-multiply': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        return { r: a.r * b.r, g: a.g * b.g, b: a.b * b.b };
+      }
+
+      case 'math-divide': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        return {
+          r: b.r !== 0 ? a.r / b.r : 0,
+          g: b.g !== 0 ? a.g / b.g : 0,
+          b: b.b !== 0 ? a.b / b.b : 0,
+        };
+      }
+
+      case 'math-power': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 2, g: 2, b: 2 };
+        return { r: Math.pow(a.r, b.r), g: Math.pow(a.g, b.g), b: Math.pow(a.b, b.b) };
+      }
+
+      case 'math-min': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        return { r: Math.min(a.r, b.r), g: Math.min(a.g, b.g), b: Math.min(a.b, b.b) };
+      }
+
+      case 'math-max': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        return { r: Math.max(a.r, b.r), g: Math.max(a.g, b.g), b: Math.max(a.b, b.b) };
+      }
+
+      case 'math-lerp': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        // Check for connected factor input, otherwise use parameter
+        const facInput = getInputValue('fac') as { r: number; g: number; b: number } | number | undefined;
+        let factor: number;
+        if (facInput !== undefined) {
+          if (typeof facInput === 'number') {
+            factor = facInput;
+          } else {
+            factor = (facInput.r + facInput.g + facInput.b) / 3;
+          }
+        } else {
+          factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+        }
+        return {
+          r: a.r + (b.r - a.r) * factor,
+          g: a.g + (b.g - a.g) * factor,
+          b: a.b + (b.b - a.b) * factor,
+        };
+      }
+
+      case 'math-clamp': {
+        const input = getInputValue('value') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const min = Number(node.parameters.find(p => p.id === 'min')?.value || 0);
+        const max = Number(node.parameters.find(p => p.id === 'max')?.value || 1);
+        return {
+          r: Math.max(min, Math.min(max, input.r)),
+          g: Math.max(min, Math.min(max, input.g)),
+          b: Math.max(min, Math.min(max, input.b)),
+        };
+      }
+
+      case 'math-remap': {
+        const input = getInputValue('value') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const inMin = Number(node.parameters.find(p => p.id === 'inMin')?.value || 0);
+        const inMax = Number(node.parameters.find(p => p.id === 'inMax')?.value || 1);
+        const outMin = Number(node.parameters.find(p => p.id === 'outMin')?.value || 0);
+        const outMax = Number(node.parameters.find(p => p.id === 'outMax')?.value || 1);
+        const remap = (v: number) => outMin + (v - inMin) / (inMax - inMin) * (outMax - outMin);
+        return { r: remap(input.r), g: remap(input.g), b: remap(input.b) };
+      }
+
+      // Color split - returns R channel as grayscale
+      case 'color-split': {
+        const input = getInputValue('color') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        // Return the input color - each output port would be accessed separately
+        return input;
+      }
+
+      // Color combine
+      case 'color-combine': {
+        const r = getInputValue('r') as { r: number } | number || 0.5;
+        const g = getInputValue('g') as { r: number } | number || 0.5;
+        const b = getInputValue('b') as { r: number } | number || 0.5;
+        return {
+          r: typeof r === 'number' ? r : r.r,
+          g: typeof g === 'number' ? g : g.r,
+          b: typeof b === 'number' ? b : b.r,
+        };
+      }
+
+      // CS2 wear effect
+      case 'cs2-wear': {
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.3);
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const noise = perlinNoise(uv.x * scale, uv.y * scale, seed);
+        const wear = noise < amount ? 1 : 0;
+        return { r: wear, g: wear, b: wear };
+      }
+
+      // CS2 scratches
+      case 'cs2-scratches': {
+        const density = Number(node.parameters.find(p => p.id === 'density')?.value || 50);
+        const angle = Number(node.parameters.find(p => p.id === 'angle')?.value || 45) * Math.PI / 180;
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        // Directional scratches using rotated coordinates
+        const rx = uv.x * Math.cos(angle) - uv.y * Math.sin(angle);
+        const ry = uv.x * Math.sin(angle) + uv.y * Math.cos(angle);
+        const hash = Math.abs(Math.sin(Math.floor(rx * density) * 12.9898 + seed) * 43758.5453) % 1;
+        const scratch = (ry * density) % 1 < 0.02 && hash > 0.7 ? 1 : 0;
+        return { r: scratch, g: scratch, b: scratch };
+      }
+
+      // CS2 dirt
+      case 'cs2-dirt': {
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.5);
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 20);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const noise1 = perlinNoise(uv.x * scale, uv.y * scale, seed);
+        const noise2 = perlinNoise(uv.x * scale * 2, uv.y * scale * 2, seed + 100);
+        const dirt = (noise1 * 0.7 + noise2 * 0.3) * amount;
+        return { r: dirt, g: dirt, b: dirt };
+      }
+
+      // CS2 edge wear
+      case 'cs2-edge-wear': {
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.5);
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        // Use voronoi for edge-like patterns
+        const noise = voronoiNoise(uv.x * scale, uv.y * scale, seed);
+        const edge = noise < amount ? 1 - noise / amount : 0;
+        return { r: edge, g: edge, b: edge };
+      }
+
+      // CS2 holographic
+      case 'cs2-holographic': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 20);
+        const intensity = Number(node.parameters.find(p => p.id === 'intensity')?.value || 1);
+        // Rainbow effect based on position
+        const phase = (uv.x + uv.y) * scale;
+        const r = (Math.sin(phase) + 1) * 0.5 * intensity;
+        const g = (Math.sin(phase + 2.094) + 1) * 0.5 * intensity; // +120 degrees
+        const b = (Math.sin(phase + 4.188) + 1) * 0.5 * intensity; // +240 degrees
+        return { r, g, b };
+      }
+
+      // CS2 glitter
+      case 'cs2-glitter': {
+        const density = Number(node.parameters.find(p => p.id === 'density')?.value || 0.5);
+        const scale = 100;
+        const nx = Math.floor(uv.x * scale);
+        const ny = Math.floor(uv.y * scale);
+        const random = Math.abs(Math.sin(nx * 12.9898 + ny * 78.233) * 43758.5453) % 1;
+        const glitter = random > (1 - density * 0.1) ? 1 : 0;
+        return { r: glitter, g: glitter, b: glitter };
+      }
+
+      // Fresnel effect
+      case 'fresnel': {
+        const ior = Number(node.parameters.find(p => p.id === 'ior')?.value || 1.45);
+        // Simplified fresnel - use UV.y as a stand-in for view angle
+        const facing = 1 - Math.abs(uv.y * 2 - 1);
+        const fresnel = Math.pow(1 - facing, 5) * (1 - ior) + ior;
+        return { r: fresnel, g: fresnel, b: fresnel };
       }
 
       default:
@@ -2494,25 +2869,61 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             />
           </svg>
 
-          {/* Connections */}
+          {/* Connections - clickable to select and delete */}
           <svg
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+            className="absolute inset-0 w-full h-full"
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: '0 0'
+            }}
           >
             {connections.map(conn => {
               const from = getPortPosition(conn.fromNodeId, conn.fromPortId, true);
               const to = getPortPosition(conn.toNodeId, conn.toPortId, false);
               const midX = (from.x + to.x) / 2;
+              const pathD = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`;
+              // Compensate stroke width for zoom so lines stay consistent
+              const strokeW = 2 / zoom;
+              const isSelected = selectedConnectionId === conn.id;
 
               return (
-                <path
-                  key={conn.id}
-                  d={`M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
-                  fill="none"
-                  stroke="#ff6600"
-                  strokeWidth={2}
-                  opacity={0.8}
-                />
+                <g key={conn.id}>
+                  {/* Invisible wider path for easier clicking */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={Math.max(10 / zoom, strokeW * 5)}
+                    style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedConnectionId(conn.id);
+                      setSelectedNodeId(null);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      // Double-click to delete connection
+                      setConnections(prev => prev.filter(c => c.id !== conn.id));
+                      setSelectedConnectionId(null);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // Right-click to delete connection
+                      setConnections(prev => prev.filter(c => c.id !== conn.id));
+                      setSelectedConnectionId(null);
+                    }}
+                  />
+                  {/* Visible connection line */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={isSelected ? '#00ff00' : '#ff6600'}
+                    strokeWidth={isSelected ? strokeW * 1.5 : strokeW}
+                    opacity={isSelected ? 1 : 0.8}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                </g>
               );
             })}
 
@@ -2526,14 +2937,15 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
               const toX = (lastMousePos.x - offsetX - pan.x) / zoom;
               const toY = (lastMousePos.y - offsetY - pan.y) / zoom;
               const midX = (fromPos.x + toX) / 2;
+              const strokeW = 2 / zoom;
 
               return (
                 <path
                   d={`M ${fromPos.x} ${fromPos.y} C ${midX} ${fromPos.y}, ${midX} ${toY}, ${toX} ${toY}`}
                   fill="none"
                   stroke="#ff6600"
-                  strokeWidth={2}
-                  strokeDasharray="5,5"
+                  strokeWidth={strokeW}
+                  strokeDasharray={`${5/zoom},${5/zoom}`}
                   opacity={0.6}
                 />
               );

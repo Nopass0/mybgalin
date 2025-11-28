@@ -6,3 +6,5 @@ pub mod portfolio;
 pub mod jobs;
 pub mod anime;
 pub mod studio;
+pub mod publish;
+pub mod files;

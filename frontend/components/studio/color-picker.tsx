@@ -1,3 +1,20 @@
+/**
+ * Color Picker Component
+ *
+ * Advanced color selection interface for the CS2 Skin Studio.
+ * Provides multiple ways to select and manage colors.
+ *
+ * Features:
+ * - HSV color wheel with saturation/value square
+ * - RGB, HSV, and HEX input modes
+ * - Primary and secondary color swatches
+ * - Color history and favorites
+ * - Eyedropper tool integration
+ * - Gradient editor support
+ *
+ * @module components/studio/color-picker
+ */
+
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';

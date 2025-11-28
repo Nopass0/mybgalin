@@ -1,3 +1,20 @@
+/**
+ * Shape Tool Panel Component
+ *
+ * Provides controls for creating vector shape layers in the CS2 Skin Studio.
+ * Supports various shape types: rectangle, ellipse, polygon, star, line, path, and custom.
+ *
+ * Features:
+ * - Real-time shape preview
+ * - Fill and stroke customization
+ * - Corner radius for rectangles
+ * - Configurable sides for polygons
+ * - Inner radius for stars
+ * - Custom polygon editor for freeform shapes
+ *
+ * @module components/studio/shape-tool-panel
+ */
+
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -438,7 +455,7 @@ function PolygonEditor({
 }
 
 export function ShapeToolPanel({ className }: ShapeToolPanelProps) {
-  const { primaryColor, secondaryColor, activeTool, addLayer, pushHistory } = useStudioEditor();
+  const { primaryColor, secondaryColor, activeTool, addLayer, updateLayer, pushHistory } = useStudioEditor();
   const [settings, setSettings] = useState<ShapeSettings>({
     ...defaultShapeSettings,
     fillColor: primaryColor,
@@ -673,8 +690,29 @@ export function ShapeToolPanel({ className }: ShapeToolPanelProps) {
       <Button
         className="w-full bg-orange-500 hover:bg-orange-600 text-white"
         onClick={() => {
-          const layer = addLayer('shape', `Shape ${Date.now()}`);
-          // TODO: Apply shape settings to the new layer
+          const layer = addLayer('shape', `${shapeLabels[settings.type]} Layer`);
+
+          // Apply shape settings to the new layer
+          const dashArray = settings.strokeDash === 'dashed' ? [8, 4]
+            : settings.strokeDash === 'dotted' ? [2, 2]
+            : undefined;
+
+          updateLayer(layer.id, {
+            shapeContent: {
+              type: settings.type,
+              fill: settings.fillEnabled ? settings.fillColor : undefined,
+              stroke: settings.strokeEnabled ? {
+                color: settings.strokeColor,
+                width: settings.strokeWidth,
+                dashArray,
+              } : undefined,
+              cornerRadius: settings.cornerRadius,
+              sides: settings.sides,
+              innerRadius: settings.type === 'star' ? settings.innerRadius : undefined,
+              points: settings.type === 'custom' ? customPoints : undefined,
+            },
+          });
+
           pushHistory('Create shape');
         }}
       >

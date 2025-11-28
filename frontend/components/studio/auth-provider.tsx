@@ -1,3 +1,12 @@
+/**
+ * Auth Provider Component
+ *
+ * React context provider for Steam authentication in the CS2 Skin Studio.
+ * Initializes auth state on mount and provides auth context to children.
+ *
+ * @module components/studio/auth-provider
+ */
+
 'use client';
 
 import { createContext, useContext, useEffect, ReactNode } from 'react';

@@ -1,3 +1,20 @@
+/**
+ * Text Tool Panel Component
+ *
+ * Typography controls for text layers in the CS2 Skin Studio.
+ * Provides comprehensive text formatting options.
+ *
+ * Features:
+ * - Google Fonts integration with 50+ popular fonts
+ * - Font size, weight, and style controls
+ * - Text alignment (left, center, right, justify)
+ * - Letter spacing and line height
+ * - Text effects (shadow, outline, glow)
+ * - Real-time preview with font loading
+ *
+ * @module components/studio/text-tool-panel
+ */
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -149,7 +166,11 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
 
   // Load default fonts on mount
   useEffect(() => {
-    POPULAR_FONTS.slice(0, 5).forEach(font => loadFont(font.family));
+    const loadDefaultFonts = async () => {
+      const defaultFonts = POPULAR_FONTS.slice(0, 5);
+      await Promise.allSettled(defaultFonts.map(font => loadFont(font.family)));
+    };
+    loadDefaultFonts();
   }, [loadFont]);
 
   const updateTextContent = (updates: Partial<TextLayerContent>) => {

@@ -1,3 +1,12 @@
+/**
+ * Mobile Detection Hook
+ *
+ * Detects if the current viewport is mobile-sized.
+ * Uses a breakpoint of 768px to determine mobile vs desktop.
+ *
+ * @module hooks/use-mobile
+ */
+
 import * as React from "react"
 
 const MOBILE_BREAKPOINT = 768

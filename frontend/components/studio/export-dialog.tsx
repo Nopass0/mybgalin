@@ -1,3 +1,23 @@
+/**
+ * Export Dialog Component
+ *
+ * Handles exporting CS2 skin projects in various formats.
+ * Supports both individual texture exports and complete VTF packages.
+ *
+ * Export formats:
+ * - PNG: Standard image format with transparency
+ * - VTF: Valve Texture Format for CS2 Workshop
+ * - TGA: Targa format (legacy support)
+ *
+ * Features:
+ * - Resolution selection (512x512 to 4096x4096)
+ * - Multi-map export (albedo, normal, roughness, metalness, AO)
+ * - VTF conversion with proper CS2 settings
+ * - Batch export of all texture maps
+ *
+ * @module components/studio/export-dialog
+ */
+
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';

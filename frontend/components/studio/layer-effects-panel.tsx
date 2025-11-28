@@ -1,3 +1,22 @@
+/**
+ * Layer Effects Panel Component
+ *
+ * Photoshop-style layer effects for the CS2 Skin Studio.
+ * Adds non-destructive visual effects to layers.
+ *
+ * Effects available:
+ * - Drop Shadow: External shadow with angle and distance
+ * - Inner Shadow: Inset shadow effect
+ * - Outer Glow: Soft outer glow
+ * - Inner Glow: Inner light effect
+ * - Bevel/Emboss: 3D beveling
+ * - Color Overlay: Solid color fill
+ * - Gradient Overlay: Gradient fill
+ * - Stroke: Border effect
+ *
+ * @module components/studio/layer-effects-panel
+ */
+
 'use client';
 
 import { useState, useCallback } from 'react';

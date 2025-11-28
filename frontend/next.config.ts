@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+/**
+ * Next.js configuration
+ * - Images: Allow Steam profile pictures
+ * - Rewrites: Proxy /api/* to backend (dev only, production uses nginx)
+ */
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -14,10 +19,14 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
+    // In production, nginx handles /api proxying
+    // These rewrites are only for local development
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:3001/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },

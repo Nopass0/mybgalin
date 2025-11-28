@@ -1,3 +1,19 @@
+/**
+ * Map Tabs Component
+ *
+ * Tab navigation for switching between texture maps in the CS2 Skin Studio.
+ * Allows quick access to different PBR texture channels.
+ *
+ * Texture maps:
+ * - Albedo (base color)
+ * - Normal (surface detail)
+ * - Roughness (surface smoothness)
+ * - Metalness (metallic/dielectric)
+ * - Ambient Occlusion (contact shadows)
+ *
+ * @module components/studio/map-tabs
+ */
+
 'use client';
 
 import { motion } from 'motion/react';
