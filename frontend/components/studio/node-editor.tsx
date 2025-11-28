@@ -973,6 +973,336 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
       const size = previewSizeRef.current;
       const newPreviews = new Map<string, string>();
 
+      // Helper function to evaluate a node with connection support
+      const evaluateWithConnections = (
+        node: MaterialNode,
+        uv: { x: number; y: number },
+        visited: Set<string> = new Set()
+      ): { r: number; g: number; b: number } => {
+        // Prevent infinite loops
+        if (visited.has(node.id)) {
+          return { r: 0.5, g: 0.5, b: 0.5 };
+        }
+        visited.add(node.id);
+
+        // Get input value from connected node or parameter
+        const getInputValue = (portId: string): unknown => {
+          const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === portId);
+          if (conn) {
+            const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+            if (sourceNode) {
+              return evaluateWithConnections(sourceNode, uv, visited);
+            }
+          }
+          // Return default/parameter value
+          const param = node.parameters.find(p => p.id === portId);
+          return param?.value;
+        };
+
+        // Evaluate based on node type
+        switch (node.type) {
+          case 'color-input': {
+            const colorStr = node.parameters.find(p => p.id === 'color')?.value as string || '#808080';
+            return hexToRgbLocal(colorStr);
+          }
+
+          case 'gradient-input': {
+            const color1 = node.parameters.find(p => p.id === 'color1')?.value as string || '#000000';
+            const color2 = node.parameters.find(p => p.id === 'color2')?.value as string || '#ffffff';
+            const c1 = hexToRgbLocal(color1);
+            const c2 = hexToRgbLocal(color2);
+            const t = uv.x;
+            return {
+              r: c1.r + (c2.r - c1.r) * t,
+              g: c1.g + (c2.g - c1.g) * t,
+              b: c1.b + (c2.b - c1.b) * t,
+            };
+          }
+
+          case 'noise-perlin':
+          case 'noise-simplex': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+            const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+            const value = perlinNoiseLocal(uv.x * scale, uv.y * scale, seed);
+            return { r: value, g: value, b: value };
+          }
+
+          case 'noise-fbm':
+          case 'noise-turbulence': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+            const octaves = Number(node.parameters.find(p => p.id === 'octaves')?.value || 4);
+            const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+            let value = 0;
+            let amplitude = 1;
+            let frequency = scale;
+            let maxValue = 0;
+            for (let i = 0; i < octaves; i++) {
+              value += amplitude * perlinNoiseLocal(uv.x * frequency, uv.y * frequency, seed + i);
+              maxValue += amplitude;
+              amplitude *= 0.5;
+              frequency *= 2;
+            }
+            value = value / maxValue;
+            if (node.type === 'noise-turbulence') value = Math.abs(value);
+            return { r: value, g: value, b: value };
+          }
+
+          case 'noise-voronoi':
+          case 'noise-worley': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+            const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+            const value = voronoiNoiseLocal(uv.x * scale, uv.y * scale, seed);
+            return { r: value, g: value, b: value };
+          }
+
+          case 'noise-white':
+          case 'noise-value': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+            const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+            const nx = Math.floor(uv.x * scale) + seed;
+            const ny = Math.floor(uv.y * scale);
+            const value = Math.abs(Math.sin(nx * 12.9898 + ny * 78.233) * 43758.5453) % 1;
+            return { r: value, g: value, b: value };
+          }
+
+          case 'pattern-checker': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 8);
+            const cx = Math.floor(uv.x * scale) % 2;
+            const cy = Math.floor(uv.y * scale) % 2;
+            const value = (cx + cy) % 2;
+            return { r: value, g: value, b: value };
+          }
+
+          case 'pattern-stripes': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+            const angle = Number(node.parameters.find(p => p.id === 'angle')?.value || 0) * Math.PI / 180;
+            const rotX = uv.x * Math.cos(angle) - uv.y * Math.sin(angle);
+            const value = Math.floor(rotX * scale) % 2;
+            return { r: value, g: value, b: value };
+          }
+
+          case 'pattern-dots': {
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+            const radius = Number(node.parameters.find(p => p.id === 'radius')?.value || 0.3);
+            const cx = (uv.x * scale) % 1 - 0.5;
+            const cy = (uv.y * scale) % 1 - 0.5;
+            const dist = Math.sqrt(cx * cx + cy * cy);
+            const value = dist < radius ? 1 : 0;
+            return { r: value, g: value, b: value };
+          }
+
+          // Color operations - these now properly use connected inputs
+          case 'color-mix': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+            const factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+            return {
+              r: a.r + (b.r - a.r) * factor,
+              g: a.g + (b.g - a.g) * factor,
+              b: a.b + (b.b - a.b) * factor,
+            };
+          }
+
+          case 'color-multiply': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+            const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+            return { r: a.r * b.r, g: a.g * b.g, b: a.b * b.b };
+          }
+
+          case 'color-add': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            return {
+              r: Math.min(1, a.r + b.r),
+              g: Math.min(1, a.g + b.g),
+              b: Math.min(1, a.b + b.b),
+            };
+          }
+
+          case 'color-subtract': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+            const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            return {
+              r: Math.max(0, a.r - b.r),
+              g: Math.max(0, a.g - b.g),
+              b: Math.max(0, a.b - b.b),
+            };
+          }
+
+          case 'color-overlay': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+            const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+            const overlay = (base: number, blend: number) =>
+              base < 0.5 ? 2 * base * blend : 1 - 2 * (1 - base) * (1 - blend);
+            return {
+              r: overlay(a.r, b.r),
+              g: overlay(a.g, b.g),
+              b: overlay(a.b, b.b),
+            };
+          }
+
+          case 'color-screen': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            return {
+              r: 1 - (1 - a.r) * (1 - b.r),
+              g: 1 - (1 - a.g) * (1 - b.g),
+              b: 1 - (1 - a.b) * (1 - b.b),
+            };
+          }
+
+          case 'color-invert': {
+            const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+            return { r: 1 - input.r, g: 1 - input.g, b: 1 - input.b };
+          }
+
+          case 'math-add':
+          case 'math-subtract':
+          case 'math-multiply':
+          case 'math-divide': {
+            const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+            const bInput = getInputValue('b');
+            const b = typeof bInput === 'number'
+              ? { r: bInput, g: bInput, b: bInput }
+              : (bInput as { r: number; g: number; b: number }) || { r: 1, g: 1, b: 1 };
+
+            switch (node.type) {
+              case 'math-add': return { r: a.r + b.r, g: a.g + b.g, b: a.b + b.b };
+              case 'math-subtract': return { r: a.r - b.r, g: a.g - b.g, b: a.b - b.b };
+              case 'math-multiply': return { r: a.r * b.r, g: a.g * b.g, b: a.b * b.b };
+              case 'math-divide': return {
+                r: b.r !== 0 ? a.r / b.r : 0,
+                g: b.g !== 0 ? a.g / b.g : 0,
+                b: b.b !== 0 ? a.b / b.b : 0
+              };
+              default: return a;
+            }
+          }
+
+          case 'filter-brightness': {
+            const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+            const brightness = Number(node.parameters.find(p => p.id === 'brightness')?.value || 1);
+            return {
+              r: Math.min(1, Math.max(0, input.r * brightness)),
+              g: Math.min(1, Math.max(0, input.g * brightness)),
+              b: Math.min(1, Math.max(0, input.b * brightness)),
+            };
+          }
+
+          case 'filter-contrast': {
+            const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+            const contrast = Number(node.parameters.find(p => p.id === 'contrast')?.value || 1);
+            const adjust = (v: number) => Math.min(1, Math.max(0, (v - 0.5) * contrast + 0.5));
+            return { r: adjust(input.r), g: adjust(input.g), b: adjust(input.b) };
+          }
+
+          // Output nodes - pass through input
+          case 'output-color':
+          case 'output-normal':
+          case 'output-roughness':
+          case 'output-metalness':
+          case 'output-ao':
+          case 'output-emission':
+          case 'output-height': {
+            const input = getInputValue('input') as { r: number; g: number; b: number };
+            return input || { r: 0.5, g: 0.5, b: 0.5 };
+          }
+
+          // CS2 specific nodes
+          case 'cs2-scratches': {
+            const density = Number(node.parameters.find(p => p.id === 'density')?.value || 0.5);
+            const value = perlinNoiseLocal(uv.x * 50, uv.y * 2, 0) * density;
+            return { r: value, g: value, b: value };
+          }
+
+          case 'cs2-wear':
+          case 'cs2-edge-wear': {
+            const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.5);
+            const noise = perlinNoiseLocal(uv.x * 20, uv.y * 20, 42);
+            const value = noise * amount;
+            return { r: value, g: value, b: value };
+          }
+
+          case 'cs2-dirt':
+          case 'cs2-grunge': {
+            const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0.5);
+            const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+            const value = voronoiNoiseLocal(uv.x * scale, uv.y * scale, 123) * amount;
+            return { r: value, g: value, b: value };
+          }
+
+          case 'cs2-holographic': {
+            const r = (Math.sin(uv.x * 100) + 1) * 0.5;
+            const g = (Math.sin(uv.x * 100 + 2) + 1) * 0.5;
+            const b = (Math.sin(uv.x * 100 + 4) + 1) * 0.5;
+            return { r, g, b };
+          }
+
+          case 'cs2-glitter': {
+            const density = Number(node.parameters.find(p => p.id === 'density')?.value || 0.5);
+            const scale = 100;
+            const nx = Math.floor(uv.x * scale);
+            const ny = Math.floor(uv.y * scale);
+            const random = Math.abs(Math.sin(nx * 12.9898 + ny * 78.233) * 43758.5453) % 1;
+            const value = random > (1 - density * 0.1) ? 1 : 0;
+            return { r: value, g: value, b: value };
+          }
+
+          default:
+            return { r: 0.5, g: 0.5, b: 0.5 };
+        }
+      };
+
+      // Local helper functions for the effect
+      const hexToRgbLocal = (hex: string): { r: number; g: number; b: number } => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16) / 255,
+          g: parseInt(result[2], 16) / 255,
+          b: parseInt(result[3], 16) / 255,
+        } : { r: 0.5, g: 0.5, b: 0.5 };
+      };
+
+      const perlinNoiseLocal = (x: number, y: number, seed: number): number => {
+        const hash = (n: number) => {
+          const s = Math.sin(n + seed) * 43758.5453;
+          return s - Math.floor(s);
+        };
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        const fx = x - ix;
+        const fy = y - iy;
+        const a = hash(ix + iy * 57);
+        const b = hash(ix + 1 + iy * 57);
+        const c = hash(ix + (iy + 1) * 57);
+        const d = hash(ix + 1 + (iy + 1) * 57);
+        const ux = fx * fx * (3 - 2 * fx);
+        const uy = fy * fy * (3 - 2 * fy);
+        return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+      };
+
+      const voronoiNoiseLocal = (x: number, y: number, seed: number): number => {
+        const hash = (ix: number, iy: number) => ({
+          x: Math.sin(ix + iy * 57 + seed) * 43758.5453 % 1,
+          y: Math.sin((ix + iy * 57 + seed) * 1.3) * 43758.5453 % 1,
+        });
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        let minDist = 1;
+        for (let ox = -1; ox <= 1; ox++) {
+          for (let oy = -1; oy <= 1; oy++) {
+            const cellX = ix + ox;
+            const cellY = iy + oy;
+            const point = hash(cellX, cellY);
+            const dx = cellX + point.x - x;
+            const dy = cellY + point.y - y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            minDist = Math.min(minDist, dist);
+          }
+        }
+        return minDist;
+      };
+
       for (const node of nodes) {
         // Skip input nodes that just pass through values
         if (node.type === 'uv-input' || node.type === 'position-input' ||
@@ -995,7 +1325,7 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             for (let x = 0; x < size; x++) {
               const i = (y * size + x) * 4;
               const uv = { x: x / size, y: y / size };
-              const color = evaluateNodeAtUVForPreview(node, uv);
+              const color = evaluateWithConnections(node, uv);
 
               data[i] = Math.round(Math.max(0, Math.min(1, color.r)) * 255);
               data[i + 1] = Math.round(Math.max(0, Math.min(1, color.g)) * 255);
