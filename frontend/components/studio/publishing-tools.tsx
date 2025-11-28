@@ -215,7 +215,7 @@ interface FrameSettings {
   labelStyle: 'gradient' | 'solid' | 'outline';
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export default function PublishingTools() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -461,7 +461,7 @@ export default function PublishingTools() {
       }
 
       const endpoint = project.type === 'video' ? 'convert' : 'optimize';
-      const response = await fetch(`${API_BASE}/api/publish/${endpoint}`, {
+      const response = await fetch(`${API_BASE}/api/studio/publish/${endpoint}`, {
         method: 'POST',
         body: formData,
       });
@@ -472,20 +472,20 @@ export default function PublishingTools() {
 
       // Poll for progress
       const pollProgress = async (jobId: string) => {
-        const statusRes = await fetch(`${API_BASE}/api/publish/status/${jobId}`);
+        const statusRes = await fetch(`${API_BASE}/api/studio/publish/status/${jobId}`);
         const status = await statusRes.json();
 
         setOptimizationProgress(status.progress || 0);
 
         if (status.status === 'completed') {
-          setPreviewUrl(`${API_BASE}/api/publish/result/${jobId}`);
+          setPreviewUrl(`${API_BASE}/api/studio/publish/result/${jobId}`);
           setPreviewSize(status.size);
           setPreviewDimensions({ width: status.width, height: status.height });
           validateResult(status.size, status.width, status.height);
           setIsOptimizing(false);
           setProject(prev => prev ? {
             ...prev,
-            resultUrl: `${API_BASE}/api/publish/result/${jobId}`,
+            resultUrl: `${API_BASE}/api/studio/publish/result/${jobId}`,
             resultSize: status.size,
             width: status.width,
             height: status.height,
@@ -636,46 +636,61 @@ export default function PublishingTools() {
             // Preview area
             <div className="flex-1 flex flex-col">
               <div className="flex-1 relative bg-[#121214] rounded-xl overflow-hidden flex items-center justify-center">
-                {/* Frame preview overlay */}
-                {showFramePreview && frameSettings.enabled && frameSettings.style !== 'none' && (
-                  <div
-                    className="absolute inset-0 pointer-events-none z-10"
-                    style={{
-                      borderWidth: `${frameSettings.thickness}px`,
-                      borderStyle: 'solid',
-                      borderColor: 'transparent',
-                      borderImage: `${getFrameStylePreview(frameSettings.style)} 1`,
-                      animation: frameSettings.animated ? 'borderGlow 2s ease-in-out infinite' : 'none',
-                      boxShadow: frameSettings.animated ? `inset 0 0 ${frameSettings.glowIntensity / 5}px rgba(255,255,255,0.3)` : 'none',
-                    }}
-                  />
-                )}
+                {/* Media wrapper - frame overlay is positioned relative to media, not container */}
+                <div className="relative inline-block max-w-full max-h-full" style={{ transform: `scale(${zoom})` }}>
+                  {project.type === 'video' && project.originalUrl ? (
+                    <video
+                      ref={videoRef}
+                      src={project.originalUrl}
+                      className="max-w-full max-h-full block"
+                      onLoadedMetadata={handleVideoLoaded}
+                      onEnded={() => setIsPlaying(false)}
+                      onTimeUpdate={() => {
+                        if (videoRef.current && videoRef.current.currentTime >= trimEnd) {
+                          videoRef.current.pause();
+                          setIsPlaying(false);
+                        }
+                      }}
+                    />
+                  ) : previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Preview"
+                      className="max-w-full max-h-full object-contain block"
+                    />
+                  ) : (
+                    <div className="text-white/40 p-8">No preview available</div>
+                  )}
 
-                {project.type === 'video' && project.originalUrl ? (
-                  <video
-                    ref={videoRef}
-                    src={project.originalUrl}
-                    className="max-w-full max-h-full"
-                    style={{ transform: `scale(${zoom})` }}
-                    onLoadedMetadata={handleVideoLoaded}
-                    onEnded={() => setIsPlaying(false)}
-                    onTimeUpdate={() => {
-                      if (videoRef.current && videoRef.current.currentTime >= trimEnd) {
-                        videoRef.current.pause();
-                        setIsPlaying(false);
-                      }
-                    }}
-                  />
-                ) : previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="max-w-full max-h-full object-contain"
-                    style={{ transform: `scale(${zoom})` }}
-                  />
-                ) : (
-                  <div className="text-white/40">No preview available</div>
-                )}
+                  {/* Frame preview overlay - now wraps the actual media */}
+                  {showFramePreview && frameSettings.enabled && frameSettings.style !== 'none' && (
+                    <div
+                      className="absolute inset-0 pointer-events-none z-10"
+                      style={{
+                        borderWidth: `${frameSettings.thickness}px`,
+                        borderStyle: 'solid',
+                        borderColor: 'transparent',
+                        borderImage: `${getFrameStylePreview(frameSettings.style)} 1`,
+                        animation: frameSettings.animated ? 'borderGlow 2s ease-in-out infinite' : 'none',
+                        boxShadow: frameSettings.animated ? `inset 0 0 ${frameSettings.glowIntensity / 5}px rgba(255,255,255,0.3)` : 'none',
+                      }}
+                    />
+                  )}
+
+                  {/* Label preview - positioned on the media */}
+                  {showFramePreview && frameSettings.enabled && frameSettings.showLabel && (
+                    <div
+                      className={`absolute left-0 right-0 ${frameSettings.labelPosition === 'top' ? 'top-0' : 'bottom-0'} z-10 py-2 px-4 bg-black/70 text-center`}
+                    >
+                      <span
+                        className={`text-lg font-bold ${frameSettings.labelStyle === 'gradient' ? 'bg-gradient-to-r from-orange-400 to-red-500 bg-clip-text text-transparent' : frameSettings.labelStyle === 'outline' ? 'text-transparent' : 'text-white'}`}
+                        style={frameSettings.labelStyle === 'outline' ? { WebkitTextStroke: '1px white' } : {}}
+                      >
+                        {frameSettings.weaponName} | {frameSettings.skinName}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
                 {/* Processing overlay */}
                 {isOptimizing && (
@@ -684,20 +699,6 @@ export default function PublishingTools() {
                     <p className="text-lg mb-2">Processing...</p>
                     <Progress value={optimizationProgress} className="w-64 h-2" />
                     <p className="text-sm text-white/40 mt-2">{optimizationProgress}%</p>
-                  </div>
-                )}
-
-                {/* Label preview */}
-                {showFramePreview && frameSettings.enabled && frameSettings.showLabel && (
-                  <div
-                    className={`absolute left-0 right-0 ${frameSettings.labelPosition === 'top' ? 'top-0' : 'bottom-0'} z-10 py-2 px-4 bg-black/70 text-center`}
-                  >
-                    <span
-                      className={`text-lg font-bold ${frameSettings.labelStyle === 'gradient' ? 'bg-gradient-to-r from-orange-400 to-red-500 bg-clip-text text-transparent' : frameSettings.labelStyle === 'outline' ? 'text-transparent' : 'text-white'}`}
-                      style={frameSettings.labelStyle === 'outline' ? { WebkitTextStroke: '1px white' } : {}}
-                    >
-                      {frameSettings.weaponName} | {frameSettings.skinName}
-                    </span>
                   </div>
                 )}
               </div>
