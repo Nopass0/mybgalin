@@ -937,6 +937,8 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
   const handleMouseUp = useCallback(() => {
     setDraggedNode(null);
     setIsPanning(false);
+    // Cancel connection if released outside a port
+    setConnecting(null);
   }, []);
 
   // Add/remove global mouse listeners
@@ -1557,30 +1559,38 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
    * @param portId - ID of the port
    * @param isOutput - Whether this is an output port
    */
-  const handlePortClick = (nodeId: string, portId: string, isOutput: boolean) => {
-    if (!connecting) {
-      // Start new connection
-      setConnecting({ nodeId, portId, isOutput });
-    } else {
-      // Complete connection
-      if (connecting.isOutput !== isOutput && connecting.nodeId !== nodeId) {
-        // Prevent connecting to same node and ensure output->input
-        const newConnection: NodeConnection = {
-          id: generateId(),
-          fromNodeId: isOutput ? nodeId : connecting.nodeId,
-          fromPortId: isOutput ? portId : connecting.portId,
-          toNodeId: isOutput ? connecting.nodeId : nodeId,
-          toPortId: isOutput ? connecting.portId : portId,
-        };
+  /**
+   * Handles mouse down on a port - starts connection dragging
+   */
+  const handlePortMouseDown = (e: React.MouseEvent, nodeId: string, portId: string, isOutput: boolean) => {
+    e.stopPropagation();
+    e.preventDefault();
+    // Start connection from this port
+    setConnecting({ nodeId, portId, isOutput });
+  };
 
-        // Remove any existing connection to this input
-        setConnections(prev => [
-          ...prev.filter(c => !(c.toNodeId === newConnection.toNodeId && c.toPortId === newConnection.toPortId)),
-          newConnection,
-        ]);
-      }
-      setConnecting(null);
+  /**
+   * Handles mouse up on a port - completes connection if dragging
+   */
+  const handlePortMouseUp = (e: React.MouseEvent, nodeId: string, portId: string, isOutput: boolean) => {
+    e.stopPropagation();
+    if (connecting && connecting.isOutput !== isOutput && connecting.nodeId !== nodeId) {
+      // Complete connection - output to input
+      const newConnection: NodeConnection = {
+        id: generateId(),
+        fromNodeId: isOutput ? nodeId : connecting.nodeId,
+        fromPortId: isOutput ? portId : connecting.portId,
+        toNodeId: isOutput ? connecting.nodeId : nodeId,
+        toPortId: isOutput ? connecting.portId : portId,
+      };
+
+      // Remove any existing connection to this input
+      setConnections(prev => [
+        ...prev.filter(c => !(c.toNodeId === newConnection.toNodeId && c.toPortId === newConnection.toPortId)),
+        newConnection,
+      ]);
     }
+    setConnecting(null);
   };
 
   /**
@@ -2591,16 +2601,14 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
                     <div key={port.id} className="flex items-center gap-2 py-1">
                       <div
                         className={cn(
-                          'w-3 h-3 rounded-full border-2 cursor-pointer transition-colors',
+                          'w-3 h-3 rounded-full border-2 cursor-crosshair transition-colors',
                           connecting?.nodeId === node.id && connecting?.portId === port.id
                             ? 'bg-orange-500 border-orange-500'
                             : 'bg-transparent border-white/40 hover:border-orange-400 hover:bg-orange-400/20'
                         )}
                         style={{ marginLeft: -8 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePortClick(node.id, port.id, false);
-                        }}
+                        onMouseDown={(e) => handlePortMouseDown(e, node.id, port.id, false)}
+                        onMouseUp={(e) => handlePortMouseUp(e, node.id, port.id, false)}
                       />
                       <span className="text-xs text-white/60">{port.name}</span>
                     </div>
@@ -2692,16 +2700,14 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
                       <span className="text-xs text-white/60">{port.name}</span>
                       <div
                         className={cn(
-                          'w-3 h-3 rounded-full border-2 cursor-pointer transition-colors',
+                          'w-3 h-3 rounded-full border-2 cursor-crosshair transition-colors',
                           connecting?.nodeId === node.id && connecting?.portId === port.id
                             ? 'bg-orange-500 border-orange-500'
                             : 'bg-transparent border-white/40 hover:border-orange-400 hover:bg-orange-400/20'
                         )}
                         style={{ marginRight: -8 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePortClick(node.id, port.id, true);
-                        }}
+                        onMouseDown={(e) => handlePortMouseDown(e, node.id, port.id, true)}
+                        onMouseUp={(e) => handlePortMouseUp(e, node.id, port.id, true)}
                       />
                     </div>
                   ))}

@@ -843,11 +843,53 @@ export function StudioLayersPanel() {
                     {/* Layer Item */}
                     <div
                       onClick={() => setActiveLayer(layer.id)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.dataTransfer.types.includes('application/material')) {
+                          setDragOverLayerId(layer.id);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        setDragOverLayerId(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverLayerId(null);
+                        const materialData = e.dataTransfer.getData('application/material');
+                        if (materialData) {
+                          try {
+                            const material = JSON.parse(materialData);
+                            // Generate material texture and apply to this layer
+                            const CANVAS_SIZE = 1024;
+                            const canvas = document.createElement('canvas');
+                            canvas.width = CANVAS_SIZE;
+                            canvas.height = CANVAS_SIZE;
+                            const ctx = canvas.getContext('2d')!;
+
+                            // Simple material preview
+                            const gradient = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+                            gradient.addColorStop(0, '#ff6600');
+                            gradient.addColorStop(0.5, '#ff9933');
+                            gradient.addColorStop(1, '#ffcc00');
+                            ctx.fillStyle = gradient;
+                            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+                            const imageData = canvas.toDataURL('image/png');
+                            updateLayer(layer.id, { imageData });
+                            pushHistory?.(`Apply material ${material.name} to ${layer.name}`);
+                          } catch (err) {
+                            console.error('Failed to apply material:', err);
+                          }
+                        }
+                      }}
                       className={cn(
-                        'flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer select-none group',
+                        'flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer select-none group transition-all',
                         activeLayerId === layer.id
                           ? 'bg-orange-500/20'
-                          : 'hover:bg-white/5'
+                          : 'hover:bg-white/5',
+                        dragOverLayerId === layer.id && 'ring-2 ring-orange-500 bg-orange-500/10'
                       )}
                     >
                       {/* Expand/Collapse for groups */}

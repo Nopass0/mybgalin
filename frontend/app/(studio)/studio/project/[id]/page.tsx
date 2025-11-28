@@ -700,9 +700,40 @@ export default function ProjectEditorPage() {
               onChange={setActiveMapTab}
             />
 
-            {/* Canvas or Render Preview */}
+            {/* Canvas, Render Preview, or Node Editor */}
             <div className="flex-1 relative overflow-hidden bg-[#1a1a1c]">
-              {activeMapTab === 'render' ? (
+              {showNodeEditor && activeMaterialId ? (
+                /* Inline Node Editor */
+                <div className="w-full h-full relative">
+                  <div className="absolute top-3 right-3 z-10">
+                    <button
+                      onClick={() => setShowNodeEditor(false)}
+                      className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+                    >
+                      <X className="w-4 h-4 text-white/60" />
+                    </button>
+                  </div>
+                  <NodeEditor
+                    material={smartMaterials.find(m => m.id === activeMaterialId) || {
+                      id: activeMaterialId,
+                      name: 'New Material',
+                      category: 'custom',
+                      nodes: [],
+                      connections: [],
+                      outputNodeId: '',
+                    }}
+                    onChange={(material) => {
+                      handleUpdateMaterial(material);
+                    }}
+                    onSave={(material) => {
+                      handleUpdateMaterial(material);
+                      setShowNodeEditor(false);
+                    }}
+                    onClose={() => setShowNodeEditor(false)}
+                    className="w-full h-full"
+                  />
+                </div>
+              ) : activeMapTab === 'render' ? (
                 <CS2RenderPreview className="w-full h-full" />
               ) : (
                 <div className="flex h-full">
@@ -908,36 +939,6 @@ export default function ProjectEditorPage() {
               )}
             </div>
           </div>
-
-          {/* Node Editor Overlay */}
-          {showNodeEditor && activeMaterialId && (
-            <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
-              <div className="relative w-full h-full max-w-6xl bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden">
-                <div className="absolute top-3 right-3 z-10">
-                  <button
-                    onClick={() => setShowNodeEditor(false)}
-                    className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
-                  >
-                    <X className="w-4 h-4 text-white/60" />
-                  </button>
-                </div>
-                <NodeEditor
-                  material={smartMaterials.find(m => m.id === activeMaterialId) || {
-                    id: activeMaterialId,
-                    name: 'New Material',
-                    category: 'custom',
-                    nodes: [],
-                    connections: [],
-                    outputNodeId: '',
-                  }}
-                  onChange={(material) => {
-                    handleUpdateMaterial(material);
-                  }}
-                  className="w-full h-full"
-                />
-              </div>
-            </div>
-          )}
 
           {/* Export Dialog */}
           <ExportDialog
