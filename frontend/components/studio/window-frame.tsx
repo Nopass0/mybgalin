@@ -1,3 +1,19 @@
+/**
+ * Window Frame Component
+ *
+ * Custom window frame for the Tauri desktop application.
+ * Provides native-like window controls for the CS2 Skin Studio.
+ *
+ * Features:
+ * - Custom title bar with app branding
+ * - Window control buttons (minimize, maximize, close)
+ * - Draggable title bar region
+ * - Tauri API integration for window management
+ * - Fallback for web browser environment
+ *
+ * @module components/studio/window-frame
+ */
+
 'use client';
 
 import React, { useState, useEffect } from 'react';

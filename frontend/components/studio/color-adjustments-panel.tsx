@@ -1,3 +1,19 @@
+/**
+ * Color Adjustments Panel Component
+ *
+ * Non-destructive color correction tools for the CS2 Skin Studio.
+ * Applies real-time adjustments to selected layers.
+ *
+ * Features:
+ * - Brightness and contrast controls
+ * - Hue, saturation, and lightness (HSL)
+ * - Color balance (shadows, midtones, highlights)
+ * - Vibrance and temperature adjustments
+ * - Reset and apply functionality
+ *
+ * @module components/studio/color-adjustments-panel
+ */
+
 'use client';
 
 import { useState, useCallback } from 'react';
