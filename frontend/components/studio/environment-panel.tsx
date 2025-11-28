@@ -1,3 +1,19 @@
+/**
+ * Environment Panel Component
+ *
+ * Controls lighting and environment settings for the 3D preview.
+ * Affects how materials appear under different lighting conditions.
+ *
+ * Features:
+ * - Lighting presets (studio, outdoor, night, sunset)
+ * - Light direction and intensity controls
+ * - Ambient and specular light settings
+ * - Environment rotation
+ * - HDR environment maps
+ *
+ * @module components/studio/environment-panel
+ */
+
 'use client';
 
 import { useState } from 'react';

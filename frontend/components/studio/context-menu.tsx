@@ -1,3 +1,19 @@
+/**
+ * Context Menu Component
+ *
+ * Right-click context menu for the CS2 Skin Studio.
+ * Provides context-sensitive options based on click location.
+ *
+ * Features:
+ * - Layer operations (copy, paste, delete, duplicate)
+ * - Selection operations (select all, deselect, invert)
+ * - Transform options (flip, rotate, scale)
+ * - Keyboard shortcut hints
+ * - Portal-based rendering for proper z-index
+ *
+ * @module components/studio/context-menu
+ */
+
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';

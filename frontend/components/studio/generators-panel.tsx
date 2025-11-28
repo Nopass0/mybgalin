@@ -1,3 +1,19 @@
+/**
+ * Generators Panel Component
+ *
+ * Procedural texture generation tools for the CS2 Skin Studio.
+ * Creates textures algorithmically from parameters.
+ *
+ * Features:
+ * - Noise generators (Perlin, Simplex, Voronoi)
+ * - Pattern generators (stripes, checker, hexagon)
+ * - Randomization controls with seed values
+ * - Real-time preview with adjustable parameters
+ * - Export to layer functionality
+ *
+ * @module components/studio/generators-panel
+ */
+
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
