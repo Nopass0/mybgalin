@@ -440,7 +440,7 @@ const createPresetConfig = (presetName: string): { nodes: MaterialNode[]; connec
             type: 'cs2-wear',
             position: { x: 100, y: 300 },
             inputs: [],
-            outputs: [{ id: 'fac', name: 'Factor', type: 'float' }],
+            outputs: [{ id: 'wear', name: 'Wear', type: 'float' }],
             parameters: [
               { id: 'amount', name: 'Amount', type: 'float', value: 0.4, min: 0, max: 1 },
               { id: 'scale', name: 'Scale', type: 'float', value: 8, min: 1, max: 32 },
@@ -477,7 +477,7 @@ const createPresetConfig = (presetName: string): { nodes: MaterialNode[]; connec
         connections: [
           { id: generateId(), fromNodeId: colorId, fromPortId: 'color', toNodeId: mixId, toPortId: 'a' },
           { id: generateId(), fromNodeId: color2Id, fromPortId: 'color', toNodeId: mixId, toPortId: 'b' },
-          { id: generateId(), fromNodeId: noiseId, fromPortId: 'fac', toNodeId: mixId, toPortId: 'factor' },
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'wear', toNodeId: mixId, toPortId: 'fac' },
           { id: generateId(), fromNodeId: mixId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
         ],
       };
@@ -493,7 +493,7 @@ const createPresetConfig = (presetName: string): { nodes: MaterialNode[]; connec
             type: 'noise-voronoi',
             position: { x: 100, y: 100 },
             inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
-            outputs: [{ id: 'fac', name: 'Factor', type: 'float' }],
+            outputs: [{ id: 'distance', name: 'Distance', type: 'float' }],
             parameters: [
               { id: 'scale', name: 'Scale', type: 'float', value: 5, min: 1, max: 20 },
               { id: 'randomness', name: 'Randomness', type: 'float', value: 1, min: 0, max: 1 },
@@ -538,7 +538,7 @@ const createPresetConfig = (presetName: string): { nodes: MaterialNode[]; connec
         connections: [
           { id: generateId(), fromNodeId: noise2Id, fromPortId: 'color', toNodeId: mixId, toPortId: 'a' },
           { id: generateId(), fromNodeId: noise3Id, fromPortId: 'color', toNodeId: mixId, toPortId: 'b' },
-          { id: generateId(), fromNodeId: noiseId, fromPortId: 'fac', toNodeId: mixId, toPortId: 'factor' },
+          { id: generateId(), fromNodeId: noiseId, fromPortId: 'distance', toNodeId: mixId, toPortId: 'fac' },
           { id: generateId(), fromNodeId: mixId, fromPortId: 'color', toNodeId: outputId, toPortId: 'color' },
         ],
       };
