@@ -173,12 +173,23 @@ pub async fn get_me(
     .fetch_one(pool.inner())
     .await;
 
-    // Check if user is admin
-    let admin_steam_id = env::var("ADMIN_STEAM_ID").unwrap_or_default();
+    // Check if user is admin - trim whitespace from env var
+    let admin_steam_id = env::var("ADMIN_STEAM_ID")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
     match user {
         Ok(u) => {
-            let is_admin = u.steam_id == admin_steam_id;
+            let user_steam_id = u.steam_id.trim();
+            let is_admin = !admin_steam_id.is_empty() && user_steam_id == admin_steam_id;
+
+            // Debug log for troubleshooting admin detection
+            if !admin_steam_id.is_empty() {
+                println!("[Studio] Admin check: user_steam_id={}, admin_steam_id={}, is_admin={}",
+                    user_steam_id, admin_steam_id, is_admin);
+            }
+
             let response = StudioUserResponse::from(u);
             Json(ApiResponse::success(serde_json::json!({
                 "user": response,

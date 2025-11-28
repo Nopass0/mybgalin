@@ -461,7 +461,7 @@ export default function PublishingTools() {
       }
 
       const endpoint = project.type === 'video' ? 'convert' : 'optimize';
-      const response = await fetch(`${API_BASE}/api/studio/publish/${endpoint}`, {
+      const response = await fetch(`${API_BASE}/api/publish/${endpoint}`, {
         method: 'POST',
         body: formData,
       });
@@ -472,20 +472,20 @@ export default function PublishingTools() {
 
       // Poll for progress
       const pollProgress = async (jobId: string) => {
-        const statusRes = await fetch(`${API_BASE}/api/studio/publish/status/${jobId}`);
+        const statusRes = await fetch(`${API_BASE}/api/publish/status/${jobId}`);
         const status = await statusRes.json();
 
         setOptimizationProgress(status.progress || 0);
 
         if (status.status === 'completed') {
-          setPreviewUrl(`${API_BASE}/api/studio/publish/result/${jobId}`);
+          setPreviewUrl(`${API_BASE}/api/publish/result/${jobId}`);
           setPreviewSize(status.size);
           setPreviewDimensions({ width: status.width, height: status.height });
           validateResult(status.size, status.width, status.height);
           setIsOptimizing(false);
           setProject(prev => prev ? {
             ...prev,
-            resultUrl: `${API_BASE}/api/studio/publish/result/${jobId}`,
+            resultUrl: `${API_BASE}/api/publish/result/${jobId}`,
             resultSize: status.size,
             width: status.width,
             height: status.height,
@@ -637,14 +637,16 @@ export default function PublishingTools() {
             <div className="flex-1 flex flex-col">
               <div className="flex-1 relative bg-[#121214] rounded-xl overflow-hidden flex items-center justify-center">
                 {/* Frame preview overlay */}
-                {showFramePreview && frameSettings.enabled && (
+                {showFramePreview && frameSettings.enabled && frameSettings.style !== 'none' && (
                   <div
                     className="absolute inset-0 pointer-events-none z-10"
                     style={{
-                      border: `${frameSettings.thickness}px solid transparent`,
-                      borderImage: getFrameStylePreview(frameSettings.style),
-                      borderImageSlice: 1,
+                      borderWidth: `${frameSettings.thickness}px`,
+                      borderStyle: 'solid',
+                      borderColor: 'transparent',
+                      borderImage: `${getFrameStylePreview(frameSettings.style)} 1`,
                       animation: frameSettings.animated ? 'borderGlow 2s ease-in-out infinite' : 'none',
+                      boxShadow: frameSettings.animated ? `inset 0 0 ${frameSettings.glowIntensity / 5}px rgba(255,255,255,0.3)` : 'none',
                     }}
                   />
                 )}
@@ -700,12 +702,24 @@ export default function PublishingTools() {
                 )}
               </div>
 
-              {/* Video controls */}
-              {project.type === 'video' && activeTab === 'trim' && (
+              {/* Video controls - always visible for video */}
+              {project.type === 'video' && (
                 <div className="mt-4 p-4 bg-white/5 rounded-xl">
                   <div className="flex items-center gap-4 mb-4">
-                    <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white">
+                    <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white hover:bg-white/10">
                       {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = trimStart;
+                        }
+                      }}
+                      className="text-white hover:bg-white/10"
+                    >
+                      <RotateCcw className="w-4 h-4" />
                     </Button>
                     <div className="flex-1">
                       <div className="flex justify-between text-xs text-white/40 mb-1">
@@ -726,30 +740,33 @@ export default function PublishingTools() {
                       Duration: {formatTime(trimEnd - trimStart)}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-xs text-white/60">Start Time</Label>
-                      <Slider
-                        value={[trimStart]}
-                        min={0}
-                        max={Math.max(0, trimEnd - 0.1)}
-                        step={0.1}
-                        onValueChange={([v]) => setTrimStart(v)}
-                        className="mt-2"
-                      />
+                  {/* Trim sliders only in trim tab */}
+                  {activeTab === 'trim' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-white/60">Start Time</Label>
+                        <Slider
+                          value={[trimStart]}
+                          min={0}
+                          max={Math.max(0, trimEnd - 0.1)}
+                          step={0.1}
+                          onValueChange={([v]) => setTrimStart(v)}
+                          className="mt-2"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-white/60">End Time</Label>
+                        <Slider
+                          value={[trimEnd]}
+                          min={trimStart + 0.1}
+                          max={videoDuration}
+                          step={0.1}
+                          onValueChange={([v]) => setTrimEnd(v)}
+                          className="mt-2"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <Label className="text-xs text-white/60">End Time</Label>
-                      <Slider
-                        value={[trimEnd]}
-                        min={trimStart + 0.1}
-                        max={videoDuration}
-                        step={0.1}
-                        onValueChange={([v]) => setTrimEnd(v)}
-                        className="mt-2"
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -1041,7 +1058,7 @@ export default function PublishingTools() {
 
                       <div>
                         <Label className="text-xs text-white/60 mb-2 block">Frame Style</Label>
-                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-auto">
+                        <div className="grid grid-cols-2 gap-2 max-h-72 overflow-auto pr-1">
                           {FRAME_STYLES.map(style => (
                             <button
                               key={style.id}
