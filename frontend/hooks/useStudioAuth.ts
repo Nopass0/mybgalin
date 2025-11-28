@@ -21,13 +21,14 @@ import type { SteamUser, StudioProject } from '@/types/studio';
 interface StudioAuthState {
   user: SteamUser | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
   projects: StudioProject[];
 
   // Actions
   login: () => void;
   logout: () => void;
-  setUser: (user: SteamUser | null) => void;
+  setUser: (user: SteamUser | null, isAdmin?: boolean) => void;
   initialize: () => void;
 
   // Projects
@@ -73,6 +74,7 @@ export const useStudioAuth = create<StudioAuthState>()(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
+      isAdmin: false,
       isLoading: true,
       projects: [],
 
@@ -84,12 +86,12 @@ export const useStudioAuth = create<StudioAuthState>()(
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false, projects: [] });
+        set({ user: null, isAuthenticated: false, isAdmin: false, projects: [] });
         localStorage.removeItem('studio_token');
       },
 
-      setUser: (user) => {
-        set({ user, isAuthenticated: !!user });
+      setUser: (user, isAdmin = false) => {
+        set({ user, isAuthenticated: !!user, isAdmin });
       },
 
       initialize: async () => {
@@ -97,7 +99,7 @@ export const useStudioAuth = create<StudioAuthState>()(
 
         const token = localStorage.getItem('studio_token');
         if (!token) {
-          set({ isLoading: false, isAuthenticated: false, user: null });
+          set({ isLoading: false, isAuthenticated: false, isAdmin: false, user: null });
           return;
         }
 
@@ -110,14 +112,15 @@ export const useStudioAuth = create<StudioAuthState>()(
 
           if (response.ok) {
             const data = await response.json();
-            // Backend returns ApiResponse: { success, data: { user }, error }
+            // Backend returns ApiResponse: { success, data: { user, isAdmin }, error }
             const user = data.data?.user || data.user;
-            set({ user, isAuthenticated: true, isLoading: false });
+            const isAdmin = data.data?.isAdmin || false;
+            set({ user, isAuthenticated: true, isAdmin, isLoading: false });
             // Load projects after auth
             get().loadProjects();
           } else {
             localStorage.removeItem('studio_token');
-            set({ user: null, isAuthenticated: false, isLoading: false });
+            set({ user: null, isAuthenticated: false, isAdmin: false, isLoading: false });
           }
         } catch {
           set({ isLoading: false });
@@ -240,6 +243,7 @@ export const useStudioAuth = create<StudioAuthState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        isAdmin: state.isAdmin,
       }),
     }
   )

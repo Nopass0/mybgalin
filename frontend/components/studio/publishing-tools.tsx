@@ -15,14 +15,19 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Trash2,
-  Settings,
   Frame,
-  Type,
   RefreshCw,
   ZoomIn,
   ZoomOut,
   Clock,
+  Crop,
+  Move,
+  Maximize2,
+  Square,
+  RectangleHorizontal,
+  Sparkles,
+  Palette,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -37,16 +42,143 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
 
 // Steam Workshop requirements
 const STEAM_WORKSHOP_MAX_SIZE = 2 * 1024 * 1024; // 2MB
-const STEAM_WORKSHOP_ASPECT_RATIO = 16 / 9; // 16:9 recommended
+const STEAM_WORKSHOP_ASPECT_RATIO = 16 / 9;
 const STEAM_WORKSHOP_MIN_WIDTH = 512;
 const STEAM_WORKSHOP_MAX_WIDTH = 1920;
 
+// Preset aspect ratios
+const ASPECT_RATIOS = [
+  { id: 'free', label: 'Free', ratio: null },
+  { id: '16:9', label: '16:9 (Workshop)', ratio: 16 / 9 },
+  { id: '4:3', label: '4:3', ratio: 4 / 3 },
+  { id: '1:1', label: '1:1 (Square)', ratio: 1 },
+  { id: '9:16', label: '9:16 (Portrait)', ratio: 9 / 16 },
+  { id: '21:9', label: '21:9 (Ultrawide)', ratio: 21 / 9 },
+];
+
+// Animated frame styles with previews
+const FRAME_STYLES = [
+  {
+    id: 'none',
+    name: 'No Frame',
+    preview: null,
+    animated: false,
+    description: 'Clean look without borders',
+  },
+  {
+    id: 'cs2-gold',
+    name: 'CS2 Gold',
+    preview: 'linear-gradient(135deg, #FFD700 0%, #FFA500 25%, #FFD700 50%, #FFA500 75%, #FFD700 100%)',
+    animated: true,
+    description: 'Premium gold animated border',
+  },
+  {
+    id: 'cs2-covert',
+    name: 'CS2 Covert',
+    preview: 'linear-gradient(135deg, #eb4b4b 0%, #a83232 50%, #eb4b4b 100%)',
+    animated: true,
+    description: 'Red covert rarity style',
+  },
+  {
+    id: 'cs2-classified',
+    name: 'CS2 Classified',
+    preview: 'linear-gradient(135deg, #d32ce6 0%, #8847ff 50%, #d32ce6 100%)',
+    animated: true,
+    description: 'Purple classified rarity',
+  },
+  {
+    id: 'cs2-restricted',
+    name: 'CS2 Restricted',
+    preview: 'linear-gradient(135deg, #8847ff 0%, #5e35b1 50%, #8847ff 100%)',
+    animated: true,
+    description: 'Purple restricted style',
+  },
+  {
+    id: 'neon-cyan',
+    name: 'Neon Cyan',
+    preview: 'linear-gradient(135deg, #00ffff 0%, #0088ff 50%, #00ffff 100%)',
+    animated: true,
+    description: 'Glowing cyan neon effect',
+  },
+  {
+    id: 'neon-pink',
+    name: 'Neon Pink',
+    preview: 'linear-gradient(135deg, #ff00ff 0%, #ff0080 50%, #ff00ff 100%)',
+    animated: true,
+    description: 'Vibrant pink neon glow',
+  },
+  {
+    id: 'neon-green',
+    name: 'Neon Green',
+    preview: 'linear-gradient(135deg, #00ff00 0%, #00cc44 50%, #00ff00 100%)',
+    animated: true,
+    description: 'Matrix-style green glow',
+  },
+  {
+    id: 'holographic',
+    name: 'Holographic',
+    preview: 'linear-gradient(135deg, #ff0000 0%, #ff8000 17%, #ffff00 33%, #00ff00 50%, #00ffff 67%, #0080ff 83%, #ff00ff 100%)',
+    animated: true,
+    description: 'Rainbow holographic shimmer',
+  },
+  {
+    id: 'fire',
+    name: 'Fire',
+    preview: 'linear-gradient(0deg, #ff0000 0%, #ff4400 25%, #ff8800 50%, #ffcc00 75%, #ffff00 100%)',
+    animated: true,
+    description: 'Animated flame effect',
+  },
+  {
+    id: 'ice',
+    name: 'Ice',
+    preview: 'linear-gradient(135deg, #ffffff 0%, #a5d8ff 25%, #74c0fc 50%, #4dabf7 75%, #339af0 100%)',
+    animated: true,
+    description: 'Frozen ice crystal effect',
+  },
+  {
+    id: 'electric',
+    name: 'Electric',
+    preview: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 50%, #00d4ff 100%)',
+    animated: true,
+    description: 'Electric lightning effect',
+  },
+  {
+    id: 'minimal-white',
+    name: 'Minimal White',
+    preview: 'linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%)',
+    animated: false,
+    description: 'Clean white border',
+  },
+  {
+    id: 'minimal-black',
+    name: 'Minimal Black',
+    preview: 'linear-gradient(135deg, #333333 0%, #111111 100%)',
+    animated: false,
+    description: 'Sleek dark border',
+  },
+  {
+    id: 'metallic-silver',
+    name: 'Metallic Silver',
+    preview: 'linear-gradient(135deg, #c0c0c0 0%, #808080 25%, #c0c0c0 50%, #a0a0a0 75%, #c0c0c0 100%)',
+    animated: true,
+    description: 'Brushed metal look',
+  },
+  {
+    id: 'metallic-bronze',
+    name: 'Metallic Bronze',
+    preview: 'linear-gradient(135deg, #cd7f32 0%, #8b4513 50%, #cd7f32 100%)',
+    animated: true,
+    description: 'Antique bronze finish',
+  },
+];
+
 interface PublishProject {
   id: string;
-  type: 'video' | 'gif';
+  type: 'video' | 'gif' | 'image';
   status: 'uploading' | 'processing' | 'ready' | 'error';
   progress: number;
   error?: string;
@@ -61,13 +193,26 @@ interface PublishProject {
   expiresAt?: Date;
 }
 
+interface CropSettings {
+  enabled: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  aspectRatio: string;
+}
+
 interface FrameSettings {
   enabled: boolean;
-  style: 'gradient' | 'metallic' | 'neon' | 'minimal' | 'cs2';
-  color: string;
+  style: string;
+  thickness: number;
+  animated: boolean;
+  glowIntensity: number;
   weaponName: string;
   skinName: string;
   showLabel: boolean;
+  labelPosition: 'top' | 'bottom';
+  labelStyle: 'gradient' | 'solid' | 'outline';
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -75,9 +220,27 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export default function PublishingTools() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cropAreaRef = useRef<HTMLDivElement>(null);
 
   const [project, setProject] = useState<PublishProject | null>(null);
-  const [activeTab, setActiveTab] = useState<'upload' | 'trim' | 'optimize' | 'frame'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'crop' | 'trim' | 'optimize' | 'frame'>('upload');
+
+  // Media dimensions
+  const [mediaDimensions, setMediaDimensions] = useState({ width: 0, height: 0 });
+
+  // Crop settings
+  const [cropSettings, setCropSettings] = useState<CropSettings>({
+    enabled: false,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    aspectRatio: 'free',
+  });
+  const [isDraggingCrop, setIsDraggingCrop] = useState(false);
+  const [isResizingCrop, setIsResizingCrop] = useState<string | null>(null);
+  const [cropDragStart, setCropDragStart] = useState({ x: 0, y: 0 });
 
   // Trim settings
   const [trimStart, setTrimStart] = useState(0);
@@ -86,22 +249,28 @@ export default function PublishingTools() {
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Optimization settings
-  const [targetSize, setTargetSize] = useState(2); // MB
+  const [targetSize, setTargetSize] = useState(2);
   const [optimizationMethod, setOptimizationMethod] = useState<'smart' | 'skip-frames' | 'resize'>('smart');
   const [skipFrames, setSkipFrames] = useState(2);
   const [scale, setScale] = useState(100);
   const [fps, setFps] = useState(15);
+  const [outputWidth, setOutputWidth] = useState(640);
+  const [outputHeight, setOutputHeight] = useState(360);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationProgress, setOptimizationProgress] = useState(0);
 
   // Frame settings
   const [frameSettings, setFrameSettings] = useState<FrameSettings>({
     enabled: false,
-    style: 'cs2',
-    color: '#ff6600',
+    style: 'cs2-gold',
+    thickness: 8,
+    animated: true,
+    glowIntensity: 50,
     weaponName: 'AK-47',
     skinName: 'Fire Serpent',
     showLabel: true,
+    labelPosition: 'bottom',
+    labelStyle: 'gradient',
   });
 
   // Preview
@@ -109,29 +278,33 @@ export default function PublishingTools() {
   const [previewSize, setPreviewSize] = useState<number>(0);
   const [previewDimensions, setPreviewDimensions] = useState<{ width: number; height: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [showFramePreview, setShowFramePreview] = useState(true);
 
   // Validation
-  const [validation, setValidation] = useState<{
-    sizeOk: boolean;
-    aspectOk: boolean;
-    dimensionsOk: boolean;
-  }>({ sizeOk: false, aspectOk: false, dimensionsOk: false });
+  const [validation, setValidation] = useState({
+    sizeOk: false,
+    aspectOk: false,
+    dimensionsOk: false,
+  });
 
   // Handle file selection
   const handleFileSelect = useCallback(async (file: File) => {
     const isVideo = file.type.startsWith('video/');
     const isGif = file.type === 'image/gif';
+    const isImage = file.type.startsWith('image/') && !isGif;
 
-    if (!isVideo && !isGif) {
-      alert('Please upload a video or GIF file');
+    if (!isVideo && !isGif && !isImage) {
+      alert('Please upload a video, GIF, or image file');
       return;
     }
 
     const objectUrl = URL.createObjectURL(file);
 
+    const type = isVideo ? 'video' : isGif ? 'gif' : 'image';
+
     setProject({
       id: crypto.randomUUID(),
-      type: isVideo ? 'video' : 'gif',
+      type,
       status: 'ready',
       progress: 100,
       originalFile: file,
@@ -139,16 +312,44 @@ export default function PublishingTools() {
     });
 
     setPreviewUrl(objectUrl);
-    setActiveTab(isVideo ? 'trim' : 'optimize');
+
+    // Get media dimensions
+    if (isVideo) {
+      const video = document.createElement('video');
+      video.src = objectUrl;
+      video.onloadedmetadata = () => {
+        setMediaDimensions({ width: video.videoWidth, height: video.videoHeight });
+        setOutputWidth(video.videoWidth);
+        setOutputHeight(video.videoHeight);
+        setCropSettings(prev => ({
+          ...prev,
+          width: video.videoWidth,
+          height: video.videoHeight,
+        }));
+      };
+      setActiveTab('trim');
+    } else {
+      const img = document.createElement('img');
+      img.src = objectUrl;
+      img.onload = () => {
+        setMediaDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+        setOutputWidth(img.naturalWidth);
+        setOutputHeight(img.naturalHeight);
+        setCropSettings(prev => ({
+          ...prev,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+        }));
+      };
+      setActiveTab('crop');
+    }
   }, []);
 
   // Handle drop
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
-    }
+    if (file) handleFileSelect(file);
   }, [handleFileSelect]);
 
   // Handle video loaded
@@ -160,7 +361,7 @@ export default function PublishingTools() {
     }
   }, []);
 
-  // Play/pause video
+  // Toggle play
   const togglePlay = useCallback(() => {
     if (videoRef.current) {
       if (isPlaying) {
@@ -173,8 +374,46 @@ export default function PublishingTools() {
     }
   }, [isPlaying, trimStart]);
 
-  // Convert video to GIF on backend
-  const convertToGif = useCallback(async () => {
+  // Apply crop aspect ratio
+  const applyCropAspectRatio = useCallback((ratioId: string) => {
+    const ratio = ASPECT_RATIOS.find(r => r.id === ratioId);
+    if (!ratio) return;
+
+    setCropSettings(prev => {
+      if (!ratio.ratio) {
+        return { ...prev, aspectRatio: ratioId };
+      }
+
+      const currentRatio = prev.width / prev.height;
+      let newWidth = prev.width;
+      let newHeight = prev.height;
+
+      if (currentRatio > ratio.ratio) {
+        newWidth = prev.height * ratio.ratio;
+      } else {
+        newHeight = prev.width / ratio.ratio;
+      }
+
+      return {
+        ...prev,
+        aspectRatio: ratioId,
+        width: Math.round(newWidth),
+        height: Math.round(newHeight),
+      };
+    });
+  }, []);
+
+  // Preset crop sizes
+  const presetSizes = [
+    { label: '1920×1080', width: 1920, height: 1080 },
+    { label: '1280×720', width: 1280, height: 720 },
+    { label: '854×480', width: 854, height: 480 },
+    { label: '640×360', width: 640, height: 360 },
+    { label: '512×288', width: 512, height: 288 },
+  ];
+
+  // Process media
+  const processMedia = useCallback(async () => {
     if (!project?.originalFile) return;
 
     setIsOptimizing(true);
@@ -183,31 +422,51 @@ export default function PublishingTools() {
     try {
       const formData = new FormData();
       formData.append('file', project.originalFile);
-      formData.append('start', trimStart.toString());
-      formData.append('duration', (trimEnd - trimStart).toString());
+
+      // Crop settings
+      if (cropSettings.enabled) {
+        formData.append('crop_x', cropSettings.x.toString());
+        formData.append('crop_y', cropSettings.y.toString());
+        formData.append('crop_width', cropSettings.width.toString());
+        formData.append('crop_height', cropSettings.height.toString());
+      }
+
+      // Output size
+      formData.append('output_width', outputWidth.toString());
+      formData.append('output_height', outputHeight.toString());
+
+      // Video trim
+      if (project.type === 'video') {
+        formData.append('start', trimStart.toString());
+        formData.append('duration', (trimEnd - trimStart).toString());
+      }
+
       formData.append('fps', fps.toString());
       formData.append('scale', scale.toString());
       formData.append('target_size', (targetSize * 1024 * 1024).toString());
       formData.append('optimization', optimizationMethod);
       formData.append('skip_frames', skipFrames.toString());
 
+      // Frame settings
       if (frameSettings.enabled) {
         formData.append('frame_style', frameSettings.style);
-        formData.append('frame_color', frameSettings.color);
+        formData.append('frame_thickness', frameSettings.thickness.toString());
+        formData.append('frame_animated', frameSettings.animated.toString());
+        formData.append('frame_glow', frameSettings.glowIntensity.toString());
         formData.append('weapon_name', frameSettings.weaponName);
         formData.append('skin_name', frameSettings.skinName);
         formData.append('show_label', frameSettings.showLabel.toString());
+        formData.append('label_position', frameSettings.labelPosition);
+        formData.append('label_style', frameSettings.labelStyle);
       }
 
-      // Start conversion
-      const response = await fetch(`${API_BASE}/api/studio/publish/convert`, {
+      const endpoint = project.type === 'video' ? 'convert' : 'optimize';
+      const response = await fetch(`${API_BASE}/api/studio/publish/${endpoint}`, {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('Conversion failed');
-      }
+      if (!response.ok) throw new Error('Processing failed');
 
       const result = await response.json();
 
@@ -238,76 +497,15 @@ export default function PublishingTools() {
         }
       };
 
-      await pollProgress(result.jobId);
+      await pollProgress(result.data?.jobId || result.jobId);
     } catch (error) {
-      console.error('Conversion error:', error);
+      console.error('Processing error:', error);
       setIsOptimizing(false);
       setProject(prev => prev ? { ...prev, status: 'error', error: String(error) } : null);
     }
-  }, [project, trimStart, trimEnd, fps, scale, targetSize, optimizationMethod, skipFrames, frameSettings]);
+  }, [project, cropSettings, outputWidth, outputHeight, trimStart, trimEnd, fps, scale, targetSize, optimizationMethod, skipFrames, frameSettings]);
 
-  // Optimize existing GIF
-  const optimizeGif = useCallback(async () => {
-    if (!project?.originalFile) return;
-
-    setIsOptimizing(true);
-    setOptimizationProgress(0);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', project.originalFile);
-      formData.append('target_size', (targetSize * 1024 * 1024).toString());
-      formData.append('optimization', optimizationMethod);
-      formData.append('skip_frames', skipFrames.toString());
-      formData.append('scale', scale.toString());
-
-      if (frameSettings.enabled) {
-        formData.append('frame_style', frameSettings.style);
-        formData.append('frame_color', frameSettings.color);
-        formData.append('weapon_name', frameSettings.weaponName);
-        formData.append('skin_name', frameSettings.skinName);
-        formData.append('show_label', frameSettings.showLabel.toString());
-      }
-
-      const response = await fetch(`${API_BASE}/api/studio/publish/optimize`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Optimization failed');
-      }
-
-      const result = await response.json();
-
-      // Poll for progress
-      const pollProgress = async (jobId: string) => {
-        const statusRes = await fetch(`${API_BASE}/api/studio/publish/status/${jobId}`);
-        const status = await statusRes.json();
-
-        setOptimizationProgress(status.progress || 0);
-
-        if (status.status === 'completed') {
-          setPreviewUrl(`${API_BASE}/api/studio/publish/result/${jobId}`);
-          setPreviewSize(status.size);
-          setPreviewDimensions({ width: status.width, height: status.height });
-          validateResult(status.size, status.width, status.height);
-          setIsOptimizing(false);
-        } else if (status.status === 'error') {
-          throw new Error(status.error || 'Processing failed');
-        } else {
-          setTimeout(() => pollProgress(jobId), 500);
-        }
-      };
-
-      await pollProgress(result.jobId);
-    } catch (error) {
-      console.error('Optimization error:', error);
-      setIsOptimizing(false);
-    }
-  }, [project, targetSize, optimizationMethod, skipFrames, scale, frameSettings]);
-
-  // Validate result against Steam Workshop requirements
+  // Validate result
   const validateResult = useCallback((size: number, width: number, height: number) => {
     const aspectRatio = width / height;
     const targetAspect = 16 / 9;
@@ -315,7 +513,7 @@ export default function PublishingTools() {
 
     setValidation({
       sizeOk: size <= STEAM_WORKSHOP_MAX_SIZE,
-      aspectOk: aspectDiff < 0.1, // Allow 10% deviation
+      aspectOk: aspectDiff < 0.1,
       dimensionsOk: width >= STEAM_WORKSHOP_MIN_WIDTH && width <= STEAM_WORKSHOP_MAX_WIDTH,
     });
   }, []);
@@ -330,7 +528,8 @@ export default function PublishingTools() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${frameSettings.weaponName}_${frameSettings.skinName}_workshop.gif`.replace(/\s+/g, '_');
+      const ext = project.type === 'image' ? 'png' : 'gif';
+      a.download = `${frameSettings.weaponName}_${frameSettings.skinName}_workshop.${ext}`.replace(/\s+/g, '_');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -342,9 +541,7 @@ export default function PublishingTools() {
 
   // Reset project
   const resetProject = useCallback(() => {
-    if (project?.originalUrl) {
-      URL.revokeObjectURL(project.originalUrl);
-    }
+    if (project?.originalUrl) URL.revokeObjectURL(project.originalUrl);
     setProject(null);
     setPreviewUrl(null);
     setActiveTab('upload');
@@ -352,6 +549,14 @@ export default function PublishingTools() {
     setTrimEnd(10);
     setVideoDuration(0);
     setOptimizationProgress(0);
+    setCropSettings({
+      enabled: false,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      aspectRatio: 'free',
+    });
   }, [project]);
 
   // Format file size
@@ -369,6 +574,12 @@ export default function PublishingTools() {
     return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
   };
 
+  // Get frame style preview
+  const getFrameStylePreview = (styleId: string) => {
+    const style = FRAME_STYLES.find(s => s.id === styleId);
+    return style?.preview || 'transparent';
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-[#0a0a0b] text-white overflow-hidden">
       {/* Header */}
@@ -384,12 +595,7 @@ export default function PublishingTools() {
             </div>
           </div>
           {project && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={resetProject}
-              className="text-white/60 hover:text-white"
-            >
+            <Button variant="ghost" size="sm" onClick={resetProject} className="text-white/60 hover:text-white">
               <RotateCcw className="w-4 h-4 mr-2" />
               Start Over
             </Button>
@@ -412,26 +618,38 @@ export default function PublishingTools() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="video/*,image/gif"
+                accept="video/*,image/gif,image/*"
                 className="hidden"
                 onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
               />
               <div className="w-20 h-20 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
                 <Upload className="w-10 h-10 text-white/40" />
               </div>
-              <h3 className="text-lg font-medium mb-2">Upload Video or GIF</h3>
+              <h3 className="text-lg font-medium mb-2">Upload Video, GIF, or Image</h3>
               <p className="text-sm text-white/40 text-center max-w-md">
-                Drag and drop your video or GIF here, or click to browse.
+                Drag and drop or click to browse.
                 <br />
-                Supports MP4, WebM, MOV, AVI, and GIF formats.
+                Supports MP4, WebM, MOV, GIF, PNG, JPG formats.
               </p>
             </div>
           ) : (
             // Preview area
             <div className="flex-1 flex flex-col">
-              {/* Preview display */}
               <div className="flex-1 relative bg-[#121214] rounded-xl overflow-hidden flex items-center justify-center">
-                {project.type === 'video' && project.originalUrl && activeTab === 'trim' ? (
+                {/* Frame preview overlay */}
+                {showFramePreview && frameSettings.enabled && (
+                  <div
+                    className="absolute inset-0 pointer-events-none z-10"
+                    style={{
+                      border: `${frameSettings.thickness}px solid transparent`,
+                      borderImage: getFrameStylePreview(frameSettings.style),
+                      borderImageSlice: 1,
+                      animation: frameSettings.animated ? 'borderGlow 2s ease-in-out infinite' : 'none',
+                    }}
+                  />
+                )}
+
+                {project.type === 'video' && project.originalUrl ? (
                   <video
                     ref={videoRef}
                     src={project.originalUrl}
@@ -459,11 +677,25 @@ export default function PublishingTools() {
 
                 {/* Processing overlay */}
                 {isOptimizing && (
-                  <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center">
+                  <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20">
                     <Loader2 className="w-12 h-12 animate-spin text-purple-500 mb-4" />
                     <p className="text-lg mb-2">Processing...</p>
                     <Progress value={optimizationProgress} className="w-64 h-2" />
                     <p className="text-sm text-white/40 mt-2">{optimizationProgress}%</p>
+                  </div>
+                )}
+
+                {/* Label preview */}
+                {showFramePreview && frameSettings.enabled && frameSettings.showLabel && (
+                  <div
+                    className={`absolute left-0 right-0 ${frameSettings.labelPosition === 'top' ? 'top-0' : 'bottom-0'} z-10 py-2 px-4 bg-black/70 text-center`}
+                  >
+                    <span
+                      className={`text-lg font-bold ${frameSettings.labelStyle === 'gradient' ? 'bg-gradient-to-r from-orange-400 to-red-500 bg-clip-text text-transparent' : frameSettings.labelStyle === 'outline' ? 'text-transparent' : 'text-white'}`}
+                      style={frameSettings.labelStyle === 'outline' ? { WebkitTextStroke: '1px white' } : {}}
+                    >
+                      {frameSettings.weaponName} | {frameSettings.skinName}
+                    </span>
                   </div>
                 )}
               </div>
@@ -472,12 +704,7 @@ export default function PublishingTools() {
               {project.type === 'video' && activeTab === 'trim' && (
                 <div className="mt-4 p-4 bg-white/5 rounded-xl">
                   <div className="flex items-center gap-4 mb-4">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={togglePlay}
-                      className="text-white"
-                    >
+                    <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white">
                       {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
                     </Button>
                     <div className="flex-1">
@@ -541,23 +768,11 @@ export default function PublishingTools() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-                    className="text-white/60"
-                  >
+                  <Button variant="ghost" size="icon" onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} className="text-white/60">
                     <ZoomOut className="w-4 h-4" />
                   </Button>
-                  <span className="text-white/60 text-xs min-w-[48px] text-center">
-                    {Math.round(zoom * 100)}%
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setZoom(Math.min(3, zoom + 0.25))}
-                    className="text-white/60"
-                  >
+                  <span className="text-white/60 text-xs min-w-[48px] text-center">{Math.round(zoom * 100)}%</span>
+                  <Button variant="ghost" size="icon" onClick={() => setZoom(Math.min(3, zoom + 0.25))} className="text-white/60">
                     <ZoomIn className="w-4 h-4" />
                   </Button>
                 </div>
@@ -568,30 +783,132 @@ export default function PublishingTools() {
 
         {/* Right panel - Settings */}
         {project && (
-          <div className="w-80 border-l border-white/10 flex flex-col overflow-hidden">
+          <div className="w-96 border-l border-white/10 flex flex-col overflow-hidden">
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="flex-1 flex flex-col">
-              <TabsList className="flex-none mx-4 mt-4 bg-white/5">
+              <TabsList className="flex-none mx-4 mt-4 bg-white/5 grid grid-cols-4">
+                <TabsTrigger value="crop" className="text-xs">
+                  <Crop className="w-3 h-3 mr-1" />
+                  Crop
+                </TabsTrigger>
                 {project.type === 'video' && (
-                  <TabsTrigger value="trim" className="flex-1 text-xs">
+                  <TabsTrigger value="trim" className="text-xs">
                     <Scissors className="w-3 h-3 mr-1" />
                     Trim
                   </TabsTrigger>
                 )}
-                <TabsTrigger value="optimize" className="flex-1 text-xs">
+                <TabsTrigger value="optimize" className="text-xs">
                   <Wand2 className="w-3 h-3 mr-1" />
-                  Optimize
+                  Size
                 </TabsTrigger>
-                <TabsTrigger value="frame" className="flex-1 text-xs">
+                <TabsTrigger value="frame" className="text-xs">
                   <Frame className="w-3 h-3 mr-1" />
                   Frame
                 </TabsTrigger>
               </TabsList>
 
               <div className="flex-1 overflow-auto p-4">
-                {/* Trim tab */}
+                {/* Crop tab */}
+                <TabsContent value="crop" className="m-0 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Enable Cropping</Label>
+                    <Switch
+                      checked={cropSettings.enabled}
+                      onCheckedChange={(checked) => setCropSettings(prev => ({ ...prev, enabled: checked }))}
+                    />
+                  </div>
+
+                  {cropSettings.enabled && (
+                    <>
+                      <div>
+                        <Label className="text-xs text-white/60">Aspect Ratio</Label>
+                        <Select value={cropSettings.aspectRatio} onValueChange={applyCropAspectRatio}>
+                          <SelectTrigger className="mt-2 bg-white/5 border-white/10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#1a1a1c] border-white/10">
+                            {ASPECT_RATIOS.map(ratio => (
+                              <SelectItem key={ratio.id} value={ratio.id} className="text-white">
+                                {ratio.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-white/60">Width</Label>
+                          <Input
+                            type="number"
+                            value={cropSettings.width}
+                            onChange={(e) => setCropSettings(prev => ({ ...prev, width: parseInt(e.target.value) || 0 }))}
+                            className="mt-1 bg-white/5 border-white/10"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-white/60">Height</Label>
+                          <Input
+                            type="number"
+                            value={cropSettings.height}
+                            onChange={(e) => setCropSettings(prev => ({ ...prev, height: parseInt(e.target.value) || 0 }))}
+                            className="mt-1 bg-white/5 border-white/10"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-white/60">X Position</Label>
+                          <Input
+                            type="number"
+                            value={cropSettings.x}
+                            onChange={(e) => setCropSettings(prev => ({ ...prev, x: parseInt(e.target.value) || 0 }))}
+                            className="mt-1 bg-white/5 border-white/10"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-white/60">Y Position</Label>
+                          <Input
+                            type="number"
+                            value={cropSettings.y}
+                            onChange={(e) => setCropSettings(prev => ({ ...prev, y: parseInt(e.target.value) || 0 }))}
+                            className="mt-1 bg-white/5 border-white/10"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs text-white/60 mb-2 block">Preset Sizes</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {presetSizes.map(preset => (
+                            <Button
+                              key={preset.label}
+                              variant="outline"
+                              size="sm"
+                              className="bg-white/5 border-white/10 text-xs"
+                              onClick={() => {
+                                setOutputWidth(preset.width);
+                                setOutputHeight(preset.height);
+                                setCropSettings(prev => ({
+                                  ...prev,
+                                  width: preset.width,
+                                  height: preset.height,
+                                }));
+                              }}
+                            >
+                              {preset.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </TabsContent>
+
+                {/* Trim tab (video only) */}
                 <TabsContent value="trim" className="m-0 space-y-4">
                   <div>
-                    <Label className="text-xs text-white/60">FPS (Frames per second)</Label>
+                    <Label className="text-xs text-white/60">FPS</Label>
                     <Slider
                       value={[fps]}
                       min={5}
@@ -601,39 +918,31 @@ export default function PublishingTools() {
                       className="mt-2"
                     />
                     <div className="flex justify-between text-xs text-white/40 mt-1">
-                      <span>5 fps</span>
+                      <span>5</span>
                       <span className="text-white">{fps} fps</span>
-                      <span>30 fps</span>
+                      <span>30</span>
                     </div>
                   </div>
+
                   <div>
-                    <Label className="text-xs text-white/60">Scale</Label>
-                    <Slider
-                      value={[scale]}
-                      min={25}
-                      max={100}
-                      step={5}
-                      onValueChange={([v]) => setScale(v)}
-                      className="mt-2"
+                    <Label className="text-xs text-white/60">Output Width</Label>
+                    <Input
+                      type="number"
+                      value={outputWidth}
+                      onChange={(e) => setOutputWidth(parseInt(e.target.value) || 640)}
+                      className="mt-1 bg-white/5 border-white/10"
                     />
-                    <div className="flex justify-between text-xs text-white/40 mt-1">
-                      <span>25%</span>
-                      <span className="text-white">{scale}%</span>
-                      <span>100%</span>
-                    </div>
                   </div>
-                  <Button
-                    onClick={convertToGif}
-                    disabled={isOptimizing}
-                    className="w-full bg-purple-600 hover:bg-purple-700"
-                  >
-                    {isOptimizing ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                    )}
-                    Convert to GIF
-                  </Button>
+
+                  <div>
+                    <Label className="text-xs text-white/60">Output Height</Label>
+                    <Input
+                      type="number"
+                      value={outputHeight}
+                      onChange={(e) => setOutputHeight(parseInt(e.target.value) || 360)}
+                      className="mt-1 bg-white/5 border-white/10"
+                    />
+                  </div>
                 </TabsContent>
 
                 {/* Optimize tab */}
@@ -690,71 +999,21 @@ export default function PublishingTools() {
                     </div>
                   )}
 
-                  <div>
-                    <Label className="text-xs text-white/60">Scale</Label>
-                    <Slider
-                      value={[scale]}
-                      min={25}
-                      max={100}
-                      step={5}
-                      onValueChange={([v]) => setScale(v)}
-                      className="mt-2"
-                    />
-                    <div className="flex justify-between text-xs text-white/40 mt-1">
-                      <span>25%</span>
-                      <span className="text-white">{scale}%</span>
-                      <span>100%</span>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={project.type === 'video' ? convertToGif : optimizeGif}
-                    disabled={isOptimizing}
-                    className="w-full bg-purple-600 hover:bg-purple-700"
-                  >
-                    {isOptimizing ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <Wand2 className="w-4 h-4 mr-2" />
-                    )}
-                    {project.type === 'video' ? 'Convert & Optimize' : 'Optimize GIF'}
-                  </Button>
-
-                  {/* Steam Workshop validation */}
+                  {/* Validation */}
                   <div className="p-3 bg-white/5 rounded-lg space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-white/60">Steam Workshop Requirements</span>
-                    </div>
+                    <div className="text-xs text-white/60">Steam Workshop</div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-xs">
-                        {validation.sizeOk ? (
-                          <CheckCircle className="w-3 h-3 text-green-400" />
-                        ) : (
-                          <AlertCircle className="w-3 h-3 text-red-400" />
-                        )}
-                        <span className={validation.sizeOk ? 'text-green-400' : 'text-red-400'}>
-                          Size ≤ 2 MB
-                        </span>
+                        {validation.sizeOk ? <CheckCircle className="w-3 h-3 text-green-400" /> : <AlertCircle className="w-3 h-3 text-red-400" />}
+                        <span className={validation.sizeOk ? 'text-green-400' : 'text-red-400'}>Size ≤ 2 MB</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
-                        {validation.aspectOk ? (
-                          <CheckCircle className="w-3 h-3 text-green-400" />
-                        ) : (
-                          <AlertCircle className="w-3 h-3 text-yellow-400" />
-                        )}
-                        <span className={validation.aspectOk ? 'text-green-400' : 'text-yellow-400'}>
-                          Aspect ratio ~16:9
-                        </span>
+                        {validation.aspectOk ? <CheckCircle className="w-3 h-3 text-green-400" /> : <AlertCircle className="w-3 h-3 text-yellow-400" />}
+                        <span className={validation.aspectOk ? 'text-green-400' : 'text-yellow-400'}>Aspect ~16:9</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
-                        {validation.dimensionsOk ? (
-                          <CheckCircle className="w-3 h-3 text-green-400" />
-                        ) : (
-                          <AlertCircle className="w-3 h-3 text-yellow-400" />
-                        )}
-                        <span className={validation.dimensionsOk ? 'text-green-400' : 'text-yellow-400'}>
-                          Width 512-1920 px
-                        </span>
+                        {validation.dimensionsOk ? <CheckCircle className="w-3 h-3 text-green-400" /> : <AlertCircle className="w-3 h-3 text-yellow-400" />}
+                        <span className={validation.dimensionsOk ? 'text-green-400' : 'text-yellow-400'}>Width 512-1920px</span>
                       </div>
                     </div>
                   </div>
@@ -763,65 +1022,86 @@ export default function PublishingTools() {
                 {/* Frame tab */}
                 <TabsContent value="frame" className="m-0 space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs text-white/60">Add Frame</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setFrameSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
-                      className={frameSettings.enabled ? 'text-purple-400' : 'text-white/40'}
-                    >
-                      {frameSettings.enabled ? 'Enabled' : 'Disabled'}
-                    </Button>
+                    <Label className="text-sm">Enable Frame</Label>
+                    <Switch
+                      checked={frameSettings.enabled}
+                      onCheckedChange={(checked) => setFrameSettings(prev => ({ ...prev, enabled: checked }))}
+                    />
                   </div>
 
                   {frameSettings.enabled && (
                     <>
-                      <div>
-                        <Label className="text-xs text-white/60">Frame Style</Label>
-                        <Select
-                          value={frameSettings.style}
-                          onValueChange={(v) => setFrameSettings(prev => ({ ...prev, style: v as FrameSettings['style'] }))}
-                        >
-                          <SelectTrigger className="mt-2 bg-white/5 border-white/10">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#1a1a1c] border-white/10">
-                            <SelectItem value="cs2" className="text-white">CS2 Style</SelectItem>
-                            <SelectItem value="gradient" className="text-white">Gradient</SelectItem>
-                            <SelectItem value="metallic" className="text-white">Metallic</SelectItem>
-                            <SelectItem value="neon" className="text-white">Neon Glow</SelectItem>
-                            <SelectItem value="minimal" className="text-white">Minimal</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs text-white/60">Show Preview</Label>
+                        <Switch
+                          checked={showFramePreview}
+                          onCheckedChange={setShowFramePreview}
+                        />
                       </div>
 
                       <div>
-                        <Label className="text-xs text-white/60">Frame Color</Label>
-                        <div className="flex gap-2 mt-2">
-                          <Input
-                            type="color"
-                            value={frameSettings.color}
-                            onChange={(e) => setFrameSettings(prev => ({ ...prev, color: e.target.value }))}
-                            className="w-12 h-10 p-1 bg-white/5 border-white/10"
-                          />
-                          <Input
-                            value={frameSettings.color}
-                            onChange={(e) => setFrameSettings(prev => ({ ...prev, color: e.target.value }))}
-                            className="flex-1 bg-white/5 border-white/10"
-                          />
+                        <Label className="text-xs text-white/60 mb-2 block">Frame Style</Label>
+                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-auto">
+                          {FRAME_STYLES.map(style => (
+                            <button
+                              key={style.id}
+                              onClick={() => setFrameSettings(prev => ({
+                                ...prev,
+                                style: style.id,
+                                animated: style.animated,
+                              }))}
+                              className={`p-2 rounded-lg border transition-all ${frameSettings.style === style.id ? 'border-purple-500 bg-purple-500/20' : 'border-white/10 hover:border-white/30'}`}
+                            >
+                              <div
+                                className="w-full h-8 rounded mb-1"
+                                style={{ background: style.preview || '#333' }}
+                              />
+                              <div className="text-xs text-white truncate">{style.name}</div>
+                              {style.animated && (
+                                <div className="flex items-center gap-1 text-[10px] text-purple-400">
+                                  <Sparkles className="w-2 h-2" />
+                                  Animated
+                                </div>
+                              )}
+                            </button>
+                          ))}
                         </div>
                       </div>
 
+                      <div>
+                        <Label className="text-xs text-white/60">Thickness</Label>
+                        <Slider
+                          value={[frameSettings.thickness]}
+                          min={2}
+                          max={20}
+                          step={1}
+                          onValueChange={([v]) => setFrameSettings(prev => ({ ...prev, thickness: v }))}
+                          className="mt-2"
+                        />
+                        <div className="text-xs text-white/40 mt-1 text-center">{frameSettings.thickness}px</div>
+                      </div>
+
+                      {frameSettings.animated && (
+                        <div>
+                          <Label className="text-xs text-white/60">Glow Intensity</Label>
+                          <Slider
+                            value={[frameSettings.glowIntensity]}
+                            min={0}
+                            max={100}
+                            step={5}
+                            onValueChange={([v]) => setFrameSettings(prev => ({ ...prev, glowIntensity: v }))}
+                            className="mt-2"
+                          />
+                          <div className="text-xs text-white/40 mt-1 text-center">{frameSettings.glowIntensity}%</div>
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs text-white/60">Show Label</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setFrameSettings(prev => ({ ...prev, showLabel: !prev.showLabel }))}
-                          className={frameSettings.showLabel ? 'text-purple-400' : 'text-white/40'}
-                        >
-                          {frameSettings.showLabel ? 'Yes' : 'No'}
-                        </Button>
+                        <Label className="text-sm">Show Label</Label>
+                        <Switch
+                          checked={frameSettings.showLabel}
+                          onCheckedChange={(checked) => setFrameSettings(prev => ({ ...prev, showLabel: checked }))}
+                        />
                       </div>
 
                       {frameSettings.showLabel && (
@@ -832,7 +1112,7 @@ export default function PublishingTools() {
                               value={frameSettings.weaponName}
                               onChange={(e) => setFrameSettings(prev => ({ ...prev, weaponName: e.target.value }))}
                               placeholder="AK-47"
-                              className="mt-2 bg-white/5 border-white/10"
+                              className="mt-1 bg-white/5 border-white/10"
                             />
                           </div>
 
@@ -842,56 +1122,89 @@ export default function PublishingTools() {
                               value={frameSettings.skinName}
                               onChange={(e) => setFrameSettings(prev => ({ ...prev, skinName: e.target.value }))}
                               placeholder="Fire Serpent"
-                              className="mt-2 bg-white/5 border-white/10"
+                              className="mt-1 bg-white/5 border-white/10"
                             />
                           </div>
 
-                          <div className="p-3 bg-white/5 rounded-lg">
-                            <Label className="text-xs text-white/60">Preview</Label>
-                            <div className="mt-2 text-center text-lg font-bold bg-gradient-to-r from-orange-400 to-red-500 bg-clip-text text-transparent">
-                              {frameSettings.weaponName} | {frameSettings.skinName}
-                            </div>
+                          <div>
+                            <Label className="text-xs text-white/60">Label Position</Label>
+                            <Select
+                              value={frameSettings.labelPosition}
+                              onValueChange={(v) => setFrameSettings(prev => ({ ...prev, labelPosition: v as 'top' | 'bottom' }))}
+                            >
+                              <SelectTrigger className="mt-1 bg-white/5 border-white/10">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#1a1a1c] border-white/10">
+                                <SelectItem value="top" className="text-white">Top</SelectItem>
+                                <SelectItem value="bottom" className="text-white">Bottom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <Label className="text-xs text-white/60">Label Style</Label>
+                            <Select
+                              value={frameSettings.labelStyle}
+                              onValueChange={(v) => setFrameSettings(prev => ({ ...prev, labelStyle: v as 'gradient' | 'solid' | 'outline' }))}
+                            >
+                              <SelectTrigger className="mt-1 bg-white/5 border-white/10">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#1a1a1c] border-white/10">
+                                <SelectItem value="gradient" className="text-white">Gradient</SelectItem>
+                                <SelectItem value="solid" className="text-white">Solid White</SelectItem>
+                                <SelectItem value="outline" className="text-white">Outline</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </>
                       )}
-
-                      <Button
-                        onClick={project.type === 'video' ? convertToGif : optimizeGif}
-                        disabled={isOptimizing}
-                        className="w-full bg-purple-600 hover:bg-purple-700"
-                      >
-                        {isOptimizing ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <Frame className="w-4 h-4 mr-2" />
-                        )}
-                        Apply Frame
-                      </Button>
                     </>
                   )}
                 </TabsContent>
               </div>
 
-              {/* Download button */}
-              {project.resultUrl && (
-                <div className="flex-none p-4 border-t border-white/10">
-                  <Button
-                    onClick={downloadResult}
-                    className="w-full bg-green-600 hover:bg-green-700"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download GIF
-                  </Button>
-                  <div className="flex items-center gap-2 mt-2 text-xs text-white/40">
-                    <Clock className="w-3 h-3" />
-                    <span>File will be deleted in 1 hour</span>
-                  </div>
-                </div>
-              )}
+              {/* Action buttons */}
+              <div className="flex-none p-4 border-t border-white/10 space-y-2">
+                <Button
+                  onClick={processMedia}
+                  disabled={isOptimizing}
+                  className="w-full bg-purple-600 hover:bg-purple-700"
+                >
+                  {isOptimizing ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Wand2 className="w-4 h-4 mr-2" />
+                  )}
+                  Process {project.type === 'video' ? 'Video' : project.type === 'gif' ? 'GIF' : 'Image'}
+                </Button>
+
+                {project.resultUrl && (
+                  <>
+                    <Button onClick={downloadResult} className="w-full bg-green-600 hover:bg-green-700">
+                      <Download className="w-4 h-4 mr-2" />
+                      Download
+                    </Button>
+                    <div className="flex items-center gap-2 text-xs text-white/40">
+                      <Clock className="w-3 h-3" />
+                      <span>File expires in 1 hour</span>
+                    </div>
+                  </>
+                )}
+              </div>
             </Tabs>
           </div>
         )}
       </div>
+
+      {/* CSS for animated border */}
+      <style jsx global>{`
+        @keyframes borderGlow {
+          0%, 100% { filter: brightness(1) saturate(1); }
+          50% { filter: brightness(1.3) saturate(1.2); }
+        }
+      `}</style>
     </div>
   );
 }

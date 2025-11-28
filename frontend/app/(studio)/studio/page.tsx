@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Video,
   Palette,
+  HardDrive,
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { StudioProject, StickerType } from '@/types/studio';
@@ -73,6 +74,19 @@ const PublishingTools = dynamic(
   }
 );
 
+// Lazy load FileManager component (admin only)
+const FileManager = dynamic(
+  () => import('@/components/studio/file-manager'),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center h-[600px]">
+        <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+      </div>
+    ),
+    ssr: false
+  }
+);
+
 const stickerTypes: { value: StickerType; label: string; description: string }[] = [
   { value: 'paper', label: 'Paper', description: 'Classic paper sticker' },
   { value: 'glitter', label: 'Glitter', description: 'Sparkling glitter effect' },
@@ -88,6 +102,7 @@ export default function StudioPage() {
   const {
     user,
     isAuthenticated,
+    isAdmin,
     isLoading,
     login,
     logout,
@@ -97,7 +112,7 @@ export default function StudioPage() {
     deleteProject,
   } = useStudioAuth();
 
-  const [activeTab, setActiveTab] = useState<'projects' | 'publish'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'publish' | 'files'>('projects');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
@@ -338,6 +353,15 @@ export default function StudioPage() {
                 <Video className="w-4 h-4 mr-2" />
                 Publishing Tools
               </TabsTrigger>
+              {isAdmin && (
+                <TabsTrigger
+                  value="files"
+                  className="data-[state=active]:bg-cyan-500 data-[state=active]:text-white px-6"
+                >
+                  <HardDrive className="w-4 h-4 mr-2" />
+                  Files
+                </TabsTrigger>
+              )}
             </TabsList>
             {activeTab === 'projects' && (
               <Button
@@ -445,6 +469,15 @@ export default function StudioPage() {
               <PublishingTools />
             </div>
           </TabsContent>
+
+          {/* Files Tab (Admin Only) */}
+          {isAdmin && (
+            <TabsContent value="files" className="mt-0">
+              <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
+                <FileManager />
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </main>
 

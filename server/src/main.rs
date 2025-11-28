@@ -2,6 +2,7 @@ mod anime;
 mod auth;
 mod cs2;
 mod db;
+mod files;
 mod guards;
 mod jobs;
 mod models;
@@ -69,6 +70,9 @@ async fn rocket() -> _ {
         }
     });
 
+    // Initialize file service
+    files::FileService::init().await.expect("Failed to initialize file service");
+
     println!("🚀 Server starting...");
     println!("📊 Database: {}", database_url);
     println!("👤 Admin Telegram ID: {}", admin_telegram_id);
@@ -77,6 +81,7 @@ async fn rocket() -> _ {
     println!("💼 Job search system: ready");
     println!("🎨 CS2 Skin Studio: ready");
     println!("📹 Publishing Tools: ready");
+    println!("📁 File Manager: ready");
     println!("✅ All systems ready");
 
     // Configure CORS
@@ -239,6 +244,29 @@ async fn rocket() -> _ {
                 routes::publish::get_status,
                 routes::publish::get_result,
                 routes::publish::download_result,
+            ],
+        )
+        // File manager routes (admin protected)
+        .mount(
+            "/api",
+            routes![
+                routes::files::get_folder_contents,
+                routes::files::create_folder,
+                routes::files::rename_folder,
+                routes::files::delete_folder,
+                routes::files::upload_file,
+                routes::files::update_file,
+                routes::files::delete_file,
+                routes::files::get_file_info,
+            ],
+        )
+        // File manager public routes
+        .mount(
+            "/api",
+            routes![
+                routes::files::get_public_file,
+                routes::files::get_private_file,
+                routes::files::check_file,
             ],
         )
 }
