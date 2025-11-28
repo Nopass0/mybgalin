@@ -12,6 +12,10 @@ import {
   LogOut,
   ChevronLeft,
   Sparkles,
+  ExternalLink,
+  User,
+  Package,
+  ChevronDown,
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { StudioProject, StickerType } from '@/types/studio';
@@ -43,6 +47,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const stickerTypes: { value: StickerType; label: string; description: string }[] = [
   { value: 'paper', label: 'Paper', description: 'Classic paper sticker' },
@@ -238,25 +250,52 @@ export default function StudioPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* User info */}
-            <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-lg">
-              {user?.avatarUrl && (
-                <img
-                  src={user.avatarUrl}
-                  alt={user.personaName}
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span className="text-white text-sm">{user?.personaName}</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={logout}
-              className="text-white/60 hover:text-white"
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
+            {/* User info with dropdown menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-3 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors">
+                  {user?.avatarUrl && (
+                    <img
+                      src={user.avatarUrl}
+                      alt={user.personaName}
+                      className="w-8 h-8 rounded-full"
+                    />
+                  )}
+                  <span className="text-white text-sm">{user?.personaName}</span>
+                  <ChevronDown className="w-4 h-4 text-white/40" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-[#1a1a1c] border-white/10">
+                <DropdownMenuLabel className="text-white/60">
+                  Steam Account
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/10" />
+                <DropdownMenuItem
+                  onClick={() => window.open(`https://steamcommunity.com/profiles/${user?.steamId}`, '_blank')}
+                  className="text-white hover:bg-white/10 cursor-pointer"
+                >
+                  <User className="w-4 h-4 mr-2 text-white/60" />
+                  Steam Profile
+                  <ExternalLink className="w-3 h-3 ml-auto text-white/40" />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => window.open(`https://steamcommunity.com/profiles/${user?.steamId}/myworkshopfiles/`, '_blank')}
+                  className="text-white hover:bg-white/10 cursor-pointer"
+                >
+                  <Package className="w-4 h-4 mr-2 text-white/60" />
+                  My Workshop
+                  <ExternalLink className="w-3 h-3 ml-auto text-white/40" />
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-white/10" />
+                <DropdownMenuItem
+                  onClick={logout}
+                  className="text-red-400 hover:bg-white/10 cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

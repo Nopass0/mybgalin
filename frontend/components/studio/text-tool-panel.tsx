@@ -166,6 +166,13 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
 
   const createTextLayer = () => {
     const layer = addLayer('text', 'Text Layer');
+    // Center the text on the canvas (assuming 1024x1024 canvas)
+    // x, y represent top-left corner, so calculate based on text dimensions
+    const textWidth = 500;
+    const textHeight = 120;
+    const centerX = 512;
+    const centerY = 512;
+
     updateLayer(layer.id, {
       textContent: {
         text: 'Double-click to edit',
@@ -179,10 +186,10 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
         color: primaryColor,
       },
       transform: {
-        x: 512,
-        y: 512,
-        width: 400,
-        height: 100,
+        x: centerX - textWidth / 2,  // Top-left x position
+        y: centerY - textHeight / 2, // Top-left y position
+        width: textWidth,
+        height: textHeight,
         rotation: 0,
         scaleX: 1,
         scaleY: 1,

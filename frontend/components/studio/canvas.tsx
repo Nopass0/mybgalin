@@ -1273,6 +1273,17 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             console.warn('Font loading failed, using fallback:', e);
           }
 
+          // Resize layer canvas to text bounds if transform specified
+          const textWidth = layer.transform?.width || 800;
+          const textHeight = layer.transform?.height || 200;
+
+          // Resize canvas to fit text area
+          if (layerCanvas.width !== textWidth || layerCanvas.height !== textHeight) {
+            layerCanvas.width = textWidth;
+            layerCanvas.height = textHeight;
+          }
+
+          ctx.clearRect(0, 0, textWidth, textHeight);
           ctx.save();
           ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}"`;
           ctx.textAlign = textAlign as CanvasTextAlign;
@@ -1286,9 +1297,10 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             ctx.shadowOffsetY = shadow.offsetY;
           }
 
-          // Apply transform if available
-          const x = layer.transform?.x ?? CANVAS_SIZE / 2;
-          const y = layer.transform?.y ?? CANVAS_SIZE / 2;
+          // Draw text at center of the text layer canvas
+          // The position transform will be applied during compositing
+          const x = textWidth / 2;
+          const y = textHeight / 2;
 
           // Draw stroke if available
           if (stroke) {
@@ -1303,6 +1315,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
           ctx.fillText(text, x, y);
 
           ctx.restore();
+
+          // Mark as loaded for re-render tracking
+          loadedAny = true;
         }
       }
       // Trigger re-composite if any images were loaded
