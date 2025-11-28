@@ -1,3 +1,12 @@
+/**
+ * API Type Definitions
+ *
+ * TypeScript interfaces for API communication.
+ * Includes request/response types for all endpoints.
+ *
+ * @module lib/types
+ */
+
 // API Response wrapper
 export interface ApiResponse<T> {
   success: boolean;

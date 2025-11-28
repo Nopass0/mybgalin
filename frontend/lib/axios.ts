@@ -1,3 +1,12 @@
+/**
+ * Axios HTTP Client Configuration
+ *
+ * Pre-configured axios instance for API communication.
+ * Handles authentication tokens and error responses.
+ *
+ * @module lib/axios
+ */
+
 import axios from "axios";
 
 // Automatically determine API URL based on environment
