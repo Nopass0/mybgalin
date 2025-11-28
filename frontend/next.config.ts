@@ -18,6 +18,14 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Allow larger file uploads (100MB) for sync
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
+  },
+  // Allow larger body size for middleware/rewrites (sync uploads)
+  middlewareClientMaxBodySize: '100mb',
   async rewrites() {
     // In production, nginx handles /api proxying
     // These rewrites are only for local development
