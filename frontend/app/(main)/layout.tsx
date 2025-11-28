@@ -3,6 +3,7 @@
 import { SidebarNav } from "@/components/sidebar-nav";
 import { StarfieldBackground } from "@/components/starfield-background";
 import { StarfieldProvider } from "@/components/starfield-context";
+import { StudioRedirectHandler } from "@/components/studio-redirect-handler";
 
 export default function MainLayout({
   children,
@@ -12,6 +13,7 @@ export default function MainLayout({
   return (
     <StarfieldProvider>
       <StarfieldBackground />
+      <StudioRedirectHandler />
       <div className="relative flex min-h-screen">
         <SidebarNav />
         <main className="flex-1 md:pl-64">

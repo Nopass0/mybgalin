@@ -487,5 +487,65 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // Link shortener tables
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS short_links (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            original_url TEXT NOT NULL,
+            short_code TEXT UNIQUE NOT NULL,
+            external_short_url TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            redirect_to_studio BOOLEAN NOT NULL DEFAULT FALSE,
+            set_studio_flag BOOLEAN NOT NULL DEFAULT FALSE,
+            custom_js TEXT,
+            expires_at DATETIME,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS link_clicks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            link_id TEXT NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            referer TEXT,
+            country TEXT,
+            city TEXT,
+            device_type TEXT,
+            browser TEXT,
+            os TEXT,
+            is_bot BOOLEAN DEFAULT FALSE,
+            screen_width INTEGER,
+            screen_height INTEGER,
+            language TEXT,
+            timezone TEXT,
+            clicked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (link_id) REFERENCES short_links(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_short_links_code ON short_links(short_code)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_link_clicks_link ON link_clicks(link_id)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_link_clicks_date ON link_clicks(clicked_at)")
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }
