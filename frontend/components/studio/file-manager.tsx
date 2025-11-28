@@ -68,6 +68,13 @@ interface FileItem {
   createdAt: string;
 }
 
+// Helper to get admin file URL (for viewing any file in admin panel)
+// Includes token as query param since img/video src can't have headers
+const getAdminFileUrl = (fileId: string) => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('studio_token') : null;
+  return `${API_BASE}/files/admin/${fileId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+};
+
 interface FolderItem {
   id: string;
   name: string;
@@ -451,7 +458,7 @@ export default function FileManager() {
                     <div className="aspect-square bg-[#121214] flex items-center justify-center">
                       {file.mimeType.startsWith('image/') ? (
                         <img
-                          src={file.url}
+                          src={getAdminFileUrl(file.id)}
                           alt={file.name}
                           className="w-full h-full object-cover"
                           loading="lazy"
@@ -518,7 +525,7 @@ export default function FileManager() {
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.open(file.url, '_blank');
+                            window.open(getAdminFileUrl(file.id), '_blank');
                           }}
                           className="text-white hover:bg-white/10 cursor-pointer"
                         >
@@ -782,13 +789,13 @@ export default function FileManager() {
           <div className="py-4">
             {previewFile?.mimeType.startsWith('image/') ? (
               <img
-                src={previewFile.url}
+                src={getAdminFileUrl(previewFile.id)}
                 alt={previewFile.name}
                 className="max-w-full max-h-[60vh] mx-auto rounded-lg"
               />
             ) : previewFile?.mimeType.startsWith('video/') ? (
               <video
-                src={previewFile.url}
+                src={getAdminFileUrl(previewFile.id)}
                 controls
                 className="max-w-full max-h-[60vh] mx-auto rounded-lg"
               />
@@ -819,7 +826,7 @@ export default function FileManager() {
                 </Button>
               )}
               <Button
-                onClick={() => previewFile && window.open(previewFile.url, '_blank')}
+                onClick={() => previewFile && window.open(getAdminFileUrl(previewFile.id), '_blank')}
                 className="bg-purple-500 hover:bg-purple-600 text-white"
               >
                 <Download className="w-4 h-4 mr-2" />

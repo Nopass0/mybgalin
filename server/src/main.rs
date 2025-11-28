@@ -258,6 +258,7 @@ async fn rocket() -> _ {
                 routes::files::update_file,
                 routes::files::delete_file,
                 routes::files::get_file_info,
+                routes::files::get_admin_file,
             ],
         )
         // File manager public routes
