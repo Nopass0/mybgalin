@@ -18,6 +18,7 @@ import {
   Tv,
   PackageOpen,
   Palette,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,11 @@ const routes = [
         label: "Аниме Аукцион",
         icon: Tv,
         href: "/admin/anime",
+      },
+      {
+        label: "Сократитель ссылок",
+        icon: Link2,
+        href: "/admin/links",
       },
     ],
   },

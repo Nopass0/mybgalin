@@ -207,3 +207,78 @@ export interface JobStats {
   rejected: number;
   in_progress: number;
 }
+
+// Link shortener types
+export interface ShortLink {
+  id: string;
+  name: string;
+  original_url: string;
+  short_code: string;
+  external_short_url?: string;
+  is_active: boolean;
+  redirect_to_studio: boolean;
+  set_studio_flag: boolean;
+  custom_js?: string;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LinkClick {
+  id: number;
+  link_id: string;
+  ip_address?: string;
+  user_agent?: string;
+  referer?: string;
+  country?: string;
+  city?: string;
+  device_type?: string;
+  browser?: string;
+  os?: string;
+  is_bot: boolean;
+  screen_width?: number;
+  screen_height?: number;
+  language?: string;
+  timezone?: string;
+  clicked_at: string;
+}
+
+export interface LinkStats {
+  link: ShortLink;
+  total_clicks: number;
+  unique_visitors: number;
+  clicks_today: number;
+  clicks_this_week: number;
+  clicks_this_month: number;
+  top_countries: { country: string; count: number }[];
+  top_browsers: { browser: string; count: number }[];
+  top_devices: { device: string; count: number }[];
+  clicks_by_day: { date: string; count: number }[];
+  recent_clicks: LinkClick[];
+}
+
+export interface LinkWithStats {
+  link: ShortLink;
+  total_clicks: number;
+  clicks_today: number;
+}
+
+export interface CreateLinkRequest {
+  name: string;
+  original_url: string;
+  redirect_to_studio?: boolean;
+  set_studio_flag?: boolean;
+  custom_js?: string;
+  expires_at?: string;
+  use_external_shortener?: boolean;
+}
+
+export interface UpdateLinkRequest {
+  name?: string;
+  original_url?: string;
+  is_active?: boolean;
+  redirect_to_studio?: boolean;
+  set_studio_flag?: boolean;
+  custom_js?: string;
+  expires_at?: string;
+}

@@ -87,6 +87,7 @@ async fn rocket() -> _ {
     println!("📹 Publishing Tools: ready");
     println!("📁 File Manager: ready");
     println!("☁️  Cloud Sync: ready");
+    println!("🔗 Link Shortener: ready");
     println!("✅ All systems ready");
 
     // Configure CORS
@@ -298,6 +299,28 @@ async fn rocket() -> _ {
                 routes::sync::upload_file,
                 routes::sync::download_file,
                 routes::sync::delete_file,
+            ],
+        )
+        // Link shortener routes (admin protected)
+        .mount(
+            "/api",
+            routes![
+                routes::links::list_links,
+                routes::links::create_link,
+                routes::links::update_link,
+                routes::links::delete_link,
+                routes::links::get_link_stats,
+                routes::links::regenerate_external_url,
+                routes::links::get_links_summary,
+                routes::links::resolve_link,
+                routes::links::track_click,
+            ],
+        )
+        // Link shortener redirect (public)
+        .mount(
+            "/",
+            routes![
+                routes::links::redirect_link,
             ],
         )
 }
