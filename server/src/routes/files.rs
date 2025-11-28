@@ -242,7 +242,7 @@ pub async fn delete_file(
 }
 
 /// Get file info (admin)
-#[get("/files/<file_id>/info")]
+#[get("/files/info/<file_id>")]
 pub async fn get_file_info(
     _auth: AdminAuth,
     file_id: &str,
