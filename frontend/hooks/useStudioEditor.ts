@@ -11,6 +11,8 @@ import type {
   SmartMaterial,
   SmartMask,
   EnvironmentSettings,
+  MaterialNode,
+  NodeConnection,
 } from '@/types/studio';
 import { DEFAULT_ENVIRONMENT, DEFAULT_SMART_MASKS } from '@/types/studio';
 
@@ -123,7 +125,7 @@ interface EditorState {
   smartMaterials: SmartMaterial[];
   activeMaterialId: string | null;
   setSmartMaterials: (materials: SmartMaterial[]) => void;
-  addMaterial: () => SmartMaterial;
+  addMaterial: (preset?: { name: string; nodes: MaterialNode[]; connections: NodeConnection[] }) => SmartMaterial;
   updateMaterial: (material: SmartMaterial) => void;
   deleteMaterial: (id: string) => void;
   duplicateMaterial: (id: string) => void;
@@ -860,15 +862,15 @@ export const useStudioEditor = create<EditorState>((set, get) => ({
   smartMaterials: [],
   activeMaterialId: null,
   setSmartMaterials: (smartMaterials) => set({ smartMaterials }),
-  addMaterial: () => {
+  addMaterial: (preset) => {
     const { smartMaterials } = get();
     const newMaterial: SmartMaterial = {
       id: generateId(),
-      name: `Material ${smartMaterials.length + 1}`,
+      name: preset?.name || `Material ${smartMaterials.length + 1}`,
       category: 'custom',
-      nodes: [],
-      connections: [],
-      outputNodeId: '',
+      nodes: preset?.nodes || [],
+      connections: preset?.connections || [],
+      outputNodeId: preset?.nodes?.find(n => n.type.startsWith('output-'))?.id || '',
     };
     set({ smartMaterials: [...smartMaterials, newMaterial], activeMaterialId: newMaterial.id });
     return newMaterial;
