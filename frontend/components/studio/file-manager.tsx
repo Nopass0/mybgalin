@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Folder,
@@ -28,11 +28,24 @@ import {
   RefreshCw,
   Monitor,
   Plus,
+  Save,
+  Code,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  FileCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -127,7 +140,53 @@ interface SyncFile {
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) return Image;
   if (mimeType.startsWith('video/')) return Video;
+  if (isTextFile(mimeType)) return FileCode;
   return FileText;
+};
+
+// Helper to check if a file is editable text
+const isTextFile = (mimeType: string): boolean => {
+  const textTypes = [
+    'text/plain',
+    'text/markdown',
+    'text/html',
+    'text/css',
+    'text/javascript',
+    'application/json',
+    'application/xml',
+    'text/xml',
+    'application/javascript',
+    'text/x-python',
+    'text/x-java',
+    'text/x-c',
+    'text/x-cpp',
+    'text/x-rust',
+    'text/x-go',
+    'text/x-typescript',
+  ];
+  return textTypes.includes(mimeType) || mimeType.startsWith('text/');
+};
+
+// Helper to check if file is markdown
+const isMarkdownFile = (name: string, mimeType: string): boolean => {
+  return mimeType === 'text/markdown' ||
+         name.endsWith('.md') ||
+         name.endsWith('.markdown');
+};
+
+// Helper to check if file is an image
+const isImageFile = (mimeType: string): boolean => {
+  return mimeType.startsWith('image/');
+};
+
+// Helper to check if file is a video
+const isVideoFile = (mimeType: string): boolean => {
+  return mimeType.startsWith('video/');
+};
+
+// Helper to check if file is a GIF
+const isGifFile = (mimeType: string): boolean => {
+  return mimeType === 'image/gif';
 };
 
 const formatFileSize = (bytes: number): string => {
@@ -177,6 +236,28 @@ export default function FileManager() {
   const [viewingSyncFolder, setViewingSyncFolder] = useState<SyncFolder | null>(null);
   const [syncFolderFiles, setSyncFolderFiles] = useState<SyncFile[]>([]);
   const [isSyncFolderFilesLoading, setIsSyncFolderFilesLoading] = useState(false);
+
+  // File editor states
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorFile, setEditorFile] = useState<FileItem | null>(null);
+  const [editorContent, setEditorContent] = useState('');
+  const [editorOriginalContent, setEditorOriginalContent] = useState('');
+  const [isEditorLoading, setIsEditorLoading] = useState(false);
+  const [isEditorSaving, setIsEditorSaving] = useState(false);
+  const [markdownPreview, setMarkdownPreview] = useState(false);
+
+  // Image viewer states
+  const [imageZoom, setImageZoom] = useState(1);
+  const [imageRotation, setImageRotation] = useState(0);
+
+  // Video player states
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Auto-refresh state
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const getToken = () => localStorage.getItem('studio_token');
 
@@ -513,6 +594,177 @@ export default function FileManager() {
     loadSyncFolders();
   }, []);
 
+  // Load text content when opening preview
+  useEffect(() => {
+    const loadTextContent = async () => {
+      if (previewFile && (isTextFile(previewFile.mimeType) || previewFile.name.endsWith('.md'))) {
+        setIsEditorLoading(true);
+        try {
+          const response = await fetch(getAdminFileUrl(previewFile.id));
+          if (response.ok) {
+            const text = await response.text();
+            setEditorContent(text);
+            setEditorOriginalContent(text);
+          }
+        } catch (err) {
+          console.error('Failed to load file content:', err);
+        } finally {
+          setIsEditorLoading(false);
+        }
+      } else {
+        setEditorContent('');
+        setEditorOriginalContent('');
+      }
+      // Reset image/video state
+      setImageZoom(1);
+      setImageRotation(0);
+      setIsVideoPlaying(false);
+    };
+
+    if (previewFile) {
+      loadTextContent();
+    }
+  }, [previewFile]);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (autoRefresh && !editorOpen && !previewFile) {
+      refreshIntervalRef.current = setInterval(() => {
+        loadContents();
+        if (viewingSyncFolder) {
+          loadSyncFolderFiles(viewingSyncFolder);
+        }
+        loadSyncFolders();
+      }, 5000); // Refresh every 5 seconds
+    }
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, [autoRefresh, editorOpen, previewFile, loadContents, viewingSyncFolder]);
+
+  // Open text/markdown editor
+  const openFileEditor = async (file: FileItem) => {
+    setEditorFile(file);
+    setEditorOpen(true);
+    setIsEditorLoading(true);
+    setMarkdownPreview(false);
+    setImageZoom(1);
+    setImageRotation(0);
+
+    // If text file, load content
+    if (isTextFile(file.mimeType) || file.name.endsWith('.md')) {
+      try {
+        const response = await fetch(getAdminFileUrl(file.id));
+        if (response.ok) {
+          const text = await response.text();
+          setEditorContent(text);
+          setEditorOriginalContent(text);
+        }
+      } catch (err) {
+        console.error('Failed to load file content:', err);
+      }
+    }
+    setIsEditorLoading(false);
+  };
+
+  // Save text file content
+  const saveFileContent = async () => {
+    if (!editorFile || editorContent === editorOriginalContent) return;
+
+    setIsEditorSaving(true);
+    const token = getToken();
+
+    try {
+      // Create a blob with the new content
+      const blob = new Blob([editorContent], { type: editorFile.mimeType });
+      const formData = new FormData();
+      formData.append('file', blob, editorFile.name);
+      formData.append('replaceId', editorFile.id);
+
+      // Use update endpoint or re-upload
+      const response = await fetch(`${API_BASE}/files/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (response.ok) {
+        setEditorOriginalContent(editorContent);
+        loadContents();
+      }
+    } catch (err) {
+      console.error('Failed to save file:', err);
+    } finally {
+      setIsEditorSaving(false);
+    }
+  };
+
+  // Close editor
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setEditorFile(null);
+    setEditorContent('');
+    setEditorOriginalContent('');
+    setImageZoom(1);
+    setImageRotation(0);
+  };
+
+  // Video controls
+  const toggleVideoPlay = () => {
+    if (videoRef.current) {
+      if (isVideoPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsVideoPlaying(!isVideoPlaying);
+    }
+  };
+
+  const toggleVideoMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isVideoMuted;
+      setIsVideoMuted(!isVideoMuted);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (videoRef.current) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        videoRef.current.requestFullscreen();
+      }
+    }
+  };
+
+  // Simple markdown to HTML converter
+  const renderMarkdown = (text: string): string => {
+    return text
+      // Headers
+      .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
+      .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-6 mb-4">$1</h1>')
+      // Bold
+      .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+      // Italic
+      .replace(/\*(.*)\*/gim, '<em>$1</em>')
+      // Code blocks
+      .replace(/```([\\s\\S]*?)```/gim, '<pre class="bg-black/30 p-3 rounded-lg my-2 overflow-x-auto"><code>$1</code></pre>')
+      // Inline code
+      .replace(/`([^`]+)`/gim, '<code class="bg-black/30 px-1 rounded">$1</code>')
+      // Links
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" class="text-purple-400 underline" target="_blank">$1</a>')
+      // Lists
+      .replace(/^\- (.*$)/gim, '<li class="ml-4">$1</li>')
+      .replace(/^\* (.*$)/gim, '<li class="ml-4">$1</li>')
+      // Line breaks
+      .replace(/\n/gim, '<br />');
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -559,6 +811,16 @@ export default function FileManager() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Auto-refresh toggle */}
+          <Button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            variant="ghost"
+            size="sm"
+            className={`${autoRefresh ? 'text-green-400' : 'text-white/40'} hover:bg-white/10`}
+            title={autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+          >
+            <RefreshCw className={`w-4 h-4 ${autoRefresh ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
+          </Button>
           <Button
             onClick={() => setSyncDialogOpen(true)}
             variant="outline"
@@ -1110,10 +1372,10 @@ export default function FileManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Preview Dialog */}
+      {/* Full-Featured File Editor/Viewer Dialog */}
       <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
-        <DialogContent className="bg-[#1a1a1c] border-white/10 text-white max-w-4xl">
-          <DialogHeader>
+        <DialogContent className="bg-[#1a1a1c] border-white/10 text-white max-w-5xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               {previewFile?.isPublic ? (
                 <Unlock className="w-4 h-4 text-green-400" />
@@ -1123,31 +1385,178 @@ export default function FileManager() {
               {previewFile?.name}
             </DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            {previewFile?.mimeType.startsWith('image/') ? (
-              <img
-                src={getAdminFileUrl(previewFile.id)}
-                alt={previewFile.name}
-                className="max-w-full max-h-[60vh] mx-auto rounded-lg"
-              />
-            ) : previewFile?.mimeType.startsWith('video/') ? (
-              <video
-                src={getAdminFileUrl(previewFile.id)}
-                controls
-                className="max-w-full max-h-[60vh] mx-auto rounded-lg"
-              />
+
+          <div className="flex-1 overflow-hidden py-4">
+            {/* Image Viewer with controls */}
+            {previewFile && isImageFile(previewFile.mimeType) ? (
+              <div className="flex flex-col h-full">
+                {/* Image controls */}
+                <div className="flex items-center justify-center gap-2 mb-4 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setImageZoom(z => Math.max(0.25, z - 0.25))}
+                    className="text-white/60 hover:text-white hover:bg-white/10"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm text-white/60 w-16 text-center">{Math.round(imageZoom * 100)}%</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setImageZoom(z => Math.min(4, z + 0.25))}
+                    className="text-white/60 hover:text-white hover:bg-white/10"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </Button>
+                  <div className="w-px h-4 bg-white/20 mx-2" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setImageRotation(r => (r + 90) % 360)}
+                    className="text-white/60 hover:text-white hover:bg-white/10"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setImageZoom(1); setImageRotation(0); }}
+                    className="text-white/60 hover:text-white hover:bg-white/10"
+                  >
+                    Reset
+                  </Button>
+                </div>
+                {/* Image */}
+                <div className="flex-1 overflow-auto flex items-center justify-center bg-black/20 rounded-lg">
+                  <img
+                    src={getAdminFileUrl(previewFile.id)}
+                    alt={previewFile.name}
+                    className="max-w-full transition-transform duration-200"
+                    style={{
+                      transform: `scale(${imageZoom}) rotate(${imageRotation}deg)`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : previewFile && isVideoFile(previewFile.mimeType) ? (
+              /* Video Player with controls */
+              <div className="flex flex-col h-full">
+                <div className="flex-1 relative bg-black rounded-lg overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    src={getAdminFileUrl(previewFile.id)}
+                    className="w-full h-full object-contain"
+                    onPlay={() => setIsVideoPlaying(true)}
+                    onPause={() => setIsVideoPlaying(false)}
+                    onClick={toggleVideoPlay}
+                  />
+                  {/* Video overlay controls */}
+                  <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={toggleVideoPlay}
+                        className="text-white hover:bg-white/20"
+                      >
+                        {isVideoPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={toggleVideoMute}
+                        className="text-white hover:bg-white/20"
+                      >
+                        {isVideoMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                      </Button>
+                      <div className="flex-1" />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={toggleFullscreen}
+                        className="text-white hover:bg-white/20"
+                      >
+                        <Maximize className="w-5 h-5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : previewFile && (isTextFile(previewFile.mimeType) || previewFile.name.endsWith('.md')) ? (
+              /* Text/Markdown Editor */
+              <div className="flex flex-col h-full">
+                {isEditorLoading ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+                  </div>
+                ) : isMarkdownFile(previewFile.name, previewFile.mimeType) ? (
+                  /* Markdown with tabs */
+                  <Tabs defaultValue="edit" className="flex-1 flex flex-col">
+                    <TabsList className="bg-white/5 shrink-0">
+                      <TabsTrigger value="edit" className="data-[state=active]:bg-purple-500">
+                        <Code className="w-4 h-4 mr-2" />
+                        Edit
+                      </TabsTrigger>
+                      <TabsTrigger value="preview" className="data-[state=active]:bg-purple-500">
+                        <Eye className="w-4 h-4 mr-2" />
+                        Preview
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="edit" className="flex-1 mt-4">
+                      <Textarea
+                        value={editorContent}
+                        onChange={(e) => setEditorContent(e.target.value)}
+                        className="h-full min-h-[400px] bg-black/30 border-white/10 text-white font-mono text-sm resize-none"
+                        placeholder="Markdown content..."
+                      />
+                    </TabsContent>
+                    <TabsContent value="preview" className="flex-1 mt-4 overflow-auto">
+                      <div
+                        className="prose prose-invert max-w-none p-4 bg-black/30 rounded-lg min-h-[400px]"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(editorContent) }}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                ) : (
+                  /* Plain text editor */
+                  <Textarea
+                    value={editorContent}
+                    onChange={(e) => setEditorContent(e.target.value)}
+                    className="flex-1 min-h-[400px] bg-black/30 border-white/10 text-white font-mono text-sm resize-none"
+                    placeholder="File content..."
+                  />
+                )}
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12">
                 <FileText className="w-16 h-16 text-white/20 mb-4" />
-                <p className="text-white/40">Preview not available</p>
+                <p className="text-white/40">Preview not available for this file type</p>
+                <p className="text-xs text-white/30 mt-2">{previewFile?.mimeType}</p>
               </div>
             )}
           </div>
-          <DialogFooter className="flex-row justify-between sm:justify-between">
+
+          <DialogFooter className="flex-row justify-between sm:justify-between shrink-0">
             <div className="text-sm text-white/40">
               {previewFile && formatFileSize(previewFile.size)}
             </div>
             <div className="flex items-center gap-2">
+              {/* Save button for text files */}
+              {previewFile && (isTextFile(previewFile.mimeType) || previewFile.name.endsWith('.md')) && editorContent !== editorOriginalContent && (
+                <Button
+                  onClick={saveFileContent}
+                  disabled={isEditorSaving}
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                  {isEditorSaving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  Save
+                </Button>
+              )}
               {previewFile?.isPublic && (
                 <Button
                   variant="outline"

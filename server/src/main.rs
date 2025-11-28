@@ -74,6 +74,9 @@ async fn rocket() -> _ {
     // Initialize file service
     files::FileService::init().await.expect("Failed to initialize file service");
 
+    // Initialize sync service
+    sync::SyncService::init().expect("Failed to initialize sync service");
+
     println!("🚀 Server starting...");
     println!("📊 Database: {}", database_url);
     println!("👤 Admin Telegram ID: {}", admin_telegram_id);
@@ -83,6 +86,7 @@ async fn rocket() -> _ {
     println!("🎨 CS2 Skin Studio: ready");
     println!("📹 Publishing Tools: ready");
     println!("📁 File Manager: ready");
+    println!("☁️  Cloud Sync: ready");
     println!("✅ All systems ready");
 
     // Configure CORS

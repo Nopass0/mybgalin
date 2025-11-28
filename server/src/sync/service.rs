@@ -12,6 +12,15 @@ const SYNC_STORAGE_DIR: &str = "sync_storage";
 pub struct SyncService;
 
 impl SyncService {
+    /// Initialize sync storage directory
+    pub fn init() -> Result<(), String> {
+        let storage_dir = Self::get_storage_dir();
+        std::fs::create_dir_all(&storage_dir)
+            .map_err(|e| format!("Failed to create sync storage directory: {}", e))?;
+        println!("☁️  Sync storage initialized at: {:?}", storage_dir);
+        Ok(())
+    }
+
     fn get_storage_dir() -> PathBuf {
         PathBuf::from(SYNC_STORAGE_DIR)
     }

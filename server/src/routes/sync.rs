@@ -244,18 +244,30 @@ pub async fn upload_file(
     content_type: Option<&ContentType>,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<serde_json::Value>> {
+    // URL decode the path (handles special characters like spaces, cyrillic, etc.)
+    let decoded_path = urlencoding::decode(&path)
+        .map(|s| s.into_owned())
+        .unwrap_or(path);
+
+    println!("📤 Upload request: folder={}, path={}", auth.folder_id, decoded_path);
+
     // Read file data (limit to 100MB)
     let bytes = match data.open(100.mebibytes()).into_bytes().await {
         Ok(b) if b.is_complete() => b.into_inner(),
         Ok(_) => return Json(ApiResponse::error("File too large (max 100MB)".to_string())),
-        Err(e) => return Json(ApiResponse::error(format!("Failed to read file: {}", e))),
+        Err(e) => {
+            println!("❌ Failed to read file data: {}", e);
+            return Json(ApiResponse::error(format!("Failed to read file: {}", e)));
+        }
     };
 
+    println!("📦 Received {} bytes", bytes.len());
+
     // Extract filename from path
-    let name = path
+    let name = decoded_path
         .rsplit('/')
         .next()
-        .unwrap_or(&path)
+        .unwrap_or(&decoded_path)
         .to_string();
 
     let mime_type = content_type
@@ -265,17 +277,23 @@ pub async fn upload_file(
     match SyncService::upload_file(
         pool.inner(),
         &auth.folder_id,
-        &path,
+        &decoded_path,
         &name,
         &bytes,
         &mime_type,
     )
     .await
     {
-        Ok(file) => Json(ApiResponse::success(serde_json::json!({
-            "file": SyncFileResponse::from(file)
-        }))),
-        Err(e) => Json(ApiResponse::error(e)),
+        Ok(file) => {
+            println!("✅ File uploaded successfully: {}", decoded_path);
+            Json(ApiResponse::success(serde_json::json!({
+                "file": SyncFileResponse::from(file)
+            })))
+        }
+        Err(e) => {
+            println!("❌ Upload failed for {}: {}", decoded_path, e);
+            Json(ApiResponse::error(e))
+        }
     }
 }
 
