@@ -24,6 +24,10 @@ import {
   Edit2,
   X,
   Link2,
+  Cloud,
+  RefreshCw,
+  Monitor,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -89,6 +93,26 @@ interface FolderContents {
   breadcrumbs: FolderItem[];
 }
 
+interface SyncClient {
+  id: string;
+  deviceName: string;
+  lastSyncAt: string | null;
+  createdAt: string;
+}
+
+interface SyncFolder {
+  id: string;
+  name: string;
+  apiKey: string;
+  apiUrl: string;
+  clientCount: number;
+  fileCount: number;
+  totalSize: number;
+  createdAt: string;
+  updatedAt: string;
+  clients: SyncClient[];
+}
+
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) return Image;
   if (mimeType.startsWith('video/')) return Video;
@@ -130,6 +154,15 @@ export default function FileManager() {
   const [editIsPublic, setEditIsPublic] = useState(false);
   const [editAccessCode, setEditAccessCode] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Cloud Sync states
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncFolders, setSyncFolders] = useState<SyncFolder[]>([]);
+  const [isSyncLoading, setIsSyncLoading] = useState(false);
+  const [newSyncFolderName, setNewSyncFolderName] = useState('');
+  const [isCreatingSyncFolder, setIsCreatingSyncFolder] = useState(false);
+  const [copiedSyncKey, setCopiedSyncKey] = useState<string | null>(null);
+  const [expandedSyncFolder, setExpandedSyncFolder] = useState<string | null>(null);
 
   const getToken = () => localStorage.getItem('studio_token');
 
@@ -320,6 +353,111 @@ export default function FileManager() {
     setCurrentFolderId(folderId);
   };
 
+  // Cloud Sync functions
+  const loadSyncFolders = async () => {
+    setIsSyncLoading(true);
+    const token = getToken();
+
+    try {
+      const response = await fetch(`${API_BASE}/sync/folders`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setSyncFolders(data.data.folders);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load sync folders:', err);
+    } finally {
+      setIsSyncLoading(false);
+    }
+  };
+
+  const handleCreateSyncFolder = async () => {
+    if (!newSyncFolderName.trim()) return;
+
+    setIsCreatingSyncFolder(true);
+    const token = getToken();
+
+    try {
+      const response = await fetch(`${API_BASE}/sync/folders`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: newSyncFolderName.trim() }),
+      });
+
+      if (response.ok) {
+        setNewSyncFolderName('');
+        loadSyncFolders();
+      }
+    } catch (err) {
+      console.error('Failed to create sync folder:', err);
+    } finally {
+      setIsCreatingSyncFolder(false);
+    }
+  };
+
+  const handleDeleteSyncFolder = async (folderId: string) => {
+    const token = getToken();
+
+    try {
+      const response = await fetch(`${API_BASE}/sync/folders/${folderId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        loadSyncFolders();
+      }
+    } catch (err) {
+      console.error('Failed to delete sync folder:', err);
+    }
+  };
+
+  const handleRegenerateSyncKey = async (folderId: string) => {
+    const token = getToken();
+
+    try {
+      const response = await fetch(`${API_BASE}/sync/folders/${folderId}/regenerate-key`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        loadSyncFolders();
+      }
+    } catch (err) {
+      console.error('Failed to regenerate key:', err);
+    }
+  };
+
+  const copySyncToClipboard = async (text: string, id: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedSyncKey(id);
+    setTimeout(() => setCopiedSyncKey(null), 2000);
+  };
+
+  const formatSyncSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // Load sync folders when dialog opens
+  useEffect(() => {
+    if (syncDialogOpen) {
+      loadSyncFolders();
+    }
+  }, [syncDialogOpen]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -366,6 +504,15 @@ export default function FileManager() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setSyncDialogOpen(true)}
+            variant="outline"
+            size="sm"
+            className="text-white border-white/20 hover:bg-white/10"
+          >
+            <Cloud className="w-4 h-4 mr-2" />
+            Cloud Sync
+          </Button>
           <Button
             onClick={() => setCreateFolderOpen(true)}
             variant="outline"
@@ -861,6 +1008,226 @@ export default function FileManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Cloud Sync Dialog */}
+      <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
+        <DialogContent className="bg-[#1a1a1c] border-white/10 text-white max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Cloud className="w-5 h-5 text-purple-400" />
+              Cloud Sync
+            </DialogTitle>
+            <DialogDescription className="text-white/60">
+              Create sync folders and use the client app to sync files between your computer and the cloud
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto space-y-4 py-4">
+            {/* Create new sync folder */}
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="New sync folder name..."
+                value={newSyncFolderName}
+                onChange={(e) => setNewSyncFolderName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateSyncFolder()}
+                className="bg-white/5 border-white/10 text-white"
+              />
+              <Button
+                onClick={handleCreateSyncFolder}
+                disabled={!newSyncFolderName.trim() || isCreatingSyncFolder}
+                className="bg-purple-500 hover:bg-purple-600 text-white shrink-0"
+              >
+                {isCreatingSyncFolder ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+
+            {/* Loading state */}
+            {isSyncLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+              </div>
+            ) : syncFolders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Cloud className="w-12 h-12 text-white/20 mb-3" />
+                <p className="text-white/40">No sync folders yet</p>
+                <p className="text-sm text-white/30">Create one to start syncing files</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {syncFolders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className="bg-white/5 rounded-lg border border-white/10 overflow-hidden"
+                  >
+                    {/* Folder header */}
+                    <div
+                      className="flex items-center justify-between p-3 cursor-pointer hover:bg-white/5"
+                      onClick={() => setExpandedSyncFolder(
+                        expandedSyncFolder === folder.id ? null : folder.id
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <ChevronRight
+                          className={`w-4 h-4 text-white/40 transition-transform ${
+                            expandedSyncFolder === folder.id ? 'rotate-90' : ''
+                          }`}
+                        />
+                        <Cloud className="w-5 h-5 text-purple-400" />
+                        <div>
+                          <p className="font-medium text-white">{folder.name}</p>
+                          <p className="text-xs text-white/40">
+                            {folder.fileCount} files • {formatSyncSize(folder.totalSize)} • {folder.clientCount} devices
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRegenerateSyncKey(folder.id);
+                          }}
+                          className="text-white/60 hover:text-white hover:bg-white/10"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteSyncFolder(folder.id);
+                          }}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Expanded details */}
+                    <AnimatePresence>
+                      {expandedSyncFolder === folder.id && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="border-t border-white/10"
+                        >
+                          <div className="p-3 space-y-3">
+                            {/* API URL */}
+                            <div>
+                              <Label className="text-xs text-white/40">API URL</Label>
+                              <div className="flex items-center gap-2 mt-1">
+                                <code className="flex-1 p-2 bg-black/30 rounded text-xs font-mono text-purple-400 truncate">
+                                  {window.location.origin}{folder.apiUrl}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copySyncToClipboard(
+                                    `${window.location.origin}${folder.apiUrl}`,
+                                    `url-${folder.id}`
+                                  )}
+                                  className="shrink-0"
+                                >
+                                  {copiedSyncKey === `url-${folder.id}` ? (
+                                    <Check className="w-4 h-4 text-green-400" />
+                                  ) : (
+                                    <Copy className="w-4 h-4 text-white/60" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* API Key */}
+                            <div>
+                              <Label className="text-xs text-white/40">API Key</Label>
+                              <div className="flex items-center gap-2 mt-1">
+                                <code className="flex-1 p-2 bg-black/30 rounded text-xs font-mono text-purple-400 truncate">
+                                  {folder.apiKey}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copySyncToClipboard(folder.apiKey, `key-${folder.id}`)}
+                                  className="shrink-0"
+                                >
+                                  {copiedSyncKey === `key-${folder.id}` ? (
+                                    <Check className="w-4 h-4 text-green-400" />
+                                  ) : (
+                                    <Copy className="w-4 h-4 text-white/60" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Connected devices */}
+                            {folder.clients.length > 0 && (
+                              <div>
+                                <Label className="text-xs text-white/40">Connected Devices</Label>
+                                <div className="mt-2 space-y-2">
+                                  {folder.clients.map((client) => (
+                                    <div
+                                      key={client.id}
+                                      className="flex items-center justify-between p-2 bg-black/20 rounded"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Monitor className="w-4 h-4 text-white/40" />
+                                        <div>
+                                          <p className="text-sm text-white">{client.deviceName}</p>
+                                          <p className="text-xs text-white/40">
+                                            {client.lastSyncAt
+                                              ? `Last sync: ${new Date(client.lastSyncAt).toLocaleString()}`
+                                              : 'Never synced'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Download client hint */}
+                            <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                              <p className="text-sm text-white">
+                                <strong>How to sync:</strong>
+                              </p>
+                              <ol className="text-xs text-white/60 mt-2 space-y-1 list-decimal list-inside">
+                                <li>Download and run the sync client app</li>
+                                <li>Enter the API URL and API Key above</li>
+                                <li>Select a local folder to sync</li>
+                                <li>Files will sync automatically</li>
+                              </ol>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setSyncDialogOpen(false)}
+              className="text-white/60"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
