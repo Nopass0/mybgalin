@@ -1,5 +1,23 @@
 'use client';
 
+/**
+ * Studio Canvas Component
+ *
+ * Main drawing canvas for the CS2 Skin Studio editor.
+ * Supports multiple layers, various tools, and real-time compositing.
+ *
+ * Features:
+ * - Multi-layer compositing with blend modes
+ * - Drawing tools: brush, eraser, clone stamp, warp
+ * - Selection tools: rectangle, ellipse, lasso, magic wand
+ * - Transform tools: move, scale, rotate
+ * - Layer masking support
+ * - Material drag-drop with procedural texture generation
+ * - GPU-optimized brush rendering
+ *
+ * @module components/studio/canvas
+ */
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
 import type { Transform, Layer, BlendMode, LayerEffect, VectorPoint, VectorPath, MaterialNode, NodeConnection } from '@/types/studio';
@@ -356,6 +374,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const maskImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   // Flag to trigger re-composite after async image loads
   const [imageLoadCounter, setImageLoadCounter] = useState(0);
+  // Track pending mask loads to defer state updates (avoid state update during render)
+  const pendingMaskLoadRef = useRef(false);
 
   // GPU optimization: batch stroke points for efficient drawing
   const pendingStrokesRef = useRef<Array<{
@@ -1328,7 +1348,14 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
             maskImg.src = layer.mask.imageData;
             maskImageCacheRef.current.set(layer.mask.imageData, maskImg);
             maskImg.onload = () => {
-              setImageLoadCounter(c => c + 1); // Trigger re-composite
+              // Use ref to avoid state update during render, then schedule update
+              pendingMaskLoadRef.current = true;
+              requestAnimationFrame(() => {
+                if (pendingMaskLoadRef.current) {
+                  pendingMaskLoadRef.current = false;
+                  setImageLoadCounter(c => c + 1); // Trigger re-composite
+                }
+              });
             };
           }
           // For now, draw layer without mask (will be applied after image loads)

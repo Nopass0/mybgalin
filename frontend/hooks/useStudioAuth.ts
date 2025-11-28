@@ -1,7 +1,23 @@
+/**
+ * Studio Authentication Hook
+ *
+ * Manages user authentication state for the CS2 Skin Studio.
+ * Uses Steam OpenID for login and JWT tokens for API access.
+ *
+ * Features:
+ * - Steam login/logout
+ * - JWT token management
+ * - Project CRUD operations
+ * - Persistent auth state
+ *
+ * @module hooks/useStudioAuth
+ */
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SteamUser, StudioProject } from '@/types/studio';
 
+/** Authentication state interface */
 interface StudioAuthState {
   user: SteamUser | null;
   isAuthenticated: boolean;
@@ -23,8 +39,34 @@ interface StudioAuthState {
 
 // For fetch requests (proxied through Next.js rewrites)
 const API_BASE = '/api';
-// For redirects (need direct backend URL since window.location doesn't go through rewrites)
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+
+/**
+ * Get the backend URL for direct redirects (not API calls)
+ * Must work both on localhost and production
+ */
+const getBackendUrl = (): string => {
+  // Server-side: use env var or localhost
+  if (typeof window === 'undefined') {
+    return process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+  }
+
+  // Client-side: determine based on current hostname
+  const hostname = window.location.hostname;
+
+  // Production domains
+  if (hostname === 'bgalin.ru' || hostname.endsWith('.bgalin.ru')) {
+    return 'https://bgalin.ru';
+  }
+
+  // Local development
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3001';
+  }
+
+  // Other domains: try to use same origin with port 3001
+  // or fallback to env var
+  return process.env.NEXT_PUBLIC_BACKEND_URL || `${window.location.protocol}//${hostname}:3001`;
+};
 
 export const useStudioAuth = create<StudioAuthState>()(
   persist(
@@ -36,8 +78,9 @@ export const useStudioAuth = create<StudioAuthState>()(
 
       login: () => {
         // Redirect to Steam OpenID login - must use direct backend URL for page redirects
+        const backendUrl = getBackendUrl();
         const returnUrl = encodeURIComponent(window.location.origin + '/studio/auth/callback');
-        window.location.href = `${BACKEND_URL}/api/studio/auth/steam?return_url=${returnUrl}`;
+        window.location.href = `${backendUrl}/api/studio/auth/steam?return_url=${returnUrl}`;
       },
 
       logout: () => {

@@ -192,7 +192,9 @@ export default function ProjectEditorPage() {
     } else if (!authLoading && !isAuthenticated) {
       router.push('/studio');
     }
-  }, [authLoading, isAuthenticated, projects, projectId, setSmartMaterials, setSmartMasks, setEnvironmentSettings, layers.length]);
+  // Note: layers.length removed from deps - using projectLoadedRef to prevent re-initialization
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, isAuthenticated, projects, projectId, setSmartMaterials, setSmartMasks, setEnvironmentSettings]);
 
   // Manual save handler
   const handleSave = useCallback(async () => {
