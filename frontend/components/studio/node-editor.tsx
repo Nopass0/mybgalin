@@ -38,7 +38,9 @@ import {
   Settings,
   Camera,
   Maximize2,
+  PaintBucket,
 } from 'lucide-react';
+import { useStudioEditor } from '@/hooks/useStudioEditor';
 import {
   SmartMaterial,
   MaterialNode,
@@ -843,6 +845,10 @@ interface NodeEditorProps {
  * @returns React component
  */
 export function NodeEditor({ material, onSave, onClose, onChange, className }: NodeEditorProps) {
+  // Studio editor integration
+  const { activeLayerId, updateLayer, layers, addLayer, pushHistory } = useStudioEditor();
+  const [isApplyingToLayer, setIsApplyingToLayer] = useState(false);
+
   // Canvas and interaction refs
   const canvasRef = useRef<HTMLDivElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1767,6 +1773,82 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
   };
 
   /**
+   * Applies the material color output to the active layer
+   * Generates the texture and applies it to the currently selected layer
+   */
+  const applyToActiveLayer = async () => {
+    if (!activeLayerId) {
+      // No active layer, create a new one
+      const newLayer = addLayer('raster', materialName || 'Material');
+      if (!newLayer) return;
+
+      setIsApplyingToLayer(true);
+      try {
+        const size = 1024;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+
+        // Find color output node, or use the first output node
+        const outputNode = nodes.find(n => n.type === 'output-color') ||
+                          nodes.find(n => n.type.startsWith('output-'));
+
+        if (outputNode) {
+          await evaluateNodeGraph(ctx, outputNode, size);
+        } else if (nodes.length > 0) {
+          // No output node, evaluate the last added node
+          await evaluateNodeGraph(ctx, nodes[nodes.length - 1], size);
+        } else {
+          // No nodes at all, fill with gray
+          ctx.fillStyle = '#808080';
+          ctx.fillRect(0, 0, size, size);
+        }
+
+        const imageData = canvas.toDataURL('image/png');
+        updateLayer(newLayer.id, { imageData });
+        pushHistory?.('Apply material');
+      } finally {
+        setIsApplyingToLayer(false);
+      }
+      return;
+    }
+
+    setIsApplyingToLayer(true);
+
+    try {
+      const size = 1024;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+
+      // Find color output node, or use the first output node
+      const outputNode = nodes.find(n => n.type === 'output-color') ||
+                        nodes.find(n => n.type.startsWith('output-'));
+
+      if (outputNode) {
+        await evaluateNodeGraph(ctx, outputNode, size);
+      } else if (nodes.length > 0) {
+        // No output node, evaluate the last added node
+        await evaluateNodeGraph(ctx, nodes[nodes.length - 1], size);
+      } else {
+        // No nodes at all, fill with gray
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(0, 0, size, size);
+      }
+
+      const imageData = canvas.toDataURL('image/png');
+      updateLayer(activeLayerId, { imageData });
+      pushHistory?.('Apply material');
+    } catch (error) {
+      console.error('Failed to apply material:', error);
+    } finally {
+      setIsApplyingToLayer(false);
+    }
+  };
+
+  /**
    * Evaluates the node graph to generate a texture
    * @param ctx - Canvas 2D context
    * @param outputNode - The output node to evaluate
@@ -1807,15 +1889,22 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
    */
   const evaluateNodeAtUV = (
     node: MaterialNode,
-    uv: { x: number; y: number }
+    uv: { x: number; y: number },
+    visited: Set<string> = new Set()
   ): { r: number; g: number; b: number } => {
+    // Prevent infinite loops from circular connections
+    if (visited.has(node.id)) {
+      return { r: 0.5, g: 0.5, b: 0.5 };
+    }
+    visited.add(node.id);
+
     // Find connected input nodes
     const getInputValue = (portId: string): unknown => {
       const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === portId);
       if (conn) {
         const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
         if (sourceNode) {
-          return evaluateNodeAtUV(sourceNode, uv);
+          return evaluateNodeAtUV(sourceNode, uv, new Set(visited));
         }
       }
       // Return default/parameter value
@@ -1830,11 +1919,44 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         return hexToRgb(colorStr);
       }
 
+      case 'gradient-input': {
+        const color1 = node.parameters.find(p => p.id === 'color1')?.value as string || '#000000';
+        const color2 = node.parameters.find(p => p.id === 'color2')?.value as string || '#ffffff';
+        const c1 = hexToRgb(color1);
+        const c2 = hexToRgb(color2);
+        const t = uv.x;
+        return {
+          r: c1.r + (c2.r - c1.r) * t,
+          g: c1.g + (c2.g - c1.g) * t,
+          b: c1.b + (c2.b - c1.b) * t,
+        };
+      }
+
       case 'noise-perlin':
       case 'noise-simplex': {
         const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
         const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
         const value = perlinNoise(uv.x * scale, uv.y * scale, seed);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'noise-fbm':
+      case 'noise-turbulence': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const octaves = Number(node.parameters.find(p => p.id === 'octaves')?.value || 4);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        let value = 0;
+        let amplitude = 1;
+        let frequency = scale;
+        let maxValue = 0;
+        for (let i = 0; i < octaves; i++) {
+          value += amplitude * perlinNoise(uv.x * frequency, uv.y * frequency, seed + i);
+          maxValue += amplitude;
+          amplitude *= 0.5;
+          frequency *= 2;
+        }
+        value = value / maxValue;
+        if (node.type === 'noise-turbulence') value = Math.abs(value);
         return { r: value, g: value, b: value };
       }
 
@@ -1846,6 +1968,16 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         return { r: value, g: value, b: value };
       }
 
+      case 'noise-white':
+      case 'noise-value': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const nx = Math.floor(uv.x * scale) + seed;
+        const ny = Math.floor(uv.y * scale);
+        const value = Math.abs(Math.sin(nx * 12.9898 + ny * 78.233) * 43758.5453) % 1;
+        return { r: value, g: value, b: value };
+      }
+
       case 'pattern-checker': {
         const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 8);
         const cx = Math.floor(uv.x * scale) % 2;
@@ -1854,6 +1986,25 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         return { r: value, g: value, b: value };
       }
 
+      case 'pattern-stripes': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const angle = Number(node.parameters.find(p => p.id === 'angle')?.value || 0) * Math.PI / 180;
+        const rotX = uv.x * Math.cos(angle) - uv.y * Math.sin(angle);
+        const value = Math.floor(rotX * scale) % 2;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-dots': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const radius = Number(node.parameters.find(p => p.id === 'radius')?.value || 0.3);
+        const cx = (uv.x * scale) % 1 - 0.5;
+        const cy = (uv.y * scale) % 1 - 0.5;
+        const dist = Math.sqrt(cx * cx + cy * cy);
+        const value = dist < radius ? 1 : 0;
+        return { r: value, g: value, b: value };
+      }
+
+      // Color operations with connection support
       case 'color-mix': {
         const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
         const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
@@ -1863,6 +2014,130 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
           g: a.g + (b.g - a.g) * factor,
           b: a.b + (b.b - a.b) * factor,
         };
+      }
+
+      case 'color-multiply': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        return { r: a.r * b.r, g: a.g * b.g, b: a.b * b.b };
+      }
+
+      case 'color-add': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        return {
+          r: Math.min(1, a.r + b.r),
+          g: Math.min(1, a.g + b.g),
+          b: Math.min(1, a.b + b.b),
+        };
+      }
+
+      case 'color-subtract': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 1, g: 1, b: 1 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        return {
+          r: Math.max(0, a.r - b.r),
+          g: Math.max(0, a.g - b.g),
+          b: Math.max(0, a.b - b.b),
+        };
+      }
+
+      case 'color-overlay': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const overlay = (base: number, blend: number) =>
+          base < 0.5 ? 2 * base * blend : 1 - 2 * (1 - base) * (1 - blend);
+        return { r: overlay(a.r, b.r), g: overlay(a.g, b.g), b: overlay(a.b, b.b) };
+      }
+
+      case 'color-screen': {
+        const a = getInputValue('a') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        const b = getInputValue('b') as { r: number; g: number; b: number } || { r: 0, g: 0, b: 0 };
+        return {
+          r: 1 - (1 - a.r) * (1 - b.r),
+          g: 1 - (1 - a.g) * (1 - b.g),
+          b: 1 - (1 - a.b) * (1 - b.b),
+        };
+      }
+
+      case 'color-invert': {
+        const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        return { r: 1 - input.r, g: 1 - input.g, b: 1 - input.b };
+      }
+
+      case 'color-brightness': {
+        const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const brightness = Number(node.parameters.find(p => p.id === 'brightness')?.value || 0);
+        return {
+          r: Math.max(0, Math.min(1, input.r + brightness)),
+          g: Math.max(0, Math.min(1, input.g + brightness)),
+          b: Math.max(0, Math.min(1, input.b + brightness)),
+        };
+      }
+
+      case 'color-contrast': {
+        const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const contrast = Number(node.parameters.find(p => p.id === 'contrast')?.value || 1);
+        return {
+          r: Math.max(0, Math.min(1, (input.r - 0.5) * contrast + 0.5)),
+          g: Math.max(0, Math.min(1, (input.g - 0.5) * contrast + 0.5)),
+          b: Math.max(0, Math.min(1, (input.b - 0.5) * contrast + 0.5)),
+        };
+      }
+
+      case 'color-grayscale': {
+        const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const gray = input.r * 0.299 + input.g * 0.587 + input.b * 0.114;
+        return { r: gray, g: gray, b: gray };
+      }
+
+      case 'color-hue-shift': {
+        const input = getInputValue('color') as { r: number; g: number; b: number } || getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const hueShift = Number(node.parameters.find(p => p.id === 'hue')?.value || 0);
+        // Simple hue rotation - rotate RGB channels
+        const angle = hueShift * 2 * Math.PI;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        return {
+          r: Math.max(0, Math.min(1, input.r * cos + input.g * sin)),
+          g: Math.max(0, Math.min(1, input.g * cos - input.r * sin * 0.5 + input.b * sin * 0.5)),
+          b: Math.max(0, Math.min(1, input.b * cos - input.g * sin)),
+        };
+      }
+
+      case 'filter-brightness': {
+        const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 0);
+        return {
+          r: Math.max(0, Math.min(1, input.r + amount)),
+          g: Math.max(0, Math.min(1, input.g + amount)),
+          b: Math.max(0, Math.min(1, input.b + amount)),
+        };
+      }
+
+      case 'filter-contrast': {
+        const input = getInputValue('input') as { r: number; g: number; b: number } || { r: 0.5, g: 0.5, b: 0.5 };
+        const amount = Number(node.parameters.find(p => p.id === 'amount')?.value || 1);
+        return {
+          r: Math.max(0, Math.min(1, (input.r - 0.5) * amount + 0.5)),
+          g: Math.max(0, Math.min(1, (input.g - 0.5) * amount + 0.5)),
+          b: Math.max(0, Math.min(1, (input.b - 0.5) * amount + 0.5)),
+        };
+      }
+
+      // Output node - follow input connection
+      case 'output-color':
+      case 'output-normal':
+      case 'output-roughness':
+      case 'output-metalness':
+      case 'output-ao':
+      case 'output-emission':
+      case 'output-height':
+      case 'output-opacity':
+      case 'output-combined': {
+        const input = getInputValue('input') as { r: number; g: number; b: number };
+        if (input) return input;
+        return { r: 0.5, g: 0.5, b: 0.5 };
       }
 
       default:
@@ -2130,6 +2405,23 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
             title="Toggle 3D preview"
           >
             <Eye className="w-4 h-4" />
+          </Button>
+
+          {/* Apply to Layer button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={applyToActiveLayer}
+            disabled={isApplyingToLayer || nodes.length === 0}
+            title={activeLayerId ? "Apply material to active layer" : "Create new layer with material"}
+            className="gap-1"
+          >
+            {isApplyingToLayer ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <PaintBucket className="w-4 h-4" />
+            )}
+            <span className="text-xs">Apply</span>
           </Button>
 
           {/* Export button */}
