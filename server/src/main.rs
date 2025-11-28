@@ -11,6 +11,7 @@ mod publish;
 mod routes;
 mod steam;
 mod studio;
+mod sync;
 mod telegram;
 
 use rocket::{launch, routes};
@@ -258,6 +259,7 @@ async fn rocket() -> _ {
                 routes::files::update_file,
                 routes::files::delete_file,
                 routes::files::get_file_info,
+                routes::files::get_admin_file,
             ],
         )
         // File manager public routes
@@ -267,6 +269,31 @@ async fn rocket() -> _ {
                 routes::files::get_public_file,
                 routes::files::get_private_file,
                 routes::files::check_file,
+            ],
+        )
+        // Sync routes (admin)
+        .mount(
+            "/api",
+            routes![
+                routes::sync::list_folders,
+                routes::sync::create_folder,
+                routes::sync::get_folder,
+                routes::sync::rename_folder,
+                routes::sync::regenerate_key,
+                routes::sync::delete_folder,
+                routes::sync::delete_client,
+            ],
+        )
+        // Sync routes (client API)
+        .mount(
+            "/api",
+            routes![
+                routes::sync::register_client,
+                routes::sync::get_sync_status,
+                routes::sync::list_files,
+                routes::sync::upload_file,
+                routes::sync::download_file,
+                routes::sync::delete_file,
             ],
         )
 }

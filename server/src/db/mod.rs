@@ -424,5 +424,68 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // Cloud Sync tables
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sync_folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            api_key TEXT UNIQUE NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sync_files (
+            id TEXT PRIMARY KEY,
+            folder_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            name TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            checksum TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (folder_id) REFERENCES sync_folders(id) ON DELETE CASCADE,
+            UNIQUE(folder_id, path)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sync_clients (
+            id TEXT PRIMARY KEY,
+            folder_id TEXT NOT NULL,
+            device_name TEXT NOT NULL,
+            last_sync_at DATETIME,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (folder_id) REFERENCES sync_folders(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_sync_files_folder ON sync_files(folder_id)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_sync_files_path ON sync_files(folder_id, path)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_sync_clients_folder ON sync_clients(folder_id)")
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

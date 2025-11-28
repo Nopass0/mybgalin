@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PortfolioManager } from './portfolio-manager';
 import { JobSearchManager } from './job-search-manager';
+import { SyncFolderManager } from './sync-folder-manager';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { LogOut } from 'lucide-react';
@@ -38,9 +39,10 @@ export function AdminDashboard() {
         transition={{ duration: 0.5, delay: 0.1 }}
       >
         <Tabs defaultValue="portfolio" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-3 lg:w-[500px]">
             <TabsTrigger value="portfolio">Портфолио</TabsTrigger>
             <TabsTrigger value="jobs">Поиск работы</TabsTrigger>
+            <TabsTrigger value="sync">Синхронизация</TabsTrigger>
           </TabsList>
 
           <TabsContent value="portfolio" className="space-y-6">
@@ -49,6 +51,10 @@ export function AdminDashboard() {
 
           <TabsContent value="jobs" className="space-y-6">
             <JobSearchManager />
+          </TabsContent>
+
+          <TabsContent value="sync" className="space-y-6">
+            <SyncFolderManager />
           </TabsContent>
         </Tabs>
       </motion.div>

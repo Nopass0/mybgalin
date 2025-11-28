@@ -215,7 +215,8 @@ interface FrameSettings {
   labelStyle: 'gradient' | 'solid' | 'outline';
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// Use relative URL to leverage Next.js API proxy rewrites
+const API_BASE = '';
 
 export default function PublishingTools() {
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -345,3 +345,54 @@ pub async fn check_file(
         Err(e) => Json(ApiResponse::error(e)),
     }
 }
+
+/// Admin direct file access - serves any file without access code check
+/// Accepts token via query parameter for img/video src use
+#[get("/files/admin/<file_id>?<token>")]
+pub async fn get_admin_file(
+    file_id: &str,
+    token: Option<String>,
+    pool: &State<SqlitePool>,
+) -> Result<(ContentType, Vec<u8>), Status> {
+    // Get admin steam ID from env
+    let admin_steam_id = env::var("ADMIN_STEAM_ID").unwrap_or_default();
+    if admin_steam_id.is_empty() {
+        return Err(Status::Forbidden);
+    }
+
+    // Validate token from query parameter
+    let token = token.ok_or(Status::Unauthorized)?;
+
+    // Validate session and check if admin
+    let result: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT u.steam_id
+        FROM studio_sessions s
+        JOIN studio_users u ON s.user_id = u.id
+        WHERE s.token = ? AND s.expires_at > datetime('now')
+        "#,
+    )
+    .bind(&token)
+    .fetch_optional(pool.inner())
+    .await
+    .ok()
+    .flatten();
+
+    match result {
+        Some((steam_id,)) if steam_id.trim() == admin_steam_id.trim() => {}
+        _ => return Err(Status::Forbidden),
+    }
+
+    let file = FileService::get_file(pool, file_id)
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+
+    let data = FileService::get_file_data(file_id)
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    let content_type = ContentType::parse_flexible(&file.mime_type).unwrap_or(ContentType::Binary);
+
+    Ok((content_type, data))
+}
