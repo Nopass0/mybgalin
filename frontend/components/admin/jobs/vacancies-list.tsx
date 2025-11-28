@@ -61,7 +61,7 @@ export function VacanciesList() {
         variant: "default" | "secondary" | "destructive" | "outline";
       }
     > = {
-      new: { label: "Новая", variant: "default" },
+      found: { label: "Новая", variant: "default" },
       applied: { label: "Отклик отправлен", variant: "secondary" },
       viewed: { label: "Просмотрено", variant: "outline" },
       invited: { label: "Приглашение", variant: "default" },
@@ -96,8 +96,9 @@ export function VacanciesList() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Все</SelectItem>
-            <SelectItem value="new">Новые</SelectItem>
+            <SelectItem value="found">Новые</SelectItem>
             <SelectItem value="applied">Отправлены</SelectItem>
+            <SelectItem value="viewed">Просмотрены</SelectItem>
             <SelectItem value="invited">Приглашения</SelectItem>
             <SelectItem value="rejected">Отказы</SelectItem>
             <SelectItem value="ignored">Скрытые</SelectItem>

@@ -152,8 +152,11 @@ export const useJobs = create<JobsState>((set, get) => ({
 
   getHHAuthUrl: async () => {
     try {
-      const response = await api.get<string>('/jobs/auth/hh');
-      return response.data;
+      const response = await api.get<ApiResponse<string>>('/jobs/auth/hh');
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+      throw new Error('Failed to get auth URL');
     } catch (error: any) {
       throw error;
     }
