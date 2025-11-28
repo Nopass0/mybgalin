@@ -1,3 +1,19 @@
+/**
+ * Auto-Save Hook
+ *
+ * Automatic project saving for the CS2 Skin Studio.
+ * Saves project state to the backend at regular intervals.
+ *
+ * Features:
+ * - Configurable save interval (default 30 seconds)
+ * - Debounced saves to prevent excessive API calls
+ * - Visual save status indicator
+ * - Manual save trigger
+ * - Error handling with retry logic
+ *
+ * @module hooks/useAutoSave
+ */
+
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';

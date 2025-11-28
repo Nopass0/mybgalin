@@ -1,3 +1,19 @@
+/**
+ * Hotkeys Hook
+ *
+ * Keyboard shortcut handler for the CS2 Skin Studio.
+ * Provides Photoshop-like keyboard shortcuts for all editor operations.
+ *
+ * Shortcuts include:
+ * - Tool selection (B=brush, E=eraser, V=move, etc.)
+ * - Actions (Ctrl+Z=undo, Ctrl+S=save, Ctrl+A=select all)
+ * - View (Ctrl+0=fit, Ctrl+=zoom in, Ctrl+-=zoom out)
+ * - Colors (X=swap, D=default)
+ * - Brush size ([ and ] keys)
+ *
+ * @module hooks/useHotkeys
+ */
+
 'use client';
 
 import { useEffect, useCallback, useRef } from 'react';

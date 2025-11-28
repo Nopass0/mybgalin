@@ -1,3 +1,12 @@
+/**
+ * Portfolio Hook
+ *
+ * Manages portfolio data for the admin panel.
+ * Handles CRUD operations for portfolio projects.
+ *
+ * @module hooks/usePortfolio
+ */
+
 import { create } from 'zustand';
 import api from '@/lib/axios';
 import type {

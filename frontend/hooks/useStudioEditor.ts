@@ -1,3 +1,21 @@
+/**
+ * Studio Editor State Hook
+ *
+ * Central state management for the CS2 Skin Studio using Zustand.
+ * Manages all editor state including layers, tools, colors, and history.
+ *
+ * Features:
+ * - Layer management (create, delete, reorder, group, merge)
+ * - Tool selection and configuration
+ * - Color management (primary, secondary, swap)
+ * - Brush settings and presets
+ * - Undo/redo history
+ * - Smart materials and masks
+ * - Environment settings
+ *
+ * @module hooks/useStudioEditor
+ */
+
 import { create } from 'zustand';
 import type {
   Layer,

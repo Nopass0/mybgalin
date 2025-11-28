@@ -1,3 +1,12 @@
+/**
+ * Admin Authentication Hook
+ *
+ * Manages admin authentication using Telegram OTP verification.
+ * Used for the admin panel access control.
+ *
+ * @module hooks/useAuth
+ */
+
 import { create } from 'zustand';
 import api from '@/lib/axios';
 import type { ApiResponse, RequestOtpRequest, RequestOtpResponse, VerifyOtpRequest, VerifyOtpResponse } from '@/lib/types';

@@ -1,3 +1,12 @@
+/**
+ * Jobs Hook
+ *
+ * Manages HH.ru job search integration for the admin panel.
+ * Handles job searches, application tracking, and auto-apply features.
+ *
+ * @module hooks/useJobs
+ */
+
 import { create } from 'zustand';
 import api from '@/lib/axios';
 import type {
