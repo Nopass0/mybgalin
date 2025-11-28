@@ -391,9 +391,9 @@ export function StudioLayersPanel() {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (!file) return;
 
-        // Validate file type
+        // Validate file type - only accept images
         if (!file.type.startsWith('image/')) {
-          console.error('Invalid file type');
+          alert('Please select an image file (PNG, JPG, GIF, etc.)');
           return;
         }
 

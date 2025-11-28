@@ -149,7 +149,11 @@ export function TextToolPanel({ isOpen = true, onClose, className }: TextToolPan
 
   // Load default fonts on mount
   useEffect(() => {
-    POPULAR_FONTS.slice(0, 5).forEach(font => loadFont(font.family));
+    const loadDefaultFonts = async () => {
+      const defaultFonts = POPULAR_FONTS.slice(0, 5);
+      await Promise.allSettled(defaultFonts.map(font => loadFont(font.family)));
+    };
+    loadDefaultFonts();
   }, [loadFont]);
 
   const updateTextContent = (updates: Partial<TextLayerContent>) => {
