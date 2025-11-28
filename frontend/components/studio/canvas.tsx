@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useStudioEditor } from '@/hooks/useStudioEditor';
-import type { Transform, Layer, BlendMode, LayerEffect, VectorPoint, VectorPath } from '@/types/studio';
+import type { Transform, Layer, BlendMode, LayerEffect, VectorPoint, VectorPath, MaterialNode, NodeConnection } from '@/types/studio';
 import { BrushContextMenu, TextContextMenu, FilterContextMenu, ContextMenu, ContextMenuItem } from './context-menu';
 
 // Map BlendMode to valid Canvas 2D GlobalCompositeOperation
@@ -26,6 +26,304 @@ function blendModeToCompositeOp(blendMode: BlendMode): GlobalCompositeOperation 
     'luminosity': 'luminosity',
   };
   return validModes[blendMode] || 'source-over';
+}
+
+// ==================== MATERIAL EVALUATION HELPERS ====================
+
+// Convert hex color string to RGB object (0-1 range)
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16) / 255,
+    g: parseInt(result[2], 16) / 255,
+    b: parseInt(result[3], 16) / 255,
+  } : { r: 0.5, g: 0.5, b: 0.5 };
+}
+
+// Simple Perlin-like noise for material evaluation
+function perlinNoise(x: number, y: number, seed: number): number {
+  const hash = (n: number) => {
+    const s = Math.sin(n + seed) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const a = hash(ix + iy * 57);
+  const b = hash(ix + 1 + iy * 57);
+  const c = hash(ix + (iy + 1) * 57);
+  const d = hash(ix + 1 + (iy + 1) * 57);
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+// Voronoi noise for material evaluation
+function voronoiNoise(x: number, y: number, seed: number): number {
+  const hash = (ix: number, iy: number) => {
+    const n = ix + iy * 57 + seed;
+    return {
+      x: Math.sin(n) * 43758.5453 % 1,
+      y: Math.sin(n * 1.3) * 43758.5453 % 1,
+    };
+  };
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  let minDist = 2;
+  for (let j = -1; j <= 1; j++) {
+    for (let i = -1; i <= 1; i++) {
+      const point = hash(ix + i, iy + j);
+      const dx = i + point.x - fx;
+      const dy = j + point.y - fy;
+      minDist = Math.min(minDist, Math.sqrt(dx * dx + dy * dy));
+    }
+  }
+  return Math.min(1, minDist);
+}
+
+// Evaluate a material node graph at a given UV coordinate
+function evaluateMaterialAtUV(
+  nodes: MaterialNode[],
+  connections: NodeConnection[],
+  outputNodeId: string,
+  uv: { x: number; y: number }
+): { r: number; g: number; b: number } {
+  const visited = new Set<string>();
+
+  const evaluateNode = (nodeId: string): { r: number; g: number; b: number } => {
+    if (visited.has(nodeId)) return { r: 0.5, g: 0.5, b: 0.5 };
+    visited.add(nodeId);
+
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return { r: 0.5, g: 0.5, b: 0.5 };
+
+    // Get input value from connection or parameter
+    const getInputValue = (portId: string): unknown => {
+      const conn = connections.find(c => c.toNodeId === nodeId && c.toPortId === portId);
+      if (conn) {
+        return evaluateNode(conn.fromNodeId);
+      }
+      const param = node.parameters.find(p => p.id === portId);
+      return param?.value;
+    };
+
+    switch (node.type) {
+      case 'color-input': {
+        const colorStr = node.parameters.find(p => p.id === 'color')?.value as string || '#808080';
+        return hexToRgb(colorStr);
+      }
+
+      case 'gradient-input': {
+        const color1 = node.parameters.find(p => p.id === 'color1')?.value as string || '#000000';
+        const color2 = node.parameters.find(p => p.id === 'color2')?.value as string || '#ffffff';
+        const c1 = hexToRgb(color1);
+        const c2 = hexToRgb(color2);
+        const t = uv.x;
+        return {
+          r: c1.r + (c2.r - c1.r) * t,
+          g: c1.g + (c2.g - c1.g) * t,
+          b: c1.b + (c2.b - c1.b) * t,
+        };
+      }
+
+      case 'noise-perlin':
+      case 'noise-simplex': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const value = perlinNoise(uv.x * scale, uv.y * scale, seed);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'noise-fbm':
+      case 'noise-turbulence': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const octaves = Number(node.parameters.find(p => p.id === 'octaves')?.value || 4);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        let value = 0;
+        let amplitude = 1;
+        let frequency = scale;
+        let maxValue = 0;
+        for (let i = 0; i < octaves; i++) {
+          value += amplitude * perlinNoise(uv.x * frequency, uv.y * frequency, seed + i);
+          maxValue += amplitude;
+          amplitude *= 0.5;
+          frequency *= 2;
+        }
+        value = value / maxValue;
+        if (node.type === 'noise-turbulence') value = Math.abs(value);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'noise-voronoi':
+      case 'noise-worley': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 5);
+        const seed = Number(node.parameters.find(p => p.id === 'seed')?.value || 0);
+        const value = voronoiNoise(uv.x * scale, uv.y * scale, seed);
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-checker': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 8);
+        const cx = Math.floor(uv.x * scale) % 2;
+        const cy = Math.floor(uv.y * scale) % 2;
+        const value = (cx + cy) % 2;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-stripes': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const angle = Number(node.parameters.find(p => p.id === 'angle')?.value || 0) * Math.PI / 180;
+        const rotX = uv.x * Math.cos(angle) - uv.y * Math.sin(angle);
+        const value = Math.floor(rotX * scale) % 2;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'pattern-dots': {
+        const scale = Number(node.parameters.find(p => p.id === 'scale')?.value || 10);
+        const radius = Number(node.parameters.find(p => p.id === 'radius')?.value || 0.3);
+        const cx = (uv.x * scale) % 1 - 0.5;
+        const cy = (uv.y * scale) % 1 - 0.5;
+        const dist = Math.sqrt(cx * cx + cy * cy);
+        const value = dist < radius ? 1 : 0;
+        return { r: value, g: value, b: value };
+      }
+
+      case 'color-mix': {
+        const input1 = getInputValue('input1') as { r: number; g: number; b: number };
+        const input2 = getInputValue('input2') as { r: number; g: number; b: number };
+        const factor = Number(node.parameters.find(p => p.id === 'factor')?.value || 0.5);
+        if (input1 && input2) {
+          return {
+            r: input1.r + (input2.r - input1.r) * factor,
+            g: input1.g + (input2.g - input1.g) * factor,
+            b: input1.b + (input2.b - input1.b) * factor,
+          };
+        }
+        return input1 || input2 || { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      case 'color-invert': {
+        const input = getInputValue('input') as { r: number; g: number; b: number };
+        if (input) {
+          return { r: 1 - input.r, g: 1 - input.g, b: 1 - input.b };
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      case 'color-grayscale': {
+        const input = getInputValue('input') as { r: number; g: number; b: number };
+        if (input) {
+          const gray = input.r * 0.299 + input.g * 0.587 + input.b * 0.114;
+          return { r: gray, g: gray, b: gray };
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      case 'math-add': {
+        const input1 = getInputValue('input1') as { r: number; g: number; b: number };
+        const input2 = getInputValue('input2') as { r: number; g: number; b: number };
+        if (input1 && input2) {
+          return {
+            r: Math.min(1, input1.r + input2.r),
+            g: Math.min(1, input1.g + input2.g),
+            b: Math.min(1, input1.b + input2.b),
+          };
+        }
+        return input1 || input2 || { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      case 'math-multiply': {
+        const input1 = getInputValue('input1') as { r: number; g: number; b: number };
+        const input2 = getInputValue('input2') as { r: number; g: number; b: number };
+        if (input1 && input2) {
+          return {
+            r: input1.r * input2.r,
+            g: input1.g * input2.g,
+            b: input1.b * input2.b,
+          };
+        }
+        return input1 || input2 || { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      // Output nodes - follow input connections
+      case 'output-color': {
+        const input = getInputValue('color') as { r: number; g: number; b: number };
+        return input || { r: 0.5, g: 0.5, b: 0.5 };
+      }
+      case 'output-roughness':
+      case 'output-metalness':
+      case 'output-ao':
+      case 'output-height':
+      case 'output-opacity': {
+        const input = getInputValue('value') as { r: number; g: number; b: number } | number;
+        if (input) {
+          if (typeof input === 'number') {
+            return { r: input, g: input, b: input };
+          }
+          return input;
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+      case 'output-normal': {
+        const normal = getInputValue('normal') as { r: number; g: number; b: number };
+        const height = getInputValue('height') as { r: number; g: number; b: number };
+        return normal || height || { r: 0.5, g: 0.5, b: 1 };
+      }
+      case 'output-combined':
+      case 'output-emission': {
+        const color = getInputValue('color') as { r: number; g: number; b: number };
+        return color || { r: 0.5, g: 0.5, b: 0.5 };
+      }
+
+      default:
+        return { r: 0.5, g: 0.5, b: 0.5 };
+    }
+  };
+
+  // Find output node or use provided outputNodeId
+  let outputNode = nodes.find(n => n.id === outputNodeId);
+  if (!outputNode) {
+    // Try to find any output node
+    outputNode = nodes.find(n => n.type.startsWith('output-'));
+  }
+  if (!outputNode) {
+    // Fallback to first node
+    outputNode = nodes[0];
+  }
+
+  if (outputNode) {
+    return evaluateNode(outputNode.id);
+  }
+
+  return { r: 0.5, g: 0.5, b: 0.5 };
+}
+
+// Generate a texture from material node graph
+function generateMaterialTexture(
+  nodes: MaterialNode[],
+  connections: NodeConnection[],
+  outputNodeId: string,
+  size: number
+): ImageData {
+  const imageData = new ImageData(size, size);
+  const data = imageData.data;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const uv = { x: x / size, y: y / size };
+      const color = evaluateMaterialAtUV(nodes, connections, outputNodeId, uv);
+      data[i] = Math.round(Math.max(0, Math.min(1, color.r)) * 255);
+      data[i + 1] = Math.round(Math.max(0, Math.min(1, color.g)) * 255);
+      data[i + 2] = Math.round(Math.max(0, Math.min(1, color.b)) * 255);
+      data[i + 3] = 255;
+    }
+  }
+
+  return imageData;
 }
 
 interface StudioCanvasProps {
@@ -3095,22 +3393,34 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         // Create a new layer with the material
         const newLayer = addLayer('raster', material.name || 'Material');
         if (newLayer) {
-          // Generate material texture and apply to layer
+          // Generate material texture from node graph
           const canvas = document.createElement('canvas');
           canvas.width = CANVAS_SIZE;
           canvas.height = CANVAS_SIZE;
           const ctx = canvas.getContext('2d')!;
 
-          // Simple material preview - fill with gradient based on material
-          const gradient = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-          gradient.addColorStop(0, '#ff6600');
-          gradient.addColorStop(0.5, '#ff9933');
-          gradient.addColorStop(1, '#ffcc00');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          // Check if material has nodes and connections for proper evaluation
+          if (material.nodes && material.nodes.length > 0) {
+            // Generate texture from material node graph
+            const textureData = generateMaterialTexture(
+              material.nodes,
+              material.connections || [],
+              material.outputNodeId || '',
+              CANVAS_SIZE
+            );
+            ctx.putImageData(textureData, 0, 0);
+          } else {
+            // Fallback: simple gradient if no nodes defined
+            const gradient = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            gradient.addColorStop(0, '#ff6600');
+            gradient.addColorStop(0.5, '#ff9933');
+            gradient.addColorStop(1, '#ffcc00');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          }
 
-          const imageData = canvas.toDataURL('image/png');
-          updateLayer(newLayer.id, { imageData });
+          const imageDataUrl = canvas.toDataURL('image/png');
+          updateLayer(newLayer.id, { imageData: imageDataUrl });
           pushHistory(`Apply material ${material.name}`);
         }
       } catch (err) {

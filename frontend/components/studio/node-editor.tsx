@@ -1531,14 +1531,51 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         return { r: value, g: value, b: value };
       }
 
-      // Output nodes - just show gray
-      case 'output-color':
-      case 'output-normal':
+      // Output nodes - follow input connections for preview
+      case 'output-color': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'color');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
       case 'output-metalness':
       case 'output-roughness':
       case 'output-ao':
-      case 'output-combined':
+      case 'output-height':
+      case 'output-opacity': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'value');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
         return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+      case 'output-normal': {
+        const conn = connections.find(c => c.toNodeId === node.id && (c.toPortId === 'normal' || c.toPortId === 'height'));
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0.5, g: 0.5, b: 1 };
+      }
+      case 'output-emission': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'color');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0, g: 0, b: 0 };
+      }
+      case 'output-combined': {
+        const conn = connections.find(c => c.toNodeId === node.id && c.toPortId === 'color');
+        if (conn) {
+          const sourceNode = nodes.find(n => n.id === conn.fromNodeId);
+          if (sourceNode) return evaluateNodeAtUVForPreview(sourceNode, uv);
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
 
       // Math operations - show gradient
       case 'math-add':
@@ -2135,18 +2172,44 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
         };
       }
 
-      // Output node - follow input connection
-      case 'output-color':
-      case 'output-normal':
+      // Output node - follow input connection based on actual port IDs
+      case 'output-color': {
+        const input = getInputValue('color') as { r: number; g: number; b: number };
+        if (input) return input;
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
       case 'output-roughness':
       case 'output-metalness':
       case 'output-ao':
-      case 'output-emission':
       case 'output-height':
-      case 'output-opacity':
+      case 'output-opacity': {
+        // These have a 'value' input port
+        const input = getInputValue('value') as { r: number; g: number; b: number } | number;
+        if (input) {
+          if (typeof input === 'number') {
+            return { r: input, g: input, b: input };
+          }
+          return input;
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+      }
+      case 'output-normal': {
+        // Has 'normal' and 'height' inputs
+        const normal = getInputValue('normal') as { r: number; g: number; b: number };
+        const height = getInputValue('height') as { r: number; g: number; b: number };
+        if (normal) return normal;
+        if (height) return height;
+        return { r: 0.5, g: 0.5, b: 1 }; // Default normal map blue
+      }
+      case 'output-emission': {
+        const color = getInputValue('color') as { r: number; g: number; b: number };
+        if (color) return color;
+        return { r: 0, g: 0, b: 0 }; // Default no emission
+      }
       case 'output-combined': {
-        const input = getInputValue('input') as { r: number; g: number; b: number };
-        if (input) return input;
+        // Show color channel by default
+        const color = getInputValue('color') as { r: number; g: number; b: number };
+        if (color) return color;
         return { r: 0.5, g: 0.5, b: 0.5 };
       }
 
@@ -2497,12 +2560,17 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
           {/* Connections */}
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: '0 0'
+            }}
           >
             {connections.map(conn => {
               const from = getPortPosition(conn.fromNodeId, conn.fromPortId, true);
               const to = getPortPosition(conn.toNodeId, conn.toPortId, false);
               const midX = (from.x + to.x) / 2;
+              // Compensate stroke width for zoom so lines stay consistent
+              const strokeW = 2 / zoom;
 
               return (
                 <path
@@ -2510,7 +2578,7 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
                   d={`M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
                   fill="none"
                   stroke="#ff6600"
-                  strokeWidth={2}
+                  strokeWidth={strokeW}
                   opacity={0.8}
                 />
               );
@@ -2526,14 +2594,15 @@ export function NodeEditor({ material, onSave, onClose, onChange, className }: N
               const toX = (lastMousePos.x - offsetX - pan.x) / zoom;
               const toY = (lastMousePos.y - offsetY - pan.y) / zoom;
               const midX = (fromPos.x + toX) / 2;
+              const strokeW = 2 / zoom;
 
               return (
                 <path
                   d={`M ${fromPos.x} ${fromPos.y} C ${midX} ${fromPos.y}, ${midX} ${toY}, ${toX} ${toY}`}
                   fill="none"
                   stroke="#ff6600"
-                  strokeWidth={2}
-                  strokeDasharray="5,5"
+                  strokeWidth={strokeW}
+                  strokeDasharray={`${5/zoom},${5/zoom}`}
                   opacity={0.6}
                 />
               );
