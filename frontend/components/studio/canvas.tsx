@@ -139,6 +139,8 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
   const [pan, setPanLocal] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPoint, setLastPoint] = useState<{ x: number; y: number } | null>(null);
+  // Use ref for fast access during drawing (state is too slow for smooth strokes)
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const [brushPreview, setBrushPreview] = useState<{ x: number; y: number } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -2087,6 +2089,7 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
       setIsDrawing(true);
       setLastPoint({ x: drawX, y: drawY });
+      lastPointRef.current = { x: drawX, y: drawY };
 
       // Get or create layer canvas
       const layerCanvas = getLayerCanvas(activeLayerId);
@@ -2660,8 +2663,9 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
       return;
     }
 
-    // Handle drawing
-    if (isDrawing && lastPoint && activeLayerId) {
+    // Handle drawing - use ref for faster access
+    const lp = lastPointRef.current;
+    if (isDrawing && lp && activeLayerId) {
       const layerCanvas = getLayerCanvas(activeLayerId);
       const ctx = layerCanvas.getContext('2d');
       if (ctx) {
@@ -2672,20 +2676,20 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
           const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
 
           // Interpolate along the stroke
-          const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2));
+          const distance = Math.sqrt(Math.pow(x - lp.x, 2) + Math.pow(y - lp.y, 2));
           const steps = Math.max(1, Math.ceil(distance / (radius * 0.5)));
 
           for (let i = 0; i <= steps; i++) {
             const t = i / steps;
-            const px = lastPoint.x + (x - lastPoint.x) * t;
-            const py = lastPoint.y + (y - lastPoint.y) * t;
+            const px = lp.x + (x - lp.x) * t;
+            const py = lp.y + (y - lp.y) * t;
 
             if (activeTool === 'blur') {
               applyBlurAtPoint(ctx, px, py, radius, strength);
             } else if (activeTool === 'sharpen') {
               applySharpenAtPoint(ctx, px, py, radius, strength);
             } else if (activeTool === 'smudge') {
-              applySmudgeAtPoint(ctx, lastPoint.x, lastPoint.y, px, py, radius, strength, smudgeColorRef);
+              applySmudgeAtPoint(ctx, lp.x, lp.y, px, py, radius, strength, smudgeColorRef);
             } else if (activeTool === 'dodge') {
               applyDodgeAtPoint(ctx, px, py, radius, strength);
             } else if (activeTool === 'burn') {
@@ -2705,13 +2709,13 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
 
           if (sourceCanvas) {
             // Interpolate along the stroke
-            const distance = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2));
+            const distance = Math.sqrt(Math.pow(x - lp.x, 2) + Math.pow(y - lp.y, 2));
             const steps = Math.max(1, Math.ceil(distance / (radius * 0.5)));
 
             for (let i = 0; i <= steps; i++) {
               const t = i / steps;
-              const px = lastPoint.x + (x - lastPoint.x) * t;
-              const py = lastPoint.y + (y - lastPoint.y) * t;
+              const px = lp.x + (x - lp.x) * t;
+              const py = lp.y + (y - lp.y) * t;
               const sourceX = px + cloneOffset.x;
               const sourceY = py + cloneOffset.y;
 
@@ -2722,10 +2726,12 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
         } else {
           // Normal brush/eraser
           updatePointerState(e.pressure || 0.5, e.tiltX || 0, e.tiltY || 0);
-          drawStroke(ctx, lastPoint.x, lastPoint.y, x, y, e.pressure || 0.5);
+          drawStroke(ctx, lp.x, lp.y, x, y, e.pressure || 0.5);
           scheduleComposite(); // GPU-batched rendering
         }
       }
+      // Update ref immediately for smooth strokes
+      lastPointRef.current = { x, y };
       setLastPoint({ x, y });
     }
 
@@ -2755,18 +2761,20 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     }
 
     // Handle warp tool
-    if (isWarping && lastPoint && activeLayerId) {
+    const warpLp = lastPointRef.current;
+    if (isWarping && warpLp && activeLayerId) {
       const layerCanvas = getLayerCanvas(activeLayerId);
       const ctx = layerCanvas.getContext('2d');
       if (ctx) {
-        const deltaX = (x - lastPoint.x) * 0.5;
-        const deltaY = (y - lastPoint.y) * 0.5;
+        const deltaX = (x - warpLp.x) * 0.5;
+        const deltaY = (y - warpLp.y) * 0.5;
         const radius = currentBrush.size;
         const strength = (currentBrush.opacity / 100) * (e.pressure || 0.5);
 
         applyWarpAtPoint(ctx, x, y, deltaX, deltaY, radius, strength, warpMode);
         scheduleComposite(); // GPU-batched rendering
       }
+      lastPointRef.current = { x, y };
       setLastPoint({ x, y });
     }
 
@@ -3078,6 +3086,38 @@ export function StudioCanvas({ zoom, showGrid, activeMapTab }: StudioCanvasProps
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+
+    // Check for material drop
+    const materialData = e.dataTransfer.getData('application/material');
+    if (materialData) {
+      try {
+        const material = JSON.parse(materialData);
+        // Create a new layer with the material
+        const newLayer = addLayer('raster', material.name || 'Material');
+        if (newLayer) {
+          // Generate material texture and apply to layer
+          const canvas = document.createElement('canvas');
+          canvas.width = CANVAS_SIZE;
+          canvas.height = CANVAS_SIZE;
+          const ctx = canvas.getContext('2d')!;
+
+          // Simple material preview - fill with gradient based on material
+          const gradient = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+          gradient.addColorStop(0, '#ff6600');
+          gradient.addColorStop(0.5, '#ff9933');
+          gradient.addColorStop(1, '#ffcc00');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+          const imageData = canvas.toDataURL('image/png');
+          updateLayer(newLayer.id, { imageData });
+          pushHistory(`Apply material ${material.name}`);
+        }
+      } catch (err) {
+        console.error('Failed to parse material data:', err);
+      }
+      return;
+    }
 
     const files = e.dataTransfer.files;
     if (files.length === 0) return;

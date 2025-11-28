@@ -183,12 +183,33 @@ function MaterialCard({
   onDelete: () => void;
   onOpenEditor: () => void;
 }) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/material', JSON.stringify({
+      id: material.id,
+      name: material.name,
+      nodes: material.nodes,
+      connections: material.connections,
+    }));
+    e.dataTransfer.effectAllowed = 'copy';
+    setIsDragging(true);
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+
   return (
     <div
       onClick={onSelect}
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       className={cn(
-        'p-2 rounded-lg cursor-pointer transition-colors',
-        isActive ? 'bg-orange-500/20 border border-orange-500/30' : 'bg-white/5 hover:bg-white/10 border border-transparent'
+        'p-2 rounded-lg cursor-grab transition-all',
+        isActive ? 'bg-orange-500/20 border border-orange-500/30' : 'bg-white/5 hover:bg-white/10 border border-transparent',
+        isDragging && 'opacity-50 scale-95 cursor-grabbing'
       )}
     >
       <div className="flex items-start gap-2">
