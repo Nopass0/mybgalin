@@ -23,7 +23,7 @@ impl JobScheduler {
     pub fn start(&self) {
         let mut is_running = self.is_running.write();
         *is_running = true;
-        self.log_activity("system", None, "🚀 Автопоиск работы запущен").ok();
+        self.log_activity_sync("system", None, "🚀 Автопоиск работы запущен");
         println!("✅ Job scheduler started");
     }
 
