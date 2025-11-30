@@ -13,7 +13,7 @@ use std::env;
 // Request guard for Studio authentication
 #[allow(dead_code)]
 pub struct StudioAuth {
-    pub user_id: i64,
+    pub user_id: i32,
     pub steam_id: String,
 }
 

@@ -8,7 +8,7 @@ use serde::Serialize;
 pub struct AdminInfo {
     pub message: String,
     pub telegram_id: i64,
-    pub user_id: i64,
+    pub user_id: i32,
 }
 
 #[derive(Serialize)]

@@ -422,7 +422,7 @@ pub async fn get_chats(
     _auth: AuthGuard,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Vec<ChatWithMessages>>> {
-    let chats: Vec<(i64, i64, String, Option<String>, bool, bool, bool, Option<String>, i32, String, String, String, String)> = sqlx::query_as(
+    let chats: Vec<(i32, i32, String, Option<String>, bool, bool, bool, Option<String>, i32, String, String, String, String)> = sqlx::query_as(
         r#"SELECT c.id, c.vacancy_id, c.hh_chat_id, c.employer_name, c.is_bot, c.is_human_confirmed, c.telegram_invited, c.last_message_at, c.unread_count, c.created_at, c.updated_at, v.title, v.company
            FROM job_chats_v2 c
            JOIN job_vacancies v ON c.vacancy_id = v.id
@@ -469,7 +469,7 @@ pub async fn get_chats(
 #[get("/jobs/chats/<id>/messages")]
 pub async fn get_chat_messages(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Vec<JobChatMessage>>> {
     let messages: Vec<JobChatMessage> = sqlx::query_as(
@@ -619,7 +619,7 @@ pub async fn get_activity_log(
 ) -> Json<ApiResponse<Vec<ActivityLogEntry>>> {
     let limit = limit.unwrap_or(50);
 
-    let activities: Vec<(i64, String, String, Option<String>, String, Option<i64>)> = sqlx::query_as(
+    let activities: Vec<(i32, String, String, Option<String>, String, Option<i32>)> = sqlx::query_as(
         r#"SELECT a.id, a.event_type, a.description, a.metadata, a.created_at, a.vacancy_id
            FROM job_activity_log a
            ORDER BY a.created_at DESC
