@@ -44,18 +44,47 @@ pub async fn get_search_status(
 
     // Get settings
     let settings: Option<JobSearchSettings> = sqlx::query_as(
-        "SELECT id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at
+        "SELECT id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at, auto_tags_enabled, search_tags_json, min_ai_score, auto_apply_enabled, search_interval_minutes
          FROM job_search_settings ORDER BY id DESC LIMIT 1"
     )
     .fetch_optional(pool.inner())
     .await
     .unwrap_or(None);
 
+    // Get active search tags
+    let search_tags: Vec<JobSearchTag> = sqlx::query_as(
+        "SELECT id, tag_type, value, is_active, search_count, found_count, applied_count, created_at
+         FROM job_search_tags WHERE is_active = 1 ORDER BY applied_count DESC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    // Calculate next search time
+    let interval_minutes = settings.as_ref()
+        .and_then(|s| s.search_interval_minutes)
+        .unwrap_or(60);
+
+    let last_search: Option<(String,)> = sqlx::query_as(
+        "SELECT found_at FROM job_vacancies ORDER BY found_at DESC LIMIT 1"
+    )
+    .fetch_optional(pool.inner())
+    .await
+    .unwrap_or(None);
+
+    let next_search_at = last_search.map(|(ts,)| {
+        chrono::DateTime::parse_from_rfc3339(&ts)
+            .ok()
+            .map(|dt| (dt + chrono::Duration::minutes(interval_minutes as i64)).to_rfc3339())
+    }).flatten();
+
     Json(ApiResponse::success(SearchStatus {
         is_active,
         is_authorized: has_token,
-        last_search: None,
+        last_search: last_search.map(|(s,)| s),
         settings,
+        search_tags,
+        next_search_at,
     }))
 }
 
@@ -67,10 +96,10 @@ pub async fn update_search_settings(
 ) -> Json<ApiResponse<JobSearchSettings>> {
     let area_ids_json = request.area_ids.as_ref().map(|ids| serde_json::to_string(ids).unwrap());
 
-    // Upsert settings
+    // Upsert settings with new AI fields
     sqlx::query(
-        "INSERT INTO job_search_settings (id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at)
-         VALUES (1, FALSE, $1, $2, $3, $4, $5, $6, $7, datetime('now'))
+        "INSERT INTO job_search_settings (id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, auto_tags_enabled, min_ai_score, auto_apply_enabled, search_interval_minutes, updated_at)
+         VALUES (1, FALSE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
          search_text = excluded.search_text,
          area_ids = excluded.area_ids,
@@ -79,6 +108,10 @@ pub async fn update_search_settings(
          employment = excluded.employment,
          salary_from = excluded.salary_from,
          only_with_salary = excluded.only_with_salary,
+         auto_tags_enabled = excluded.auto_tags_enabled,
+         min_ai_score = excluded.min_ai_score,
+         auto_apply_enabled = excluded.auto_apply_enabled,
+         search_interval_minutes = excluded.search_interval_minutes,
          updated_at = datetime('now')"
     )
     .bind(&request.search_text)
@@ -88,12 +121,16 @@ pub async fn update_search_settings(
     .bind(&request.employment)
     .bind(&request.salary_from)
     .bind(request.only_with_salary.unwrap_or(false))
+    .bind(request.auto_tags_enabled.unwrap_or(true))
+    .bind(request.min_ai_score.unwrap_or(50))
+    .bind(request.auto_apply_enabled.unwrap_or(true))
+    .bind(request.search_interval_minutes.unwrap_or(60))
     .execute(pool.inner())
     .await
     .ok();
 
     let settings: JobSearchSettings = sqlx::query_as(
-        "SELECT id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at
+        "SELECT id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at, auto_tags_enabled, search_tags_json, min_ai_score, auto_apply_enabled, search_interval_minutes
          FROM job_search_settings WHERE id = 1"
     )
     .fetch_one(pool.inner())
@@ -113,8 +150,8 @@ pub async fn get_vacancies(
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
-        "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
-         FROM job_vacancies ORDER BY found_at DESC"
+        "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment
+         FROM job_vacancies ORDER BY COALESCE(ai_priority, 0) DESC, found_at DESC LIMIT 200"
     )
     .fetch_all(pool.inner())
     .await
@@ -131,7 +168,16 @@ pub async fn get_vacancies(
         .await
         .unwrap_or(None);
 
-        result.push(VacancyWithResponse { vacancy, response });
+        let chat: Option<JobChat> = sqlx::query_as(
+            "SELECT id, vacancy_id, hh_chat_id, employer_name, is_bot, is_human_confirmed, telegram_invited, last_message_at, unread_count, created_at, updated_at
+             FROM job_chats_v2 WHERE vacancy_id = $1 LIMIT 1"
+        )
+        .bind(vacancy.id)
+        .fetch_optional(pool.inner())
+        .await
+        .unwrap_or(None);
+
+        result.push(VacancyWithResponse { vacancy, response, chat });
     }
 
     Json(ApiResponse::success(result))
@@ -144,7 +190,7 @@ pub async fn get_vacancy_details(
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<VacancyWithResponse>> {
     let vacancy: Option<JobVacancy> = sqlx::query_as(
-        "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
+        "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment
          FROM job_vacancies WHERE id = $1"
     )
     .bind(id)
@@ -166,7 +212,16 @@ pub async fn get_vacancy_details(
     .await
     .unwrap_or(None);
 
-    Json(ApiResponse::success(VacancyWithResponse { vacancy, response }))
+    let chat: Option<JobChat> = sqlx::query_as(
+        "SELECT id, vacancy_id, hh_chat_id, employer_name, is_bot, is_human_confirmed, telegram_invited, last_message_at, unread_count, created_at, updated_at
+         FROM job_chats_v2 WHERE vacancy_id = $1 LIMIT 1"
+    )
+    .bind(id)
+    .fetch_optional(pool.inner())
+    .await
+    .unwrap_or(None);
+
+    Json(ApiResponse::success(VacancyWithResponse { vacancy, response, chat }))
 }
 
 #[get("/jobs/vacancies/status/<status>")]
@@ -176,8 +231,8 @@ pub async fn get_vacancies_by_status(
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
-        "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at
-         FROM job_vacancies WHERE status = $1 ORDER BY found_at DESC"
+        "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment
+         FROM job_vacancies WHERE status = $1 ORDER BY COALESCE(ai_priority, 0) DESC, found_at DESC"
     )
     .bind(status)
     .fetch_all(pool.inner())
@@ -195,7 +250,16 @@ pub async fn get_vacancies_by_status(
         .await
         .unwrap_or(None);
 
-        result.push(VacancyWithResponse { vacancy, response });
+        let chat: Option<JobChat> = sqlx::query_as(
+            "SELECT id, vacancy_id, hh_chat_id, employer_name, is_bot, is_human_confirmed, telegram_invited, last_message_at, unread_count, created_at, updated_at
+             FROM job_chats_v2 WHERE vacancy_id = $1 LIMIT 1"
+        )
+        .bind(vacancy.id)
+        .fetch_optional(pool.inner())
+        .await
+        .unwrap_or(None);
+
+        result.push(VacancyWithResponse { vacancy, response, chat });
     }
 
     Json(ApiResponse::success(result))
@@ -231,12 +295,54 @@ pub async fn get_job_stats(
         .await
         .unwrap_or(0);
 
+    // Extended stats
+    let avg_ai_score: Option<f64> = sqlx::query_scalar("SELECT AVG(ai_score) FROM job_vacancies WHERE ai_score IS NOT NULL")
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(None);
+
+    let response_rate: Option<f64> = if total_applied > 0 {
+        Some(((invited + rejected) as f64 / total_applied as f64) * 100.0)
+    } else {
+        None
+    };
+
+    let active_chats: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_chats_v2 c JOIN job_vacancies v ON c.vacancy_id = v.id WHERE v.status IN ('applied', 'viewed', 'invited')")
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0);
+
+    let telegram_invites_sent: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_chats_v2 WHERE telegram_invited = 1")
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0);
+
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today_applications: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE date(applied_at) = ?")
+        .bind(&today)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0);
+
+    let week_ago = (chrono::Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+    let this_week_applications: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE date(applied_at) >= ?")
+        .bind(&week_ago)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0);
+
     Json(ApiResponse::success(JobStats {
         total_found,
         total_applied,
         invited,
         rejected,
         in_progress,
+        avg_ai_score,
+        response_rate,
+        active_chats,
+        telegram_invites_sent,
+        today_applications,
+        this_week_applications,
     }))
 }
 
@@ -305,4 +411,290 @@ pub async fn start_hh_auth(_auth: AuthGuard) -> Json<ApiResponse<String>> {
 
     let url = HHClient::get_auth_url(&client_id, &redirect_uri);
     Json(ApiResponse::success(url))
+}
+
+// ==================
+// CHATS & MESSAGES
+// ==================
+
+#[get("/jobs/chats")]
+pub async fn get_chats(
+    _auth: AuthGuard,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<Vec<ChatWithMessages>>> {
+    let chats: Vec<(i64, i64, String, Option<String>, bool, bool, bool, Option<String>, i32, String, String, String, String)> = sqlx::query_as(
+        r#"SELECT c.id, c.vacancy_id, c.hh_chat_id, c.employer_name, c.is_bot, c.is_human_confirmed, c.telegram_invited, c.last_message_at, c.unread_count, c.created_at, c.updated_at, v.title, v.company
+           FROM job_chats_v2 c
+           JOIN job_vacancies v ON c.vacancy_id = v.id
+           ORDER BY c.last_message_at DESC NULLS LAST"#
+    )
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    let mut result = Vec::new();
+    for (id, vacancy_id, hh_chat_id, employer_name, is_bot, is_human_confirmed, telegram_invited, last_message_at, unread_count, created_at, updated_at, vacancy_title, company) in chats {
+        let messages: Vec<JobChatMessage> = sqlx::query_as(
+            "SELECT id, chat_id, hh_message_id, author_type, text, is_auto_response, ai_sentiment, ai_intent, created_at
+             FROM job_chat_messages WHERE chat_id = $1 ORDER BY created_at ASC"
+        )
+        .bind(id)
+        .fetch_all(pool.inner())
+        .await
+        .unwrap_or_default();
+
+        result.push(ChatWithMessages {
+            chat: JobChat {
+                id,
+                vacancy_id,
+                hh_chat_id,
+                employer_name,
+                is_bot,
+                is_human_confirmed,
+                telegram_invited,
+                last_message_at,
+                unread_count,
+                created_at,
+                updated_at,
+            },
+            messages,
+            vacancy_title,
+            company,
+        });
+    }
+
+    Json(ApiResponse::success(result))
+}
+
+#[get("/jobs/chats/<id>/messages")]
+pub async fn get_chat_messages(
+    _auth: AuthGuard,
+    id: i64,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<Vec<JobChatMessage>>> {
+    let messages: Vec<JobChatMessage> = sqlx::query_as(
+        "SELECT id, chat_id, hh_message_id, author_type, text, is_auto_response, ai_sentiment, ai_intent, created_at
+         FROM job_chat_messages WHERE chat_id = $1 ORDER BY created_at ASC"
+    )
+    .bind(id)
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    // Mark as read
+    sqlx::query("UPDATE job_chats_v2 SET unread_count = 0 WHERE id = $1")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .ok();
+
+    Json(ApiResponse::success(messages))
+}
+
+// ==================
+// SEARCH TAGS
+// ==================
+
+#[get("/jobs/tags")]
+pub async fn get_tags(
+    _auth: AuthGuard,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<Vec<JobSearchTag>>> {
+    let tags: Vec<JobSearchTag> = sqlx::query_as(
+        "SELECT id, tag_type, value, is_active, search_count, found_count, applied_count, created_at
+         FROM job_search_tags ORDER BY applied_count DESC, found_count DESC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    Json(ApiResponse::success(tags))
+}
+
+#[post("/jobs/tags/generate")]
+pub async fn generate_tags(
+    _auth: AuthGuard,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<AITagsResponse>> {
+    // Get resume text
+    let about: Option<(String,)> = sqlx::query_as(
+        "SELECT description FROM portfolio_about ORDER BY id DESC LIMIT 1"
+    )
+    .fetch_optional(pool.inner())
+    .await
+    .unwrap_or(None);
+
+    let resume_text = match about {
+        Some((desc,)) => desc,
+        None => return Json(ApiResponse::error("No resume found".to_string())),
+    };
+
+    // Get AI client
+    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
+    let model = std::env::var("AI_MODEL").unwrap_or_else(|_| "google/gemini-2.0-flash-001".to_string());
+    let ai_client = AIClient::new(api_key, model);
+
+    match ai_client.generate_search_tags(&resume_text).await {
+        Ok(tags) => {
+            // Save tags to DB
+            for tag in &tags.primary_tags {
+                sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('primary', ?)")
+                    .bind(tag)
+                    .execute(pool.inner())
+                    .await
+                    .ok();
+            }
+            for tag in &tags.skill_tags {
+                sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('skill', ?)")
+                    .bind(tag)
+                    .execute(pool.inner())
+                    .await
+                    .ok();
+            }
+            for tag in &tags.industry_tags {
+                sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('industry', ?)")
+                    .bind(tag)
+                    .execute(pool.inner())
+                    .await
+                    .ok();
+            }
+            for tag in &tags.suggested_queries {
+                sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('query', ?)")
+                    .bind(tag)
+                    .execute(pool.inner())
+                    .await
+                    .ok();
+            }
+
+            Json(ApiResponse::success(AITagsResponse {
+                primary_tags: tags.primary_tags,
+                skill_tags: tags.skill_tags,
+                industry_tags: tags.industry_tags,
+                suggested_queries: tags.suggested_queries,
+            }))
+        }
+        Err(e) => Json(ApiResponse::error(e)),
+    }
+}
+
+#[post("/jobs/tags/<id>/toggle")]
+pub async fn toggle_tag(
+    _auth: AuthGuard,
+    id: i64,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<String>> {
+    sqlx::query("UPDATE job_search_tags SET is_active = NOT is_active WHERE id = $1")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .ok();
+
+    Json(ApiResponse::success("Tag toggled".to_string()))
+}
+
+#[rocket::delete("/jobs/tags/<id>")]
+pub async fn delete_tag(
+    _auth: AuthGuard,
+    id: i64,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<String>> {
+    sqlx::query("DELETE FROM job_search_tags WHERE id = $1")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .ok();
+
+    Json(ApiResponse::success("Tag deleted".to_string()))
+}
+
+// ==================
+// ACTIVITY LOG
+// ==================
+
+#[get("/jobs/activity?<limit>")]
+pub async fn get_activity_log(
+    _auth: AuthGuard,
+    limit: Option<i32>,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<Vec<ActivityLogEntry>>> {
+    let limit = limit.unwrap_or(50);
+
+    let activities: Vec<(i64, String, String, Option<String>, String, Option<i64>)> = sqlx::query_as(
+        r#"SELECT a.id, a.event_type, a.description, a.metadata, a.created_at, a.vacancy_id
+           FROM job_activity_log a
+           ORDER BY a.created_at DESC
+           LIMIT ?"#
+    )
+    .bind(limit)
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    let mut result = Vec::new();
+    for (id, event_type, description, _metadata, created_at, vacancy_id) in activities {
+        let (vacancy_title, company) = if let Some(vid) = vacancy_id {
+            let v: Option<(String, String)> = sqlx::query_as(
+                "SELECT title, company FROM job_vacancies WHERE id = ?"
+            )
+            .bind(vid)
+            .fetch_optional(pool.inner())
+            .await
+            .unwrap_or(None);
+            v.map(|(t, c)| (Some(t), Some(c))).unwrap_or((None, None))
+        } else {
+            (None, None)
+        };
+
+        result.push(ActivityLogEntry {
+            id,
+            event_type,
+            description,
+            vacancy_title,
+            company,
+            created_at,
+        });
+    }
+
+    Json(ApiResponse::success(result))
+}
+
+// ==================
+// DAILY STATS
+// ==================
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct DailyStats {
+    pub date: String,
+    pub searches_count: i32,
+    pub vacancies_found: i32,
+    pub applications_sent: i32,
+    pub invitations_received: i32,
+    pub rejections_received: i32,
+    pub messages_sent: i32,
+    pub messages_received: i32,
+    pub telegram_invites_sent: i32,
+    pub avg_ai_score: Option<f64>,
+}
+
+#[get("/jobs/stats/daily?<days>")]
+pub async fn get_daily_stats(
+    _auth: AuthGuard,
+    days: Option<i32>,
+    pool: &State<SqlitePool>,
+) -> Json<ApiResponse<Vec<DailyStats>>> {
+    let days = days.unwrap_or(30);
+    let start_date = (chrono::Local::now() - chrono::Duration::days(days as i64)).format("%Y-%m-%d").to_string();
+
+    let stats: Vec<DailyStats> = sqlx::query_as(
+        r#"SELECT date, searches_count, vacancies_found, applications_sent, invitations_received, rejections_received, messages_sent, messages_received, telegram_invites_sent, avg_ai_score
+           FROM job_search_stats
+           WHERE date >= ?
+           ORDER BY date ASC"#
+    )
+    .bind(&start_date)
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    Json(ApiResponse::success(stats))
 }

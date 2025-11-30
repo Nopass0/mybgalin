@@ -5,6 +5,7 @@ import { useJobs } from "@/hooks/useJobs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import {
   Card,
   CardContent,
@@ -20,8 +21,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Play, Square, Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  Loader2,
+  Play,
+  Square,
+  Save,
+  Brain,
+  Sparkles,
+  Clock,
+  Zap,
+  Settings,
+  Search,
+  CheckCircle,
+} from "lucide-react";
 import { toast } from "sonner";
+import { motion } from "motion/react";
+import { cn } from "@/lib/utils";
 
 export function JobSearchSettings() {
   const {
@@ -31,22 +48,36 @@ export function JobSearchSettings() {
     updateSettings,
     fetchSearchStatus,
   } = useJobs();
+
+  // Basic settings
   const [searchText, setSearchText] = useState("");
   const [experience, setExperience] = useState<string>("any");
   const [schedule, setSchedule] = useState<string>("any");
   const [employment, setEmployment] = useState<string>("any");
   const [salaryFrom, setSalaryFrom] = useState("");
   const [onlyWithSalary, setOnlyWithSalary] = useState(false);
+
+  // AI settings
+  const [autoTagsEnabled, setAutoTagsEnabled] = useState(true);
+  const [autoApplyEnabled, setAutoApplyEnabled] = useState(true);
+  const [minAiScore, setMinAiScore] = useState(60);
+  const [searchIntervalMinutes, setSearchIntervalMinutes] = useState(30);
+
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (searchStatus?.settings) {
-      setSearchText(searchStatus.settings.search_text || "");
-      setExperience(searchStatus.settings.experience || "any");
-      setSchedule(searchStatus.settings.schedule || "any");
-      setEmployment(searchStatus.settings.employment || "any");
-      setSalaryFrom(searchStatus.settings.salary_from?.toString() || "");
-      setOnlyWithSalary(searchStatus.settings.only_with_salary || false);
+      const s = searchStatus.settings;
+      setSearchText(s.search_text || "");
+      setExperience(s.experience || "any");
+      setSchedule(s.schedule || "any");
+      setEmployment(s.employment || "any");
+      setSalaryFrom(s.salary_from?.toString() || "");
+      setOnlyWithSalary(s.only_with_salary || false);
+      setAutoTagsEnabled(s.auto_tags_enabled ?? true);
+      setAutoApplyEnabled(s.auto_apply_enabled ?? true);
+      setMinAiScore(s.min_ai_score ?? 60);
+      setSearchIntervalMinutes(s.search_interval_minutes ?? 30);
     }
   }, [searchStatus]);
 
@@ -65,6 +96,10 @@ export function JobSearchSettings() {
         employment: employment === "any" ? undefined : employment,
         salary_from: salaryFrom ? parseInt(salaryFrom) : undefined,
         only_with_salary: onlyWithSalary,
+        auto_tags_enabled: autoTagsEnabled,
+        auto_apply_enabled: autoApplyEnabled,
+        min_ai_score: minAiScore,
+        search_interval_minutes: searchIntervalMinutes,
       });
       toast.success("Настройки сохранены");
       await fetchSearchStatus();
@@ -93,48 +128,232 @@ export function JobSearchSettings() {
     }
   };
 
+  const formatNextSearch = () => {
+    if (!searchStatus?.next_search_at) return null;
+    const next = new Date(searchStatus.next_search_at);
+    const now = new Date();
+    const diff = next.getTime() - now.getTime();
+    if (diff < 0) return "сейчас";
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "менее минуты";
+    if (minutes === 1) return "1 минуту";
+    if (minutes < 5) return `${minutes} минуты`;
+    return `${minutes} минут`;
+  };
+
   return (
     <div className="space-y-6">
-      <Card>
+      {/* Search Control Card */}
+      <Card className="relative overflow-hidden">
+        <div
+          className={cn(
+            "absolute inset-0 opacity-5",
+            searchStatus?.is_active
+              ? "bg-gradient-to-r from-green-500 to-emerald-500"
+              : "bg-gradient-to-r from-gray-500 to-slate-500"
+          )}
+        />
         <CardHeader>
-          <CardTitle>Статус поиска</CardTitle>
-          <CardDescription>
-            Автоматический поиск{" "}
-            {searchStatus?.is_active ? "активен" : "остановлен"}
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {searchStatus?.is_active ? (
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                  >
+                    <Zap className="h-5 w-5 text-green-500" />
+                  </motion.div>
+                ) : (
+                  <Search className="h-5 w-5 text-muted-foreground" />
+                )}
+                Автоматический поиск
+              </CardTitle>
+              <CardDescription className="mt-1">
+                {searchStatus?.is_active
+                  ? "Бот активно ищет вакансии и отправляет отклики"
+                  : "Бот остановлен"}
+              </CardDescription>
+            </div>
+            <Badge
+              variant={searchStatus?.is_active ? "default" : "secondary"}
+              className={cn(
+                "px-3 py-1",
+                searchStatus?.is_active && "bg-green-500"
+              )}
+            >
+              {searchStatus?.is_active ? "Активен" : "Остановлен"}
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent>
-          <Button
-            onClick={handleToggleSearch}
-            variant={searchStatus?.is_active ? "destructive" : "default"}
-            size="lg"
-            disabled={!searchStatus?.is_authorized}
-          >
-            {searchStatus?.is_active ? (
-              <>
-                <Square className="mr-2 h-4 w-4" />
-                Остановить поиск
-              </>
-            ) : (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                Запустить поиск
-              </>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Button
+              onClick={handleToggleSearch}
+              variant={searchStatus?.is_active ? "destructive" : "default"}
+              size="lg"
+              disabled={!searchStatus?.is_authorized}
+              className="min-w-[180px]"
+            >
+              {searchStatus?.is_active ? (
+                <>
+                  <Square className="mr-2 h-4 w-4" />
+                  Остановить поиск
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Запустить поиск
+                </>
+              )}
+            </Button>
+
+            {searchStatus?.is_active && searchStatus?.next_search_at && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                Следующий поиск через {formatNextSearch()}
+              </div>
             )}
-          </Button>
+          </div>
+
           {!searchStatus?.is_authorized && (
-            <p className="text-sm text-muted-foreground mt-2">
-              Подключите HH.ru на вкладке "HH.ru"
+            <p className="text-sm text-amber-500 flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Подключите HH.ru на вкладке "HH.ru" для начала работы
+            </p>
+          )}
+
+          {searchStatus?.last_search && (
+            <p className="text-xs text-muted-foreground">
+              Последний поиск: {new Date(searchStatus.last_search).toLocaleString("ru-RU")}
             </p>
           )}
         </CardContent>
       </Card>
 
+      {/* AI Settings Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Параметры поиска</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-primary" />
+            AI Настройки
+          </CardTitle>
           <CardDescription>
-            Настройте критерии для автоматического поиска вакансий
+            Настройте работу искусственного интеллекта для оптимального поиска
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Auto Tags */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-amber-500" />
+                Автоматический подбор тегов
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                AI будет автоматически генерировать теги на основе вашего резюме
+              </p>
+            </div>
+            <Switch
+              checked={autoTagsEnabled}
+              onCheckedChange={setAutoTagsEnabled}
+            />
+          </div>
+
+          <Separator />
+
+          {/* Auto Apply */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                Автоматические отклики
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                AI будет автоматически откликаться на подходящие вакансии
+              </p>
+            </div>
+            <Switch
+              checked={autoApplyEnabled}
+              onCheckedChange={setAutoApplyEnabled}
+            />
+          </div>
+
+          <Separator />
+
+          {/* Min AI Score */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="flex items-center gap-2">
+                  <Brain className="h-4 w-4 text-cyan-500" />
+                  Минимальный AI Score для отклика
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Откликаться только на вакансии с оценкой выше указанной
+                </p>
+              </div>
+              <Badge variant="outline" className="text-lg font-bold px-3">
+                {minAiScore}
+              </Badge>
+            </div>
+            <Slider
+              value={[minAiScore]}
+              onValueChange={(v) => setMinAiScore(v[0])}
+              min={0}
+              max={100}
+              step={5}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>0 — откликаться на все</span>
+              <span>100 — только идеальные</span>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Search Interval */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-violet-500" />
+                  Интервал поиска
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Как часто бот будет искать новые вакансии
+                </p>
+              </div>
+              <Badge variant="outline" className="text-lg font-bold px-3">
+                {searchIntervalMinutes} мин
+              </Badge>
+            </div>
+            <Slider
+              value={[searchIntervalMinutes]}
+              onValueChange={(v) => setSearchIntervalMinutes(v[0])}
+              min={5}
+              max={120}
+              step={5}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>5 мин — очень часто</span>
+              <span>120 мин — редко</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search Parameters Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-5 w-5 text-primary" />
+            Параметры поиска
+          </CardTitle>
+          <CardDescription>
+            Настройте критерии для автоматического поиска вакансий на HH.ru
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -146,6 +365,9 @@ export function JobSearchSettings() {
               onChange={(e) => setSearchText(e.target.value)}
               placeholder="React Developer, Frontend, Full Stack..."
             />
+            <p className="text-xs text-muted-foreground">
+              Основной поисковый запрос. AI будет дополнять его тегами автоматически.
+            </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -222,7 +444,14 @@ export function JobSearchSettings() {
             </Label>
           </div>
 
-          <Button onClick={handleSaveSettings} disabled={saving}>
+          <Separator />
+
+          <Button
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className="w-full sm:w-auto"
+            size="lg"
+          >
             {saving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -231,7 +460,7 @@ export function JobSearchSettings() {
             ) : (
               <>
                 <Save className="mr-2 h-4 w-4" />
-                Сохранить настройки
+                Сохранить все настройки
               </>
             )}
           </Button>

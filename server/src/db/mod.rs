@@ -547,5 +547,186 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // === AI Job Search Enhancement Tables ===
+
+    // Add AI scoring columns to job_vacancies
+    sqlx::query("ALTER TABLE job_vacancies ADD COLUMN ai_score INTEGER")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_vacancies ADD COLUMN ai_recommendation TEXT")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_vacancies ADD COLUMN ai_priority INTEGER")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_vacancies ADD COLUMN ai_match_reasons TEXT")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_vacancies ADD COLUMN ai_concerns TEXT")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_vacancies ADD COLUMN ai_salary_assessment TEXT")
+        .execute(&pool)
+        .await
+        .ok();
+
+    // Add new columns to job_search_settings
+    sqlx::query("ALTER TABLE job_search_settings ADD COLUMN auto_tags_enabled BOOLEAN DEFAULT TRUE")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_search_settings ADD COLUMN search_tags_json TEXT")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_search_settings ADD COLUMN min_ai_score INTEGER DEFAULT 50")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_search_settings ADD COLUMN auto_apply_enabled BOOLEAN DEFAULT TRUE")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("ALTER TABLE job_search_settings ADD COLUMN search_interval_minutes INTEGER DEFAULT 60")
+        .execute(&pool)
+        .await
+        .ok();
+
+    // Enhanced job_chats table (recreate with new columns)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_chats_v2 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vacancy_id INTEGER NOT NULL,
+            hh_chat_id TEXT UNIQUE NOT NULL,
+            employer_name TEXT,
+            is_bot BOOLEAN DEFAULT FALSE,
+            is_human_confirmed BOOLEAN DEFAULT FALSE,
+            telegram_invited BOOLEAN DEFAULT FALSE,
+            last_message_at DATETIME,
+            unread_count INTEGER DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (vacancy_id) REFERENCES job_vacancies(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Migrate data from old job_chats if exists
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO job_chats_v2 (vacancy_id, hh_chat_id, is_bot, last_message_at)
+        SELECT vacancy_id, hh_chat_id, has_bot, last_message_at FROM job_chats
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .ok();
+
+    // Chat messages table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            hh_message_id TEXT,
+            author_type TEXT NOT NULL,
+            text TEXT NOT NULL,
+            is_auto_response BOOLEAN DEFAULT FALSE,
+            ai_sentiment TEXT,
+            ai_intent TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (chat_id) REFERENCES job_chats_v2(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON job_chat_messages(chat_id)")
+        .execute(&pool)
+        .await?;
+
+    // Job search tags table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_search_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag_type TEXT NOT NULL,
+            value TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            search_count INTEGER DEFAULT 0,
+            found_count INTEGER DEFAULT 0,
+            applied_count INTEGER DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(tag_type, value)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_search_tags_type ON job_search_tags(tag_type)")
+        .execute(&pool)
+        .await?;
+
+    // Activity log table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            vacancy_id INTEGER,
+            description TEXT NOT NULL,
+            metadata TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (vacancy_id) REFERENCES job_vacancies(id) ON DELETE SET NULL
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_activity_log_type ON job_activity_log(event_type)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_activity_log_date ON job_activity_log(created_at)")
+        .execute(&pool)
+        .await?;
+
+    // Job search statistics table for analytics
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_search_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            searches_count INTEGER DEFAULT 0,
+            vacancies_found INTEGER DEFAULT 0,
+            applications_sent INTEGER DEFAULT 0,
+            invitations_received INTEGER DEFAULT 0,
+            rejections_received INTEGER DEFAULT 0,
+            messages_sent INTEGER DEFAULT 0,
+            messages_received INTEGER DEFAULT 0,
+            telegram_invites_sent INTEGER DEFAULT 0,
+            avg_ai_score REAL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_search_stats_date ON job_search_stats(date)")
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }
