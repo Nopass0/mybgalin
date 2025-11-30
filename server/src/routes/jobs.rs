@@ -72,8 +72,8 @@ pub async fn get_search_status(
     .await
     .unwrap_or(None);
 
-    let next_search_at = last_search.map(|(ts,)| {
-        chrono::DateTime::parse_from_rfc3339(&ts)
+    let next_search_at = last_search.as_ref().map(|(ts,)| {
+        chrono::DateTime::parse_from_rfc3339(ts)
             .ok()
             .map(|dt| (dt + chrono::Duration::minutes(interval_minutes as i64)).to_rfc3339())
     }).flatten();
