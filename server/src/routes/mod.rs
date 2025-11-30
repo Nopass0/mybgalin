@@ -10,3 +10,5 @@ pub mod publish;
 pub mod files;
 pub mod sync;
 pub mod links;
+pub mod database;
+pub mod console;

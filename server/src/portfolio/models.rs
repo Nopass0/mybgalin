@@ -53,7 +53,7 @@ pub struct PortfolioCaseImage {
     pub id: i64,
     pub case_id: i64,
     pub image_url: String,
-    pub order_index: i32,
+    pub order_index: i64,
 }
 
 // Request DTOs

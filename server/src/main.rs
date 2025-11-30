@@ -323,4 +323,26 @@ async fn rocket() -> _ {
                 routes::links::redirect_link,
             ],
         )
+        // Database viewer routes (admin protected)
+        .mount(
+            "/api",
+            routes![
+                routes::database::get_tables,
+                routes::database::get_table_schema,
+                routes::database::get_table_data,
+                routes::database::execute_query,
+                routes::database::get_database_stats,
+            ],
+        )
+        // Server console routes (admin protected)
+        .mount(
+            "/api",
+            routes![
+                routes::console::execute_command,
+                routes::console::get_system_info,
+                routes::console::get_processes,
+                routes::console::get_logs,
+                routes::console::get_services,
+            ],
+        )
 }
