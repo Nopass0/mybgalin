@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useJobs } from "@/hooks/useJobs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -208,10 +208,10 @@ interface VacancyCardProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   onIgnore: (id: number) => void;
-  getStatusBadge: (status: string) => JSX.Element;
+  getStatusBadge: (status: string) => React.ReactNode;
   getAIScoreColor: (score: number) => string;
   getAIScoreBg: (score: number) => string;
-  getPriorityStars: (priority: number) => JSX.Element[];
+  getPriorityStars: (priority: number) => React.ReactNode[];
   parseJsonArray: (jsonStr?: string) => string[];
 }
 
