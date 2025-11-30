@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct StudioUser {
-    pub id: i64,
+    pub id: i32,
     pub steam_id: String,
     pub persona_name: String,
     pub avatar_url: String,
@@ -14,7 +14,7 @@ pub struct StudioUser {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct StudioProject {
     pub id: String,
-    pub user_id: i64,
+    pub user_id: i32,
     pub name: String,
     #[sqlx(rename = "type")]
     pub project_type: String,
@@ -27,8 +27,8 @@ pub struct StudioProject {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct StudioSession {
-    pub id: i64,
-    pub user_id: i64,
+    pub id: i32,
+    pub user_id: i32,
     pub token: String,
     pub expires_at: String,
     pub created_at: String,

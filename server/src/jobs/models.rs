@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 // Database models
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobVacancy {
-    pub id: i64,
+    pub id: i32,
     pub hh_vacancy_id: String,
     pub title: String,
     pub company: String,
@@ -27,8 +27,8 @@ pub struct JobVacancy {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobResponse {
-    pub id: i64,
-    pub vacancy_id: i64,
+    pub id: i32,
+    pub vacancy_id: i32,
     pub hh_negotiation_id: Option<String>,
     pub cover_letter: String,
     pub status: String,
@@ -39,8 +39,8 @@ pub struct JobResponse {
 /// Чат с работодателем
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobChat {
-    pub id: i64,
-    pub vacancy_id: i64,
+    pub id: i32,
+    pub vacancy_id: i32,
     pub hh_chat_id: String,
     pub employer_name: Option<String>,
     pub is_bot: bool,
@@ -55,8 +55,8 @@ pub struct JobChat {
 /// Сообщение в чате
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobChatMessage {
-    pub id: i64,
-    pub chat_id: i64,
+    pub id: i32,
+    pub chat_id: i32,
     pub hh_message_id: Option<String>,
     pub author_type: String,  // applicant / employer
     pub text: String,
@@ -69,7 +69,7 @@ pub struct JobChatMessage {
 /// Поисковые теги (генерируются AI)
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobSearchTag {
-    pub id: i64,
+    pub id: i32,
     pub tag_type: String,   // primary / skill / industry / query
     pub value: String,
     pub is_active: bool,
@@ -82,9 +82,9 @@ pub struct JobSearchTag {
 /// Лог событий поиска работы
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobActivityLog {
-    pub id: i64,
+    pub id: i32,
     pub event_type: String,  // search / apply / response / chat / invite
-    pub vacancy_id: Option<i64>,
+    pub vacancy_id: Option<i32>,
     pub description: String,
     pub metadata: Option<String>,  // JSON
     pub created_at: String,
@@ -92,7 +92,7 @@ pub struct JobActivityLog {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct JobSearchSettings {
-    pub id: i64,
+    pub id: i32,
     pub is_active: bool,
     pub search_text: Option<String>,
     pub area_ids: Option<String>,
@@ -113,7 +113,7 @@ pub struct JobSearchSettings {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct HHToken {
-    pub id: i64,
+    pub id: i32,
     pub access_token: String,
     pub refresh_token: String,
     pub expires_at: String,
@@ -192,7 +192,7 @@ pub struct ChatWithMessages {
 
 #[derive(Debug, Serialize)]
 pub struct ActivityLogEntry {
-    pub id: i64,
+    pub id: i32,
     pub event_type: String,
     pub description: String,
     pub vacancy_title: Option<String>,

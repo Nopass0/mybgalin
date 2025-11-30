@@ -88,7 +88,7 @@ pub struct SyncResponse {
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct SyncProgress {
-    pub id: i64,
+    pub id: i32,
     pub status: String,
     pub current: i64,
     pub total: i64,
