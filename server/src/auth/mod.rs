@@ -58,7 +58,7 @@ impl AuthService {
     // Create OTP code for user
     pub async fn create_otp(
         pool: &SqlitePool,
-        user_id: i64,
+        user_id: i32,
         code: &str,
     ) -> Result<OtpCode, sqlx::Error> {
         // Invalidate all previous unused codes

@@ -116,7 +116,7 @@ impl StudioService {
     /// Create a session for user
     pub async fn create_session(
         pool: &SqlitePool,
-        user_id: i64,
+        user_id: i32,
     ) -> Result<String, sqlx::Error> {
         let token = Self::generate_token();
 
