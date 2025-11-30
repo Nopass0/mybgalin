@@ -208,6 +208,17 @@ async fn rocket() -> _ {
                 routes::jobs::get_job_stats,
                 routes::jobs::ignore_vacancy,
                 routes::jobs::start_hh_auth,
+                // Chats
+                routes::jobs::get_chats,
+                routes::jobs::get_chat_messages,
+                // Tags
+                routes::jobs::get_tags,
+                routes::jobs::generate_tags,
+                routes::jobs::toggle_tag,
+                routes::jobs::delete_tag,
+                // Activity
+                routes::jobs::get_activity_log,
+                routes::jobs::get_daily_stats,
             ],
         )
         // HH OAuth callback (public)

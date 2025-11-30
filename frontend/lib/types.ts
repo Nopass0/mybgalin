@@ -153,6 +153,13 @@ export interface JobVacancy {
   found_at: string;
   applied_at?: string;
   updated_at: string;
+  // AI evaluation fields
+  ai_score?: number;
+  ai_recommendation?: string;
+  ai_priority?: number;
+  ai_match_reasons?: string;  // JSON array
+  ai_concerns?: string;       // JSON array
+  ai_salary_assessment?: string;
 }
 
 export interface JobResponse {
@@ -165,9 +172,63 @@ export interface JobResponse {
   updated_at: string;
 }
 
+export interface JobChat {
+  id: number;
+  vacancy_id: number;
+  hh_chat_id: string;
+  employer_name?: string;
+  is_bot: boolean;
+  is_human_confirmed: boolean;
+  telegram_invited: boolean;
+  last_message_at?: string;
+  unread_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobChatMessage {
+  id: number;
+  chat_id: number;
+  hh_message_id?: string;
+  author_type: string;
+  text: string;
+  is_auto_response: boolean;
+  ai_sentiment?: string;
+  ai_intent?: string;
+  created_at: string;
+}
+
+export interface ChatWithMessages {
+  chat: JobChat;
+  messages: JobChatMessage[];
+  vacancy_title: string;
+  company: string;
+}
+
+export interface JobSearchTag {
+  id: number;
+  tag_type: string;
+  value: string;
+  is_active: boolean;
+  search_count: number;
+  found_count: number;
+  applied_count: number;
+  created_at: string;
+}
+
+export interface ActivityLogEntry {
+  id: number;
+  event_type: string;
+  description: string;
+  vacancy_title?: string;
+  company?: string;
+  created_at: string;
+}
+
 export interface VacancyWithResponse {
   vacancy: JobVacancy;
   response?: JobResponse;
+  chat?: JobChat;
 }
 
 export interface JobSearchSettings {
@@ -181,6 +242,12 @@ export interface JobSearchSettings {
   salary_from?: number;
   only_with_salary: boolean;
   updated_at: string;
+  // AI settings
+  auto_tags_enabled?: boolean;
+  search_tags_json?: string;
+  min_ai_score?: number;
+  auto_apply_enabled?: boolean;
+  search_interval_minutes?: number;
 }
 
 export interface SearchStatus {
@@ -188,16 +255,22 @@ export interface SearchStatus {
   is_authorized: boolean;
   last_search?: string;
   settings?: JobSearchSettings;
+  search_tags: JobSearchTag[];
+  next_search_at?: string;
 }
 
 export interface UpdateSearchSettingsRequest {
-  search_text: string;
+  search_text?: string;
   area_ids?: number[];
   experience?: string;
   schedule?: string;
   employment?: string;
   salary_from?: number;
   only_with_salary?: boolean;
+  auto_tags_enabled?: boolean;
+  min_ai_score?: number;
+  auto_apply_enabled?: boolean;
+  search_interval_minutes?: number;
 }
 
 export interface JobStats {
@@ -206,6 +279,33 @@ export interface JobStats {
   invited: number;
   rejected: number;
   in_progress: number;
+  // Extended stats
+  avg_ai_score?: number;
+  response_rate?: number;
+  active_chats: number;
+  telegram_invites_sent: number;
+  today_applications: number;
+  this_week_applications: number;
+}
+
+export interface DailyStats {
+  date: string;
+  searches_count: number;
+  vacancies_found: number;
+  applications_sent: number;
+  invitations_received: number;
+  rejections_received: number;
+  messages_sent: number;
+  messages_received: number;
+  telegram_invites_sent: number;
+  avg_ai_score?: number;
+}
+
+export interface AITagsResponse {
+  primary_tags: string[];
+  skill_tags: string[];
+  industry_tags: string[];
+  suggested_queries: string[];
 }
 
 // Link shortener types
