@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AnimeAuction {
-    pub id: i64,
+    pub id: i32,
     pub date: Option<String>,
     pub title: String,
     pub watched: i64, // SQLite uses INTEGER for boolean
@@ -16,7 +16,7 @@ pub struct AnimeAuction {
     pub vod_link: Option<String>,
     pub sheets_url: Option<String>,
     pub year: i64,
-    pub shikimori_id: Option<i64>,
+    pub shikimori_id: Option<i32>,
     pub shikimori_name: Option<String>,
     pub shikimori_description: Option<String>,
     pub shikimori_cover: Option<String>,

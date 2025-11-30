@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
-    pub id: i64,
+    pub id: i32,
     pub telegram_id: i64,
     pub username: Option<String>,
     pub created_at: String,
@@ -10,8 +10,8 @@ pub struct User {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct OtpCode {
-    pub id: i64,
-    pub user_id: i64,
+    pub id: i32,
+    pub user_id: i32,
     pub code: String,
     pub expires_at: String,
     pub used: bool,
@@ -20,8 +20,8 @@ pub struct OtpCode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Session {
-    pub id: i64,
-    pub user_id: i64,
+    pub id: i32,
+    pub user_id: i32,
     pub token: String,
     pub expires_at: String,
     pub created_at: String,

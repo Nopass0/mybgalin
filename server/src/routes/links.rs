@@ -52,7 +52,7 @@ pub struct ShortLink {
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct LinkClick {
-    pub id: i64,
+    pub id: i32,
     pub link_id: String,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
@@ -63,8 +63,8 @@ pub struct LinkClick {
     pub browser: Option<String>,
     pub os: Option<String>,
     pub is_bot: bool,
-    pub screen_width: Option<i64>,
-    pub screen_height: Option<i64>,
+    pub screen_width: Option<i32>,
+    pub screen_height: Option<i32>,
     pub language: Option<String>,
     pub timezone: Option<String>,
     pub clicked_at: String,
