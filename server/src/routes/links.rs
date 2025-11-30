@@ -63,8 +63,8 @@ pub struct LinkClick {
     pub browser: Option<String>,
     pub os: Option<String>,
     pub is_bot: bool,
-    pub screen_width: Option<i32>,
-    pub screen_height: Option<i32>,
+    pub screen_width: Option<i64>,
+    pub screen_height: Option<i64>,
     pub language: Option<String>,
     pub timezone: Option<String>,
     pub clicked_at: String,
@@ -140,8 +140,8 @@ pub struct LinkWithStats {
 
 #[derive(Debug, Deserialize)]
 pub struct TrackClickRequest {
-    pub screen_width: Option<i32>,
-    pub screen_height: Option<i32>,
+    pub screen_width: Option<i64>,
+    pub screen_height: Option<i64>,
     pub language: Option<String>,
     pub timezone: Option<String>,
 }
