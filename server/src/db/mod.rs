@@ -1002,6 +1002,35 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // Menu visibility settings table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS menu_settings (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default menu items
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO menu_settings (id, label, is_visible, display_order) VALUES
+        ('home', 'Главная', TRUE, 0),
+        ('resume', 'Резюме', TRUE, 1),
+        ('workshop', 'Steam Workshop', TRUE, 2),
+        ('studio', 'CS2 Skin Studio', TRUE, 3),
+        ('t2', 'T2 Sales', TRUE, 4)
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
     // Create global admin for T2 section
     sqlx::query(
         r#"

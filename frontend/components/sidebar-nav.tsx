@@ -8,92 +8,95 @@ import Image from "next/image";
 import {
   Home,
   FileText,
-  Settings,
   Menu,
-  ChevronDown,
-  Briefcase,
-  Search,
-  BarChart3,
-  User,
-  Tv,
   PackageOpen,
   Palette,
-  Link2,
   Sparkles,
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
-const routes = [
+// All available menu items - visibility controlled via admin settings
+const allRoutes = [
   {
+    id: "home",
     label: "Главная",
     icon: Home,
     href: "/",
+    defaultVisible: true,
   },
   {
+    id: "resume",
     label: "Резюме",
     icon: FileText,
     href: "/resume",
+    defaultVisible: true,
   },
   {
+    id: "workshop",
     label: "Steam Workshop",
     icon: PackageOpen,
     href: "/workshop",
+    defaultVisible: true,
   },
   {
+    id: "studio",
     label: "CS2 Skin Studio",
     icon: Palette,
     href: "/studio",
     isExternal: true,
+    defaultVisible: true,
   },
   {
-    label: "Админка",
-    icon: Settings,
-    href: "/admin",
-    submenu: [
-      {
-        label: "Портфолио",
-        icon: User,
-        href: "/admin/portfolio",
-      },
-      {
-        label: "Поиск работы",
-        icon: Search,
-        href: "/admin/jobs",
-      },
-      {
-        label: "Статистика",
-        icon: BarChart3,
-        href: "/admin/stats",
-      },
-      {
-        label: "Аниме Аукцион",
-        icon: Tv,
-        href: "/admin/anime",
-      },
-      {
-        label: "Сократитель ссылок",
-        icon: Link2,
-        href: "/admin/links",
-      },
-    ],
+    id: "t2",
+    label: "T2 Sales",
+    icon: Store,
+    href: "/t2",
+    isExternal: true,
+    defaultVisible: true,
   },
 ];
+
+interface MenuSettings {
+  [key: string]: boolean;
+}
 
 export function SidebarNav() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
-  const [adminExpanded, setAdminExpanded] = React.useState(
-    pathname.startsWith("/admin"),
-  );
+  const [menuSettings, setMenuSettings] = React.useState<MenuSettings>({});
+  const [isLoaded, setIsLoaded] = React.useState(false);
 
   React.useEffect(() => {
-    // Auto-expand admin menu if on admin page
-    if (pathname.startsWith("/admin")) {
-      setAdminExpanded(true);
-    }
-  }, [pathname]);
+    // Load menu visibility settings
+    const loadMenuSettings = async () => {
+      try {
+        const response = await fetch("/api/menu-settings");
+        if (response.ok) {
+          const data = await response.json();
+          setMenuSettings(data);
+        }
+      } catch (error) {
+        console.error("Failed to load menu settings:", error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+    loadMenuSettings();
+  }, []);
+
+  // Filter routes based on visibility settings
+  const routes = React.useMemo(() => {
+    return allRoutes.filter((route) => {
+      // If settings are loaded, use them; otherwise use defaults
+      if (isLoaded && menuSettings[route.id] !== undefined) {
+        return menuSettings[route.id];
+      }
+      return route.defaultVisible;
+    });
+  }, [menuSettings, isLoaded]);
 
   const NavContent = () => (
     <div className="flex h-full flex-col">
@@ -119,74 +122,19 @@ export function SidebarNav() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.1 }}
           >
-            {route.submenu ? (
-              // Collapsible admin menu
-              <div className="space-y-1">
-                <button
-                  onClick={() => setAdminExpanded(!adminExpanded)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all hover:bg-white/5 cursor-pointer",
-                    pathname.startsWith("/admin")
-                      ? "bg-white/10 text-white"
-                      : "text-white/60",
-                  )}
-                >
-                  <route.icon className="h-5 w-5" />
-                  <span className="flex-1 text-left">{route.label}</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform",
-                      adminExpanded && "rotate-180",
-                    )}
-                  />
-                </button>
-
-                {/* Submenu */}
-                <motion.div
-                  initial={false}
-                  animate={{
-                    height: adminExpanded ? "auto" : 0,
-                    opacity: adminExpanded ? 1 : 0,
-                  }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="ml-3 space-y-1 border-l-2 border-white/10 pl-3 py-1">
-                    {route.submenu.map((subRoute) => (
-                      <Link
-                        key={subRoute.href}
-                        href={subRoute.href}
-                        onClick={() => setOpen(false)}
-                        className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-white/5",
-                          pathname === subRoute.href
-                            ? "bg-orange-500/20 text-orange-400"
-                            : "text-white/60",
-                        )}
-                      >
-                        <subRoute.icon className="h-4 w-4" />
-                        {subRoute.label}
-                      </Link>
-                    ))}
-                  </div>
-                </motion.div>
-              </div>
-            ) : (
-              // Regular menu item
-              <Link
-                href={route.href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all hover:bg-white/5",
-                  pathname === route.href
-                    ? "bg-orange-500/20 text-orange-400"
-                    : "text-white/60",
-                )}
-              >
-                <route.icon className="h-5 w-5" />
-                {route.label}
-              </Link>
-            )}
+            <Link
+              href={route.href}
+              onClick={() => setOpen(false)}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all hover:bg-white/5",
+                pathname === route.href
+                  ? "bg-orange-500/20 text-orange-400"
+                  : "text-white/60",
+              )}
+            >
+              <route.icon className="h-5 w-5" />
+              {route.label}
+            </Link>
           </motion.div>
         ))}
       </nav>

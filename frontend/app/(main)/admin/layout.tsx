@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AdminNav } from '@/components/admin/admin-nav';
 
 export default function AdminLayout({
   children,
@@ -40,16 +41,18 @@ export default function AdminLayout({
     return <>{children}</>;
   }
 
-  // Show protected content with logout button
+  // Show protected content with navigation and logout button
   if (isAuthenticated) {
     return (
       <div className="space-y-6">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-muted-foreground">Панель администратора</h2>
           <Button variant="outline" size="sm" onClick={logout}>
             <LogOut className="mr-2 h-4 w-4" />
             Выйти
           </Button>
         </div>
+        <AdminNav />
         {children}
       </div>
     );

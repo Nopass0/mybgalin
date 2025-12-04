@@ -12,3 +12,4 @@ pub mod sync;
 pub mod links;
 pub mod database;
 pub mod console;
+pub mod menu;
