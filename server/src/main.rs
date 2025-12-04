@@ -12,6 +12,7 @@ mod routes;
 mod steam;
 mod studio;
 mod sync;
+mod t2;
 mod telegram;
 
 use rocket::{launch, routes};
@@ -88,6 +89,7 @@ async fn rocket() -> _ {
     println!("📁 File Manager: ready");
     println!("☁️  Cloud Sync: ready");
     println!("🔗 Link Shortener: ready");
+    println!("📱 T2 Sales System: ready");
     println!("✅ All systems ready");
 
     // Configure CORS
@@ -354,6 +356,54 @@ async fn rocket() -> _ {
                 routes::console::get_processes,
                 routes::console::get_logs,
                 routes::console::get_services,
+            ],
+        )
+        // T2 Sales System routes (public auth)
+        .mount(
+            "/api",
+            routes![
+                t2::routes::t2_login,
+            ],
+        )
+        // T2 Sales System routes (protected)
+        .mount(
+            "/api",
+            routes![
+                t2::routes::t2_logout,
+                t2::routes::t2_me,
+                t2::routes::t2_admin_info,
+                t2::routes::t2_list_stores,
+                t2::routes::t2_create_store,
+                t2::routes::t2_delete_store,
+                t2::routes::t2_list_employees,
+                t2::routes::t2_create_employee,
+                t2::routes::t2_delete_employee,
+                t2::routes::t2_add_employee_store,
+                t2::routes::t2_get_categories,
+                t2::routes::t2_get_tags,
+                t2::routes::t2_create_tag,
+                t2::routes::t2_delete_tag,
+                t2::routes::t2_get_products,
+                t2::routes::t2_get_product,
+                t2::routes::t2_create_product,
+                t2::routes::t2_update_product,
+                t2::routes::t2_delete_product,
+                t2::routes::t2_get_tariffs,
+                t2::routes::t2_create_tariff,
+                t2::routes::t2_delete_tariff,
+                t2::routes::t2_get_services,
+                t2::routes::t2_create_service,
+                t2::routes::t2_delete_service,
+                t2::routes::t2_analyze_price_tag,
+                t2::routes::t2_recommend_products,
+                t2::routes::t2_recommend_accessories,
+                t2::routes::t2_recommend_tariffs,
+                t2::routes::t2_is_smartphone,
+                t2::routes::t2_get_sales,
+                t2::routes::t2_get_my_sales,
+                t2::routes::t2_create_sale,
+                t2::routes::t2_search,
+                t2::routes::t2_get_stats,
             ],
         )
 }
