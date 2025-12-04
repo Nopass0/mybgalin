@@ -161,7 +161,7 @@ impl StudioService {
     /// Get all projects for a user
     pub async fn get_user_projects(
         pool: &SqlitePool,
-        user_id: i64,
+        user_id: i32,
     ) -> Result<Vec<StudioProject>, sqlx::Error> {
         sqlx::query_as(
             "SELECT * FROM studio_projects WHERE user_id = ? ORDER BY updated_at DESC"
@@ -175,7 +175,7 @@ impl StudioService {
     pub async fn get_project(
         pool: &SqlitePool,
         project_id: &str,
-        user_id: i64,
+        user_id: i32,
     ) -> Result<Option<StudioProject>, sqlx::Error> {
         sqlx::query_as(
             "SELECT * FROM studio_projects WHERE id = ? AND user_id = ?"
@@ -189,7 +189,7 @@ impl StudioService {
     /// Create a new project
     pub async fn create_project(
         pool: &SqlitePool,
-        user_id: i64,
+        user_id: i32,
         name: &str,
         project_type: &str,
         sticker_type: &str,
@@ -218,7 +218,7 @@ impl StudioService {
     pub async fn update_project(
         pool: &SqlitePool,
         project_id: &str,
-        user_id: i64,
+        user_id: i32,
         name: Option<&str>,
         thumbnail: Option<&str>,
         data: Option<&str>,
@@ -263,7 +263,7 @@ impl StudioService {
     pub async fn delete_project(
         pool: &SqlitePool,
         project_id: &str,
-        user_id: i64,
+        user_id: i32,
     ) -> Result<bool, sqlx::Error> {
         let result = sqlx::query(
             "DELETE FROM studio_projects WHERE id = ? AND user_id = ?"

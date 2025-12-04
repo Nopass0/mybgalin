@@ -119,7 +119,7 @@ pub async fn sync_anime_data(
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<String>> {
     // Check if sync is already running
-    let existing: Option<(i64,)> = sqlx::query_as::<sqlx::Sqlite, (i64,)>(
+    let existing: Option<(i32,)> = sqlx::query_as::<sqlx::Sqlite, (i32,)>(
         "SELECT id FROM anime_sync_progress WHERE status = 'running' LIMIT 1"
     )
     .fetch_optional(pool.inner())
@@ -132,7 +132,7 @@ pub async fn sync_anime_data(
     }
 
     // Create new progress record
-    let progress_id: i64 = sqlx::query_scalar::<sqlx::Sqlite, i64>(
+    let progress_id: i32 = sqlx::query_scalar::<sqlx::Sqlite, i32>(
         "INSERT INTO anime_sync_progress (status, message) VALUES ('running', 'Начало синхронизации...') RETURNING id"
     )
     .fetch_one(pool.inner())
@@ -148,7 +148,7 @@ pub async fn sync_anime_data(
     Json(ApiResponse::success("Синхронизация запущена".to_string()))
 }
 
-async fn run_sync_task(pool: SqlitePool, progress_id: i64) {
+async fn run_sync_task(pool: SqlitePool, progress_id: i32) {
     println!("🎬 Starting anime sync task (progress_id: {})", progress_id);
 
     let sheets_client = GoogleSheetsClient::new(SHEET_ID.to_string());
@@ -200,7 +200,7 @@ async fn run_sync_task(pool: SqlitePool, progress_id: i64) {
 
         for row in rows {
             // Check if anime already exists
-            let existing: Option<(i64,)> = sqlx::query_as::<sqlx::Sqlite, (i64,)>(
+            let existing: Option<(i32,)> = sqlx::query_as::<sqlx::Sqlite, (i32,)>(
                 "SELECT id FROM anime_auction WHERE title = $1 AND year = $2"
             )
             .bind(&row.title)
