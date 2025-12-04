@@ -358,6 +358,21 @@ async fn rocket() -> _ {
                 routes::console::get_services,
             ],
         )
+        // Menu settings (public - for sidebar visibility)
+        .mount(
+            "/api",
+            routes![
+                routes::menu::get_menu_settings,
+            ],
+        )
+        // Menu settings (admin protected)
+        .mount(
+            "/api",
+            routes![
+                routes::menu::get_menu_items,
+                routes::menu::update_menu_settings,
+            ],
+        )
         // T2 Sales System routes (public auth)
         .mount(
             "/api",
