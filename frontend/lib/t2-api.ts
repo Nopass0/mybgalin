@@ -293,6 +293,17 @@ export const t2ApiService = {
     return res.data.data!;
   },
 
+  async updateTag(tagId: number, data: Partial<{
+    name: string;
+    color: string;
+    description: string;
+    priority: number;
+  }>): Promise<T2Tag> {
+    const res = await t2Api.put<ApiResponse<T2Tag>>(`/t2/tags/${tagId}`, data);
+    if (!res.data.success) throw new Error(res.data.error);
+    return res.data.data!;
+  },
+
   async deleteTag(tagId: number): Promise<void> {
     const res = await t2Api.delete<ApiResponse<void>>(`/t2/tags/${tagId}`);
     if (!res.data.success) throw new Error(res.data.error);
@@ -375,6 +386,24 @@ export const t2ApiService = {
     return res.data.data!;
   },
 
+  async updateTariff(tariffId: number, data: Partial<{
+    name: string;
+    price: number;
+    minutes: number;
+    sms: number;
+    gb: number;
+    unlimited_t2: boolean;
+    unlimited_internet: boolean;
+    unlimited_sms: boolean;
+    unlimited_calls: boolean;
+    unlimited_apps: string;
+    description: string;
+  }>): Promise<T2Tariff> {
+    const res = await t2Api.put<ApiResponse<T2Tariff>>(`/t2/tariffs/${tariffId}`, data);
+    if (!res.data.success) throw new Error(res.data.error);
+    return res.data.data!;
+  },
+
   async deleteTariff(tariffId: number): Promise<void> {
     const res = await t2Api.delete<ApiResponse<void>>(`/t2/tariffs/${tariffId}`);
     if (!res.data.success) throw new Error(res.data.error);
@@ -394,6 +423,17 @@ export const t2ApiService = {
     for_smartphones_only?: boolean;
   }): Promise<T2Service> {
     const res = await t2Api.post<ApiResponse<T2Service>>("/t2/services", data);
+    if (!res.data.success) throw new Error(res.data.error);
+    return res.data.data!;
+  },
+
+  async updateService(serviceId: number, data: Partial<{
+    name: string;
+    price: number;
+    description: string;
+    for_smartphones_only: boolean;
+  }>): Promise<T2Service> {
+    const res = await t2Api.put<ApiResponse<T2Service>>(`/t2/services/${serviceId}`, data);
     if (!res.data.success) throw new Error(res.data.error);
     return res.data.data!;
   },

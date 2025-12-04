@@ -236,6 +236,14 @@ pub struct CreateTagRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateTagRequest {
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub description: Option<String>,
+    pub priority: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateTariffRequest {
     pub name: String,
     pub price: f64,
@@ -251,9 +259,32 @@ pub struct CreateTariffRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateTariffRequest {
+    pub name: Option<String>,
+    pub price: Option<f64>,
+    pub minutes: Option<i32>,
+    pub sms: Option<i32>,
+    pub gb: Option<i32>,
+    pub unlimited_t2: Option<bool>,
+    pub unlimited_internet: Option<bool>,
+    pub unlimited_sms: Option<bool>,
+    pub unlimited_calls: Option<bool>,
+    pub unlimited_apps: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateServiceRequest {
     pub name: String,
     pub price: f64,
+    pub description: Option<String>,
+    pub for_smartphones_only: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateServiceRequest {
+    pub name: Option<String>,
+    pub price: Option<f64>,
     pub description: Option<String>,
     pub for_smartphones_only: Option<bool>,
 }

@@ -381,6 +381,64 @@ pub async fn t2_create_tag(
     }
 }
 
+#[put("/t2/tags/<tag_id>", data = "<request>")]
+pub async fn t2_update_tag(
+    pool: &State<SqlitePool>,
+    auth: T2AuthGuard,
+    tag_id: i32,
+    request: Json<super::models::UpdateTagRequest>,
+) -> Json<ApiResponse<T2Tag>> {
+    // Check ownership
+    let exists = sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM t2_tags WHERE id = ? AND store_id = ?",
+    )
+    .bind(tag_id)
+    .bind(auth.current_store_id)
+    .fetch_optional(pool.inner())
+    .await
+    .ok()
+    .flatten();
+
+    if exists.is_none() {
+        return ApiResponse::error("Tag not found");
+    }
+
+    // Build update query dynamically
+    let mut updates = Vec::new();
+    if request.name.is_some() { updates.push("name = ?"); }
+    if request.color.is_some() { updates.push("color = ?"); }
+    if request.description.is_some() { updates.push("description = ?"); }
+    if request.priority.is_some() { updates.push("priority = ?"); }
+
+    if updates.is_empty() {
+        // Nothing to update, return current tag
+        match sqlx::query_as::<_, T2Tag>(
+            "SELECT id, store_id, name, color, description, priority, created_at FROM t2_tags WHERE id = ?"
+        )
+        .bind(tag_id)
+        .fetch_one(pool.inner())
+        .await
+        {
+            Ok(tag) => return ApiResponse::success(tag),
+            Err(e) => return ApiResponse::error(&format!("Failed to fetch tag: {}", e)),
+        }
+    }
+
+    let query = format!("UPDATE t2_tags SET {} WHERE id = ? RETURNING id, store_id, name, color, description, priority, created_at", updates.join(", "));
+    let mut q = sqlx::query_as::<_, T2Tag>(&query);
+
+    if let Some(ref name) = request.name { q = q.bind(name); }
+    if let Some(ref color) = request.color { q = q.bind(color); }
+    if let Some(ref description) = request.description { q = q.bind(description); }
+    if let Some(priority) = request.priority { q = q.bind(priority); }
+    q = q.bind(tag_id);
+
+    match q.fetch_one(pool.inner()).await {
+        Ok(tag) => ApiResponse::success(tag),
+        Err(e) => ApiResponse::error(&format!("Failed to update tag: {}", e)),
+    }
+}
+
 #[delete("/t2/tags/<tag_id>")]
 pub async fn t2_delete_tag(
     pool: &State<SqlitePool>,
@@ -767,6 +825,78 @@ pub async fn t2_create_tariff(
     }
 }
 
+#[put("/t2/tariffs/<tariff_id>", data = "<request>")]
+pub async fn t2_update_tariff(
+    pool: &State<SqlitePool>,
+    auth: T2AuthGuard,
+    tariff_id: i32,
+    request: Json<super::models::UpdateTariffRequest>,
+) -> Json<ApiResponse<T2Tariff>> {
+    // Check ownership
+    let exists = sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM t2_tariffs WHERE id = ? AND store_id = ?",
+    )
+    .bind(tariff_id)
+    .bind(auth.current_store_id)
+    .fetch_optional(pool.inner())
+    .await
+    .ok()
+    .flatten();
+
+    if exists.is_none() {
+        return ApiResponse::error("Tariff not found");
+    }
+
+    // Build update query dynamically
+    let mut updates = Vec::new();
+    if request.name.is_some() { updates.push("name = ?"); }
+    if request.price.is_some() { updates.push("price = ?"); }
+    if request.minutes.is_some() { updates.push("minutes = ?"); }
+    if request.sms.is_some() { updates.push("sms = ?"); }
+    if request.gb.is_some() { updates.push("gb = ?"); }
+    if request.unlimited_t2.is_some() { updates.push("unlimited_t2 = ?"); }
+    if request.unlimited_internet.is_some() { updates.push("unlimited_internet = ?"); }
+    if request.unlimited_sms.is_some() { updates.push("unlimited_sms = ?"); }
+    if request.unlimited_calls.is_some() { updates.push("unlimited_calls = ?"); }
+    if request.unlimited_apps.is_some() { updates.push("unlimited_apps = ?"); }
+    if request.description.is_some() { updates.push("description = ?"); }
+
+    if updates.is_empty() {
+        match sqlx::query_as::<_, T2Tariff>(
+            "SELECT id, store_id, name, price, minutes, sms, gb, unlimited_t2, unlimited_internet, unlimited_sms, unlimited_calls, unlimited_apps, description, created_at, updated_at FROM t2_tariffs WHERE id = ?"
+        )
+        .bind(tariff_id)
+        .fetch_one(pool.inner())
+        .await
+        {
+            Ok(tariff) => return ApiResponse::success(tariff),
+            Err(e) => return ApiResponse::error(&format!("Failed to fetch tariff: {}", e)),
+        }
+    }
+
+    updates.push("updated_at = datetime('now')");
+    let query = format!("UPDATE t2_tariffs SET {} WHERE id = ? RETURNING id, store_id, name, price, minutes, sms, gb, unlimited_t2, unlimited_internet, unlimited_sms, unlimited_calls, unlimited_apps, description, created_at, updated_at", updates.join(", "));
+    let mut q = sqlx::query_as::<_, T2Tariff>(&query);
+
+    if let Some(ref name) = request.name { q = q.bind(name); }
+    if let Some(price) = request.price { q = q.bind(price); }
+    if let Some(minutes) = request.minutes { q = q.bind(minutes); }
+    if let Some(sms) = request.sms { q = q.bind(sms); }
+    if let Some(gb) = request.gb { q = q.bind(gb); }
+    if let Some(unlimited_t2) = request.unlimited_t2 { q = q.bind(unlimited_t2); }
+    if let Some(unlimited_internet) = request.unlimited_internet { q = q.bind(unlimited_internet); }
+    if let Some(unlimited_sms) = request.unlimited_sms { q = q.bind(unlimited_sms); }
+    if let Some(unlimited_calls) = request.unlimited_calls { q = q.bind(unlimited_calls); }
+    if let Some(ref unlimited_apps) = request.unlimited_apps { q = q.bind(unlimited_apps); }
+    if let Some(ref description) = request.description { q = q.bind(description); }
+    q = q.bind(tariff_id);
+
+    match q.fetch_one(pool.inner()).await {
+        Ok(tariff) => ApiResponse::success(tariff),
+        Err(e) => ApiResponse::error(&format!("Failed to update tariff: {}", e)),
+    }
+}
+
 #[delete("/t2/tariffs/<tariff_id>")]
 pub async fn t2_delete_tariff(
     pool: &State<SqlitePool>,
@@ -826,6 +956,63 @@ pub async fn t2_create_service(
     {
         Ok(service) => ApiResponse::success(service),
         Err(e) => ApiResponse::error(&format!("Failed to create service: {}", e)),
+    }
+}
+
+#[put("/t2/services/<service_id>", data = "<request>")]
+pub async fn t2_update_service(
+    pool: &State<SqlitePool>,
+    auth: T2AuthGuard,
+    service_id: i32,
+    request: Json<super::models::UpdateServiceRequest>,
+) -> Json<ApiResponse<T2Service>> {
+    // Check ownership
+    let exists = sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM t2_services WHERE id = ? AND store_id = ?",
+    )
+    .bind(service_id)
+    .bind(auth.current_store_id)
+    .fetch_optional(pool.inner())
+    .await
+    .ok()
+    .flatten();
+
+    if exists.is_none() {
+        return ApiResponse::error("Service not found");
+    }
+
+    // Build update query dynamically
+    let mut updates = Vec::new();
+    if request.name.is_some() { updates.push("name = ?"); }
+    if request.price.is_some() { updates.push("price = ?"); }
+    if request.description.is_some() { updates.push("description = ?"); }
+    if request.for_smartphones_only.is_some() { updates.push("for_smartphones_only = ?"); }
+
+    if updates.is_empty() {
+        match sqlx::query_as::<_, T2Service>(
+            "SELECT id, store_id, name, price, description, for_smartphones_only, created_at FROM t2_services WHERE id = ?"
+        )
+        .bind(service_id)
+        .fetch_one(pool.inner())
+        .await
+        {
+            Ok(service) => return ApiResponse::success(service),
+            Err(e) => return ApiResponse::error(&format!("Failed to fetch service: {}", e)),
+        }
+    }
+
+    let query = format!("UPDATE t2_services SET {} WHERE id = ? RETURNING id, store_id, name, price, description, for_smartphones_only, created_at", updates.join(", "));
+    let mut q = sqlx::query_as::<_, T2Service>(&query);
+
+    if let Some(ref name) = request.name { q = q.bind(name); }
+    if let Some(price) = request.price { q = q.bind(price); }
+    if let Some(ref description) = request.description { q = q.bind(description); }
+    if let Some(for_smartphones_only) = request.for_smartphones_only { q = q.bind(for_smartphones_only); }
+    q = q.bind(service_id);
+
+    match q.fetch_one(pool.inner()).await {
+        Ok(service) => ApiResponse::success(service),
+        Err(e) => ApiResponse::error(&format!("Failed to update service: {}", e)),
     }
 }
 
