@@ -728,5 +728,298 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
         .execute(&pool)
         .await?;
 
+    // === T2 Sales System Tables ===
+
+    // T2 Stores (точки продаж)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_stores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            address TEXT NOT NULL,
+            admin_code TEXT UNIQUE NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Employees (сотрудники)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_employees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            code TEXT UNIQUE NOT NULL,
+            is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Employee additional stores access
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_employee_stores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            store_id INTEGER NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES t2_employees(id) ON DELETE CASCADE,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE,
+            UNIQUE(employee_id, store_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Product Categories
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            icon TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default categories
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO t2_categories (id, name, icon) VALUES
+        (1, 'Смартфоны', 'smartphone'),
+        (2, 'Аксессуары', 'headphones'),
+        (3, 'SIM-карты', 'sim-card'),
+        (4, 'Услуги', 'wrench')
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Tags (ярлыки)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#00bcd4',
+            description TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Products (товары)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            brand TEXT,
+            model TEXT,
+            price REAL NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            image_url TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE,
+            FOREIGN KEY (category_id) REFERENCES t2_categories(id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Product Specifications (характеристики товаров)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_product_specs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            spec_name TEXT NOT NULL,
+            spec_value TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES t2_products(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Product Tags (связь товаров и ярлыков)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_product_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            tag_id INTEGER NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES t2_products(id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id) REFERENCES t2_tags(id) ON DELETE CASCADE,
+            UNIQUE(product_id, tag_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Tariffs (тарифы Tele2)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_tariffs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            minutes INTEGER,
+            sms INTEGER,
+            gb INTEGER,
+            unlimited_t2 BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_internet BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_sms BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_calls BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_apps TEXT,
+            description TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Services (услуги)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_services (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            description TEXT,
+            for_smartphones_only BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Sales (история продаж)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            store_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            customer_request TEXT,
+            customer_audio_url TEXT,
+            total_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'completed',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (store_id) REFERENCES t2_stores(id) ON DELETE CASCADE,
+            FOREIGN KEY (employee_id) REFERENCES t2_employees(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Sale Items (товары в продаже)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_sale_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            item_name TEXT NOT NULL,
+            item_details TEXT,
+            price REAL NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sale_id) REFERENCES t2_sales(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // T2 Sessions (сессии авторизации)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES t2_employees(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Create indexes for T2 tables
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_employees_store ON t2_employees(store_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_employees_code ON t2_employees(code)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_products_store ON t2_products(store_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_products_category ON t2_products(category_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_sales_store ON t2_sales(store_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_sales_employee ON t2_sales(employee_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_t2_sessions_token ON t2_sessions(token)")
+        .execute(&pool)
+        .await?;
+
+    // Create global admin for T2 section
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO t2_stores (id, name, address, admin_code)
+        VALUES (1, 'Главный офис', 'Администрация', '00000')
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO t2_employees (id, store_id, name, code, is_admin)
+        VALUES (1, 1, 'Администратор', '12345', TRUE)
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }

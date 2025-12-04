@@ -207,7 +207,7 @@ pub async fn get_projects(
     auth: StudioAuth,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    match StudioService::get_user_projects(pool, auth.user_id).await {
+    match StudioService::get_user_projects(pool, auth.user_id.into()).await {
         Ok(projects) => {
             let responses: Vec<StudioProjectResponse> =
                 projects.into_iter().map(StudioProjectResponse::from).collect();
@@ -228,7 +228,7 @@ pub async fn create_project(
 ) -> Json<ApiResponse<serde_json::Value>> {
     match StudioService::create_project(
         pool,
-        auth.user_id,
+        auth.user_id.into(),
         &request.name,
         &request.project_type,
         &request.sticker_type,
@@ -252,7 +252,7 @@ pub async fn get_project(
     id: &str,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    match StudioService::get_project(pool, id, auth.user_id).await {
+    match StudioService::get_project(pool, id, auth.user_id.into()).await {
         Ok(Some(project)) => {
             let response = StudioProjectResponse::from(project);
             Json(ApiResponse::success(serde_json::json!({
@@ -275,7 +275,7 @@ pub async fn update_project(
     match StudioService::update_project(
         pool,
         id,
-        auth.user_id,
+        auth.user_id.into(),
         request.name.as_deref(),
         request.thumbnail.as_deref(),
         request.data.as_deref(),
@@ -300,7 +300,7 @@ pub async fn delete_project(
     id: &str,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    match StudioService::delete_project(pool, id, auth.user_id).await {
+    match StudioService::delete_project(pool, id, auth.user_id.into()).await {
         Ok(true) => Json(ApiResponse::success(serde_json::json!({
             "deleted": true
         }))),
