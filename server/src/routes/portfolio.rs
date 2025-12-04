@@ -38,7 +38,7 @@ pub async fn create_about(
 #[put("/portfolio/about/<id>", data = "<request>")]
 pub async fn update_about(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     request: Json<UpdateAboutRequest>,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<PortfolioAbout>> {
@@ -108,7 +108,7 @@ pub async fn create_experience(
 #[put("/portfolio/experience/<id>", data = "<request>")]
 pub async fn update_experience(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     request: Json<UpdateExperienceRequest>,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<PortfolioExperience>> {
@@ -147,7 +147,7 @@ pub async fn update_experience(
 #[delete("/portfolio/experience/<id>")]
 pub async fn delete_experience(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_experience WHERE id = $1")
@@ -186,7 +186,7 @@ pub async fn create_skill(
 #[put("/portfolio/skills/<id>", data = "<request>")]
 pub async fn update_skill(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     request: Json<UpdateSkillRequest>,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<PortfolioSkill>> {
@@ -215,7 +215,7 @@ pub async fn update_skill(
 }
 
 #[delete("/portfolio/skills/<id>")]
-pub async fn delete_skill(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_skill(_auth: AuthGuard, id: i32, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_skills WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
@@ -253,7 +253,7 @@ pub async fn create_contact(
 #[put("/portfolio/contacts/<id>", data = "<request>")]
 pub async fn update_contact(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     request: Json<UpdateContactRequest>,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<PortfolioContact>> {
@@ -283,7 +283,7 @@ pub async fn update_contact(
 }
 
 #[delete("/portfolio/contacts/<id>")]
-pub async fn delete_contact(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_contact(_auth: AuthGuard, id: i32, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
     match sqlx::query("DELETE FROM portfolio_contacts WHERE id = $1")
         .bind(id)
         .execute(pool.inner())
@@ -370,7 +370,7 @@ pub async fn create_case(
 }
 
 #[delete("/portfolio/cases/<id>")]
-pub async fn delete_case(_auth: AuthGuard, id: i64, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
+pub async fn delete_case(_auth: AuthGuard, id: i32, pool: &State<SqlitePool>) -> Json<ApiResponse<String>> {
     // Images will be deleted automatically due to ON DELETE CASCADE
     match sqlx::query("DELETE FROM portfolio_cases WHERE id = $1")
         .bind(id)
