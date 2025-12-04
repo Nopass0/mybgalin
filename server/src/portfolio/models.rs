@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 // Database models
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioAbout {
-    pub id: i64,
+    pub id: i32,
     pub description: String,
     pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioExperience {
-    pub id: i64,
+    pub id: i32,
     pub title: String,
     pub company: String,
     pub date_from: String,
@@ -21,7 +21,7 @@ pub struct PortfolioExperience {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioSkill {
-    pub id: i64,
+    pub id: i32,
     pub name: String,
     pub category: Option<String>,
     pub created_at: String,
@@ -29,7 +29,7 @@ pub struct PortfolioSkill {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioContact {
-    pub id: i64,
+    pub id: i32,
     #[serde(rename = "type")]
     pub contact_type: String,
     pub value: String,
@@ -39,7 +39,7 @@ pub struct PortfolioContact {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioCase {
-    pub id: i64,
+    pub id: i32,
     pub title: String,
     pub description: String,
     pub main_image: String,
@@ -50,10 +50,10 @@ pub struct PortfolioCase {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PortfolioCaseImage {
-    pub id: i64,
-    pub case_id: i64,
+    pub id: i32,
+    pub case_id: i32,
     pub image_url: String,
-    pub order_index: i64,
+    pub order_index: i32,
 }
 
 // Request DTOs
@@ -135,7 +135,7 @@ pub struct UpdateCaseRequest {
 // Response DTOs
 #[derive(Debug, Serialize)]
 pub struct PortfolioCaseWithImages {
-    pub id: i64,
+    pub id: i32,
     pub title: String,
     pub description: String,
     pub main_image: String,
