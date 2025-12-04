@@ -38,7 +38,7 @@ impl JobScheduler {
         *self.is_running.read()
     }
 
-    fn log_activity_sync(&self, event_type: &str, vacancy_id: Option<i64>, description: &str) {
+    fn log_activity_sync(&self, event_type: &str, vacancy_id: Option<i32>, description: &str) {
         let pool = self.pool.clone();
         let event_type = event_type.to_string();
         let description = description.to_string();
@@ -55,7 +55,7 @@ impl JobScheduler {
         });
     }
 
-    async fn log_activity(&self, event_type: &str, vacancy_id: Option<i64>, description: &str) -> Result<(), String> {
+    async fn log_activity(&self, event_type: &str, vacancy_id: Option<i32>, description: &str) -> Result<(), String> {
         sqlx::query(
             "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES (?, ?, ?)"
         )
@@ -456,7 +456,7 @@ impl JobScheduler {
                 println!("✅ Applied to: {} (AI score: {})", title, ai_score.unwrap_or(0));
 
                 // Get vacancy DB id
-                let vacancy_db_id: i64 = sqlx::query_scalar(
+                let vacancy_db_id: i32 = sqlx::query_scalar(
                     "SELECT id FROM job_vacancies WHERE hh_vacancy_id = ?"
                 )
                 .bind(vacancy_id)
@@ -511,7 +511,7 @@ impl JobScheduler {
                         eprintln!("⚠️  Failed to send chat intro: {}", e);
                     } else {
                         // Save intro message
-                        let chat_id: Option<(i64,)> = sqlx::query_as(
+                        let chat_id: Option<(i32,)> = sqlx::query_as(
                             "SELECT id FROM job_chats_v2 WHERE hh_chat_id = ?"
                         )
                         .bind(&negotiation_id)
@@ -614,7 +614,7 @@ impl JobScheduler {
             };
 
             // Get current status
-            let current: Option<(String, i64)> = sqlx::query_as(
+            let current: Option<(String, i32)> = sqlx::query_as(
                 "SELECT status, id FROM job_vacancies WHERE hh_vacancy_id = ?"
             )
             .bind(vacancy_id)
@@ -708,7 +708,7 @@ impl JobScheduler {
         let (telegram, _email) = self.get_contacts().await?;
 
         // Get all active chats
-        let chats: Vec<(i64, String, String, i64, bool)> = sqlx::query_as(
+        let chats: Vec<(i32, String, String, i32, bool)> = sqlx::query_as(
             r#"SELECT c.id, c.hh_chat_id, v.title, v.id, c.telegram_invited
                FROM job_chats_v2 c
                JOIN job_vacancies v ON c.vacancy_id = v.id
@@ -998,7 +998,7 @@ impl JobScheduler {
 
     async fn get_valid_token(&self) -> Result<String, String> {
         // Get latest token
-        let token_row: Option<(i64, String, String, String)> = sqlx::query_as(
+        let token_row: Option<(i32, String, String, String)> = sqlx::query_as(
             "SELECT id, access_token, refresh_token, expires_at FROM hh_tokens ORDER BY id DESC LIMIT 1"
         )
         .fetch_optional(&self.pool)
@@ -1079,7 +1079,7 @@ impl JobScheduler {
             );
 
             // Check if exists
-            let existing: Option<(i64,)> = sqlx::query_as(
+            let existing: Option<(i32,)> = sqlx::query_as(
                 "SELECT id FROM anime_auction WHERE title = ? AND year = ?"
             )
             .bind(&row.title)
