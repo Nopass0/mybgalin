@@ -143,7 +143,7 @@ pub struct GenerateTagsRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct SendMessageRequest {
-    pub chat_id: i64,
+    pub chat_id: i32,
     pub text: String,
 }
 

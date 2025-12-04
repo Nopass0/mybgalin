@@ -186,7 +186,7 @@ pub async fn get_vacancies(
 #[get("/jobs/vacancies/<id>")]
 pub async fn get_vacancy_details(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<VacancyWithResponse>> {
     let vacancy: Option<JobVacancy> = sqlx::query_as(
@@ -349,7 +349,7 @@ pub async fn get_job_stats(
 #[post("/jobs/vacancies/<id>/ignore")]
 pub async fn ignore_vacancy(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<String>> {
     sqlx::query("UPDATE job_vacancies SET status = 'ignored' WHERE id = $1")
@@ -580,7 +580,7 @@ pub async fn generate_tags(
 #[post("/jobs/tags/<id>/toggle")]
 pub async fn toggle_tag(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<String>> {
     sqlx::query("UPDATE job_search_tags SET is_active = NOT is_active WHERE id = $1")
@@ -595,7 +595,7 @@ pub async fn toggle_tag(
 #[rocket::delete("/jobs/tags/<id>")]
 pub async fn delete_tag(
     _auth: AuthGuard,
-    id: i64,
+    id: i32,
     pool: &State<SqlitePool>,
 ) -> Json<ApiResponse<String>> {
     sqlx::query("DELETE FROM job_search_tags WHERE id = $1")
