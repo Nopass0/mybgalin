@@ -399,7 +399,7 @@ pub async fn t2_update_tag(
     request: Json<super::models::UpdateTagRequest>,
 ) -> Json<ApiResponse<T2Tag>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i64>(
+    let exists = sqlx::query_scalar::<_, i32>(
         "SELECT id FROM t2_tags WHERE id = ? AND store_id = ?",
     )
     .bind(tag_id)
@@ -534,9 +534,9 @@ pub async fn t2_get_products(
     // Prepare search pattern if needed
     let search_pattern = search.as_ref().map(|s| format!("%{}%", s));
 
-    let product_ids: Vec<i64> = match (category_id, &search_pattern) {
+    let product_ids: Vec<i32> = match (category_id, &search_pattern) {
         (Some(cat_id), Some(pattern)) => {
-            sqlx::query_scalar::<_, i64>(
+            sqlx::query_scalar::<_, i32>(
                 "SELECT id FROM t2_products WHERE store_id = ? AND category_id = ? AND (name LIKE ? OR brand LIKE ? OR model LIKE ?) ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -549,7 +549,7 @@ pub async fn t2_get_products(
             .unwrap_or_default()
         }
         (Some(cat_id), None) => {
-            sqlx::query_scalar::<_, i64>(
+            sqlx::query_scalar::<_, i32>(
                 "SELECT id FROM t2_products WHERE store_id = ? AND category_id = ? ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -559,7 +559,7 @@ pub async fn t2_get_products(
             .unwrap_or_default()
         }
         (None, Some(pattern)) => {
-            sqlx::query_scalar::<_, i64>(
+            sqlx::query_scalar::<_, i32>(
                 "SELECT id FROM t2_products WHERE store_id = ? AND (name LIKE ? OR brand LIKE ? OR model LIKE ?) ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -571,7 +571,7 @@ pub async fn t2_get_products(
             .unwrap_or_default()
         }
         (None, None) => {
-            sqlx::query_scalar::<_, i64>(
+            sqlx::query_scalar::<_, i32>(
                 "SELECT id FROM t2_products WHERE store_id = ? ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -583,7 +583,7 @@ pub async fn t2_get_products(
 
     let mut products = Vec::new();
     for id in product_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
             products.push(product);
         }
     }
@@ -610,7 +610,7 @@ pub async fn t2_create_product(
     request: Json<CreateProductRequest>,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     // Insert product
-    let product_id = match sqlx::query_scalar::<_, i64>(
+    let product_id = match sqlx::query_scalar::<_, i32>(
         r#"
         INSERT INTO t2_products (store_id, category_id, name, brand, model, price, quantity, image_url)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -653,7 +653,7 @@ pub async fn t2_create_product(
             .await;
     }
 
-    match get_product_with_details(pool.inner(), product_id).await {
+    match get_product_with_details(pool.inner(), product_id.into()).await {
         Some(product) => ApiResponse::success(product),
         None => ApiResponse::error("Failed to fetch created product"),
     }
@@ -667,7 +667,7 @@ pub async fn t2_update_product(
     request: Json<UpdateProductRequest>,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i64>(
+    let exists = sqlx::query_scalar::<_, i32>(
         "SELECT id FROM t2_products WHERE id = ? AND store_id = ?",
     )
     .bind(product_id)
@@ -843,7 +843,7 @@ pub async fn t2_update_tariff(
     request: Json<super::models::UpdateTariffRequest>,
 ) -> Json<ApiResponse<T2Tariff>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i64>(
+    let exists = sqlx::query_scalar::<_, i32>(
         "SELECT id FROM t2_tariffs WHERE id = ? AND store_id = ?",
     )
     .bind(tariff_id)
@@ -977,7 +977,7 @@ pub async fn t2_update_service(
     request: Json<super::models::UpdateServiceRequest>,
 ) -> Json<ApiResponse<T2Service>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i64>(
+    let exists = sqlx::query_scalar::<_, i32>(
         "SELECT id FROM t2_services WHERE id = ? AND store_id = ?",
     )
     .bind(service_id)
@@ -1069,7 +1069,7 @@ pub async fn t2_recommend_products(
     }
 
     // Get all phones from store
-    let product_ids: Vec<i64> = sqlx::query_scalar(
+    let product_ids: Vec<i32> = sqlx::query_scalar(
         "SELECT id FROM t2_products WHERE store_id = ? AND category_id = 1",
     )
     .bind(auth.current_store_id)
@@ -1079,7 +1079,7 @@ pub async fn t2_recommend_products(
 
     let mut products = Vec::new();
     for id in product_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
             products.push(product);
         }
     }
@@ -1113,7 +1113,7 @@ pub async fn t2_recommend_accessories(
     };
 
     // Get accessories
-    let accessory_ids: Vec<i64> = sqlx::query_scalar(
+    let accessory_ids: Vec<i32> = sqlx::query_scalar(
         "SELECT id FROM t2_products WHERE store_id = ? AND category_id = 2",
     )
     .bind(auth.current_store_id)
@@ -1123,7 +1123,7 @@ pub async fn t2_recommend_accessories(
 
     let mut accessories = Vec::new();
     for id in accessory_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
             accessories.push(product);
         }
     }
@@ -1389,7 +1389,7 @@ pub async fn t2_create_sale(
     }
 
     // Create sale
-    let sale_id = match sqlx::query_scalar::<_, i64>(
+    let sale_id = match sqlx::query_scalar::<_, i32>(
         r#"
         INSERT INTO t2_sales (store_id, employee_id, customer_request, customer_audio_url, total_amount, status)
         VALUES (?, ?, ?, ?, ?, 'completed')
@@ -1441,7 +1441,7 @@ pub async fn t2_create_sale(
         .unwrap_or_default();
 
     ApiResponse::success(T2SaleWithDetails {
-        id: sale_id,
+        id: sale_id.into(),
         store_id: auth.current_store_id,
         store_name,
         employee_id: auth.employee.id,
@@ -1466,7 +1466,7 @@ pub async fn t2_search(
     let search_pattern = format!("%{}%", query);
 
     // Search in products by name, brand, model
-    let product_ids: Vec<i64> = sqlx::query_scalar(
+    let product_ids: Vec<i32> = sqlx::query_scalar(
         r#"
         SELECT DISTINCT p.id FROM t2_products p
         LEFT JOIN t2_product_specs ps ON p.id = ps.product_id
@@ -1487,7 +1487,7 @@ pub async fn t2_search(
 
     let mut products = Vec::new();
     for id in product_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
             products.push(product);
         }
     }
@@ -1504,13 +1504,13 @@ pub async fn t2_get_stats(
 ) -> Json<ApiResponse<serde_json::Value>> {
     let store_id = auth.current_store_id;
 
-    let products_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_products WHERE store_id = ?")
+    let products_count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_products WHERE store_id = ?")
         .bind(store_id)
         .fetch_one(pool.inner())
         .await
         .unwrap_or(0);
 
-    let sales_today: i64 = sqlx::query_scalar(
+    let sales_today: i32 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM t2_sales WHERE store_id = ? AND date(created_at) = date('now')",
     )
     .bind(store_id)
@@ -1526,7 +1526,7 @@ pub async fn t2_get_stats(
     .await
     .unwrap_or(0.0);
 
-    let total_sales: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_sales WHERE store_id = ?")
+    let total_sales: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_sales WHERE store_id = ?")
         .bind(store_id)
         .fetch_one(pool.inner())
         .await
