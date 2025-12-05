@@ -269,7 +269,7 @@ match_score от 0 до 100 - насколько товар соответств
     struct AIRecommendation {
         product_id: i64,
         price_category: String,
-        match_score: i64,
+        match_score: i32,
         match_reasons: Vec<String>,
     }
 
