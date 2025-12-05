@@ -267,9 +267,9 @@ match_score от 0 до 100 - насколько товар соответств
 
     #[derive(Deserialize)]
     struct AIRecommendation {
-        product_id: i32,
+        product_id: i64,
         price_category: String,
-        match_score: i32,
+        match_score: i64,
         match_reasons: Vec<String>,
     }
 
@@ -366,7 +366,7 @@ pub async fn recommend_accessories(
 
     #[derive(Deserialize)]
     struct AIAccessory {
-        product_id: i32,
+        product_id: i64,
         reason: String,
         benefit: String,
     }
@@ -459,7 +459,7 @@ pub async fn recommend_tariffs(
 
     #[derive(Deserialize)]
     struct AITariff {
-        tariff_id: i32,
+        tariff_id: i64,
         recommendation: String,
     }
 

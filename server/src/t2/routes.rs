@@ -230,7 +230,7 @@ pub async fn t2_create_store(
 pub async fn t2_delete_store(
     pool: &State<SqlitePool>,
     _auth: T2AdminGuard,
-    store_id: i32,
+    store_id: i64,
 ) -> Json<ApiResponse<()>> {
     if store_id == 1 {
         return ApiResponse::error("Cannot delete main office");
@@ -292,7 +292,7 @@ pub async fn t2_create_employee(
 pub async fn t2_delete_employee(
     pool: &State<SqlitePool>,
     _auth: T2AdminGuard,
-    employee_id: i32,
+    employee_id: i64,
 ) -> Json<ApiResponse<()>> {
     if employee_id == 1 {
         return ApiResponse::error("Cannot delete main admin");
@@ -312,8 +312,8 @@ pub async fn t2_delete_employee(
 pub async fn t2_add_employee_store(
     pool: &State<SqlitePool>,
     _auth: T2AdminGuard,
-    employee_id: i32,
-    store_id: i32,
+    employee_id: i64,
+    store_id: i64,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query(
         "INSERT OR IGNORE INTO t2_employee_stores (employee_id, store_id) VALUES (?, ?)",
@@ -395,11 +395,11 @@ pub async fn t2_create_tag(
 pub async fn t2_update_tag(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tag_id: i32,
+    tag_id: i64,
     request: Json<super::models::UpdateTagRequest>,
 ) -> Json<ApiResponse<T2Tag>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i32>(
+    let exists = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM t2_tags WHERE id = ? AND store_id = ?",
     )
     .bind(tag_id)
@@ -453,7 +453,7 @@ pub async fn t2_update_tag(
 pub async fn t2_delete_tag(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tag_id: i32,
+    tag_id: i64,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_tags WHERE id = ? AND store_id = ?")
         .bind(tag_id)
@@ -468,7 +468,7 @@ pub async fn t2_delete_tag(
 
 // ============ PRODUCTS ============
 
-async fn get_product_with_details(pool: &SqlitePool, product_id: i32) -> Option<T2ProductWithDetails> {
+async fn get_product_with_details(pool: &SqlitePool, product_id: i64) -> Option<T2ProductWithDetails> {
     let product = sqlx::query_as::<_, T2Product>(
         "SELECT id, store_id, category_id, name, brand, model, price, quantity, image_url, created_at, updated_at FROM t2_products WHERE id = ?",
     )
@@ -528,15 +528,15 @@ async fn get_product_with_details(pool: &SqlitePool, product_id: i32) -> Option<
 pub async fn t2_get_products(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    category_id: Option<i32>,
+    category_id: Option<i64>,
     search: Option<String>,
 ) -> Json<ApiResponse<Vec<T2ProductWithDetails>>> {
     // Prepare search pattern if needed
     let search_pattern = search.as_ref().map(|s| format!("%{}%", s));
 
-    let product_ids: Vec<i32> = match (category_id, &search_pattern) {
+    let product_ids: Vec<i64> = match (category_id, &search_pattern) {
         (Some(cat_id), Some(pattern)) => {
-            sqlx::query_scalar::<_, i32>(
+            sqlx::query_scalar::<_, i64>(
                 "SELECT id FROM t2_products WHERE store_id = ? AND category_id = ? AND (name LIKE ? OR brand LIKE ? OR model LIKE ?) ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -549,7 +549,7 @@ pub async fn t2_get_products(
             .unwrap_or_default()
         }
         (Some(cat_id), None) => {
-            sqlx::query_scalar::<_, i32>(
+            sqlx::query_scalar::<_, i64>(
                 "SELECT id FROM t2_products WHERE store_id = ? AND category_id = ? ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -559,7 +559,7 @@ pub async fn t2_get_products(
             .unwrap_or_default()
         }
         (None, Some(pattern)) => {
-            sqlx::query_scalar::<_, i32>(
+            sqlx::query_scalar::<_, i64>(
                 "SELECT id FROM t2_products WHERE store_id = ? AND (name LIKE ? OR brand LIKE ? OR model LIKE ?) ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -571,7 +571,7 @@ pub async fn t2_get_products(
             .unwrap_or_default()
         }
         (None, None) => {
-            sqlx::query_scalar::<_, i32>(
+            sqlx::query_scalar::<_, i64>(
                 "SELECT id FROM t2_products WHERE store_id = ? ORDER BY updated_at DESC"
             )
             .bind(auth.current_store_id)
@@ -595,7 +595,7 @@ pub async fn t2_get_products(
 pub async fn t2_get_product(
     pool: &State<SqlitePool>,
     _auth: T2AuthGuard,
-    product_id: i32,
+    product_id: i64,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     match get_product_with_details(pool.inner(), product_id).await {
         Some(product) => ApiResponse::success(product),
@@ -610,7 +610,7 @@ pub async fn t2_create_product(
     request: Json<CreateProductRequest>,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     // Insert product
-    let product_id = match sqlx::query_scalar::<_, i32>(
+    let product_id = match sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO t2_products (store_id, category_id, name, brand, model, price, quantity, image_url)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -663,11 +663,11 @@ pub async fn t2_create_product(
 pub async fn t2_update_product(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    product_id: i32,
+    product_id: i64,
     request: Json<UpdateProductRequest>,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i32>(
+    let exists = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM t2_products WHERE id = ? AND store_id = ?",
     )
     .bind(product_id)
@@ -766,7 +766,7 @@ pub async fn t2_update_product(
 pub async fn t2_delete_product(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    product_id: i32,
+    product_id: i64,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_products WHERE id = ? AND store_id = ?")
         .bind(product_id)
@@ -839,11 +839,11 @@ pub async fn t2_create_tariff(
 pub async fn t2_update_tariff(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tariff_id: i32,
+    tariff_id: i64,
     request: Json<super::models::UpdateTariffRequest>,
 ) -> Json<ApiResponse<T2Tariff>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i32>(
+    let exists = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM t2_tariffs WHERE id = ? AND store_id = ?",
     )
     .bind(tariff_id)
@@ -911,7 +911,7 @@ pub async fn t2_update_tariff(
 pub async fn t2_delete_tariff(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tariff_id: i32,
+    tariff_id: i64,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_tariffs WHERE id = ? AND store_id = ?")
         .bind(tariff_id)
@@ -973,11 +973,11 @@ pub async fn t2_create_service(
 pub async fn t2_update_service(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    service_id: i32,
+    service_id: i64,
     request: Json<super::models::UpdateServiceRequest>,
 ) -> Json<ApiResponse<T2Service>> {
     // Check ownership
-    let exists = sqlx::query_scalar::<_, i32>(
+    let exists = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM t2_services WHERE id = ? AND store_id = ?",
     )
     .bind(service_id)
@@ -1030,7 +1030,7 @@ pub async fn t2_update_service(
 pub async fn t2_delete_service(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    service_id: i32,
+    service_id: i64,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_services WHERE id = ? AND store_id = ?")
         .bind(service_id)
@@ -1069,7 +1069,7 @@ pub async fn t2_recommend_products(
     }
 
     // Get all phones from store
-    let product_ids: Vec<i32> = sqlx::query_scalar(
+    let product_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT id FROM t2_products WHERE store_id = ? AND category_id = 1",
     )
     .bind(auth.current_store_id)
@@ -1105,7 +1105,7 @@ pub async fn t2_recommend_products(
 pub async fn t2_recommend_accessories(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    product_id: i32,
+    product_id: i64,
 ) -> Json<ApiResponse<Vec<AccessoryRecommendation>>> {
     let phone = match get_product_with_details(pool.inner(), product_id).await {
         Some(p) => p,
@@ -1113,7 +1113,7 @@ pub async fn t2_recommend_accessories(
     };
 
     // Get accessories
-    let accessory_ids: Vec<i32> = sqlx::query_scalar(
+    let accessory_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT id FROM t2_products WHERE store_id = ? AND category_id = 2",
     )
     .bind(auth.current_store_id)
@@ -1145,8 +1145,7 @@ pub async fn t2_recommend_tariffs(
         .unwrap_or("");
 
     let product_id = request.get("product_id")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
+        .and_then(|v| v.as_i64());
 
     let phone = if let Some(id) = product_id {
         get_product_with_details(pool.inner(), id).await
@@ -1181,7 +1180,7 @@ pub async fn t2_recommend_tariffs(
 pub async fn t2_is_smartphone(
     pool: &State<SqlitePool>,
     _auth: T2AuthGuard,
-    product_id: i32,
+    product_id: i64,
 ) -> Json<ApiResponse<bool>> {
     match get_product_with_details(pool.inner(), product_id).await {
         Some(product) => ApiResponse::success(ai::is_smartphone(&product)),
@@ -1195,8 +1194,8 @@ pub async fn t2_is_smartphone(
 pub async fn t2_get_sales(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    limit: Option<i32>,
-    offset: Option<i32>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Json<ApiResponse<Vec<T2SaleWithDetails>>> {
     let limit = limit.unwrap_or(50);
     let offset = offset.unwrap_or(0);
@@ -1390,7 +1389,7 @@ pub async fn t2_create_sale(
     }
 
     // Create sale
-    let sale_id = match sqlx::query_scalar::<_, i32>(
+    let sale_id = match sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO t2_sales (store_id, employee_id, customer_request, customer_audio_url, total_amount, status)
         VALUES (?, ?, ?, ?, ?, 'completed')
@@ -1467,7 +1466,7 @@ pub async fn t2_search(
     let search_pattern = format!("%{}%", query);
 
     // Search in products by name, brand, model
-    let product_ids: Vec<i32> = sqlx::query_scalar(
+    let product_ids: Vec<i64> = sqlx::query_scalar(
         r#"
         SELECT DISTINCT p.id FROM t2_products p
         LEFT JOIN t2_product_specs ps ON p.id = ps.product_id
@@ -1505,13 +1504,13 @@ pub async fn t2_get_stats(
 ) -> Json<ApiResponse<serde_json::Value>> {
     let store_id = auth.current_store_id;
 
-    let products_count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_products WHERE store_id = ?")
+    let products_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_products WHERE store_id = ?")
         .bind(store_id)
         .fetch_one(pool.inner())
         .await
         .unwrap_or(0);
 
-    let sales_today: i32 = sqlx::query_scalar(
+    let sales_today: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM t2_sales WHERE store_id = ? AND date(created_at) = date('now')",
     )
     .bind(store_id)
@@ -1527,7 +1526,7 @@ pub async fn t2_get_stats(
     .await
     .unwrap_or(0.0);
 
-    let total_sales: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_sales WHERE store_id = ?")
+    let total_sales: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM t2_sales WHERE store_id = ?")
         .bind(store_id)
         .fetch_one(pool.inner())
         .await

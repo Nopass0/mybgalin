@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Store {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub address: String,
     pub admin_code: String,
@@ -13,8 +13,8 @@ pub struct T2Store {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Employee {
-    pub id: i32,
-    pub store_id: i32,
+    pub id: i64,
+    pub store_id: i64,
     pub name: String,
     pub code: String,
     pub is_admin: bool,
@@ -23,8 +23,8 @@ pub struct T2Employee {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct T2EmployeeWithStores {
-    pub id: i32,
-    pub store_id: i32,
+    pub id: i64,
+    pub store_id: i64,
     pub name: String,
     pub code: String,
     pub is_admin: bool,
@@ -34,7 +34,7 @@ pub struct T2EmployeeWithStores {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Category {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub icon: Option<String>,
     pub created_at: String,
@@ -42,25 +42,25 @@ pub struct T2Category {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Tag {
-    pub id: i32,
-    pub store_id: i32,
+    pub id: i64,
+    pub store_id: i64,
     pub name: String,
     pub color: String,
     pub description: Option<String>,
-    pub priority: i32,
+    pub priority: i64,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Product {
-    pub id: i32,
-    pub store_id: i32,
-    pub category_id: i32,
+    pub id: i64,
+    pub store_id: i64,
+    pub category_id: i64,
     pub name: String,
     pub brand: Option<String>,
     pub model: Option<String>,
     pub price: f64,
-    pub quantity: i32,
+    pub quantity: i64,
     pub image_url: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -68,15 +68,15 @@ pub struct T2Product {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct T2ProductWithDetails {
-    pub id: i32,
-    pub store_id: i32,
-    pub category_id: i32,
+    pub id: i64,
+    pub store_id: i64,
+    pub category_id: i64,
     pub category_name: String,
     pub name: String,
     pub brand: Option<String>,
     pub model: Option<String>,
     pub price: f64,
-    pub quantity: i32,
+    pub quantity: i64,
     pub image_url: Option<String>,
     pub specs: Vec<T2ProductSpec>,
     pub tags: Vec<T2Tag>,
@@ -86,21 +86,21 @@ pub struct T2ProductWithDetails {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2ProductSpec {
-    pub id: i32,
-    pub product_id: i32,
+    pub id: i64,
+    pub product_id: i64,
     pub spec_name: String,
     pub spec_value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Tariff {
-    pub id: i32,
-    pub store_id: i32,
+    pub id: i64,
+    pub store_id: i64,
     pub name: String,
     pub price: f64,
-    pub minutes: Option<i32>,
-    pub sms: Option<i32>,
-    pub gb: Option<i32>,
+    pub minutes: Option<i64>,
+    pub sms: Option<i64>,
+    pub gb: Option<i64>,
     pub unlimited_t2: bool,
     pub unlimited_internet: bool,
     pub unlimited_sms: bool,
@@ -113,8 +113,8 @@ pub struct T2Tariff {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Service {
-    pub id: i32,
-    pub store_id: i32,
+    pub id: i64,
+    pub store_id: i64,
     pub name: String,
     pub price: f64,
     pub description: Option<String>,
@@ -124,9 +124,9 @@ pub struct T2Service {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Sale {
-    pub id: i32,
-    pub store_id: i32,
-    pub employee_id: i32,
+    pub id: i64,
+    pub store_id: i64,
+    pub employee_id: i64,
     pub customer_request: Option<String>,
     pub customer_audio_url: Option<String>,
     pub total_amount: f64,
@@ -136,10 +136,10 @@ pub struct T2Sale {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct T2SaleWithDetails {
-    pub id: i32,
-    pub store_id: i32,
+    pub id: i64,
+    pub store_id: i64,
     pub store_name: String,
-    pub employee_id: i32,
+    pub employee_id: i64,
     pub employee_name: String,
     pub customer_request: Option<String>,
     pub customer_audio_url: Option<String>,
@@ -151,21 +151,21 @@ pub struct T2SaleWithDetails {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2SaleItem {
-    pub id: i32,
-    pub sale_id: i32,
+    pub id: i64,
+    pub sale_id: i64,
     pub item_type: String,
-    pub item_id: i32,
+    pub item_id: i64,
     pub item_name: String,
     pub item_details: Option<String>,
     pub price: f64,
-    pub quantity: i32,
+    pub quantity: i64,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct T2Session {
-    pub id: i32,
-    pub employee_id: i32,
+    pub id: i64,
+    pub employee_id: i64,
     pub token: String,
     pub expires_at: String,
     pub created_at: String,
@@ -192,21 +192,21 @@ pub struct CreateStoreRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateEmployeeRequest {
-    pub store_id: i32,
+    pub store_id: i64,
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProductRequest {
-    pub category_id: i32,
+    pub category_id: i64,
     pub name: String,
     pub brand: Option<String>,
     pub model: Option<String>,
     pub price: f64,
-    pub quantity: Option<i32>,
+    pub quantity: Option<i64>,
     pub image_url: Option<String>,
     pub specs: Vec<ProductSpecInput>,
-    pub tag_ids: Vec<i32>,
+    pub tag_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,10 +221,10 @@ pub struct UpdateProductRequest {
     pub brand: Option<String>,
     pub model: Option<String>,
     pub price: Option<f64>,
-    pub quantity: Option<i32>,
+    pub quantity: Option<i64>,
     pub image_url: Option<String>,
     pub specs: Option<Vec<ProductSpecInput>>,
-    pub tag_ids: Option<Vec<i32>>,
+    pub tag_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,7 +232,7 @@ pub struct CreateTagRequest {
     pub name: String,
     pub color: String,
     pub description: Option<String>,
-    pub priority: Option<i32>,
+    pub priority: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -240,16 +240,16 @@ pub struct UpdateTagRequest {
     pub name: Option<String>,
     pub color: Option<String>,
     pub description: Option<String>,
-    pub priority: Option<i32>,
+    pub priority: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTariffRequest {
     pub name: String,
     pub price: f64,
-    pub minutes: Option<i32>,
-    pub sms: Option<i32>,
-    pub gb: Option<i32>,
+    pub minutes: Option<i64>,
+    pub sms: Option<i64>,
+    pub gb: Option<i64>,
     pub unlimited_t2: Option<bool>,
     pub unlimited_internet: Option<bool>,
     pub unlimited_sms: Option<bool>,
@@ -262,9 +262,9 @@ pub struct CreateTariffRequest {
 pub struct UpdateTariffRequest {
     pub name: Option<String>,
     pub price: Option<f64>,
-    pub minutes: Option<i32>,
-    pub sms: Option<i32>,
-    pub gb: Option<i32>,
+    pub minutes: Option<i64>,
+    pub sms: Option<i64>,
+    pub gb: Option<i64>,
     pub unlimited_t2: Option<bool>,
     pub unlimited_internet: Option<bool>,
     pub unlimited_sms: Option<bool>,
@@ -299,7 +299,7 @@ pub struct CustomerRequest {
 pub struct ProductRecommendation {
     pub product: T2ProductWithDetails,
     pub price_category: String,
-    pub match_score: i32,
+    pub match_score: i64,
     pub match_reasons: Vec<String>,
 }
 
@@ -350,12 +350,12 @@ pub struct CreateSaleRequest {
 #[derive(Debug, Deserialize)]
 pub struct SaleItemInput {
     pub item_type: String,
-    pub item_id: i32,
-    pub quantity: Option<i32>,
+    pub item_id: i64,
+    pub quantity: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SearchProductsRequest {
     pub query: String,
-    pub category_id: Option<i32>,
+    pub category_id: Option<i64>,
 }
