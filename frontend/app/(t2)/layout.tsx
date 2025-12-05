@@ -13,6 +13,7 @@ import {
   X,
   User,
   ChevronDown,
+  ScrollText,
 } from "lucide-react";
 import { T2Employee, T2Store, t2ApiService } from "@/lib/t2-api";
 
@@ -73,6 +74,7 @@ export default function T2Layout({ children }: { children: React.ReactNode }) {
     { href: "/t2/dashboard", icon: User, label: "Кабинет" },
     { href: "/t2/catalog", icon: Package, label: "Каталог" },
     { href: "/t2/sale", icon: ShoppingCart, label: "Продажа" },
+    { href: "/t2/script", icon: ScrollText, label: "Скрипт" },
     ...(employee?.is_admin ? [{ href: "/t2/admin", icon: Settings, label: "Админ" }] : []),
   ];
 
