@@ -1210,6 +1210,18 @@ pub async fn t2_parse_tariffs_image(
     }
 }
 
+#[get("/t2/ai/fetch-tariffs-from-website?<region>")]
+pub async fn t2_fetch_tariffs_from_website(
+    _auth: T2AuthGuard,
+    region: Option<String>,
+) -> Json<ApiResponse<Vec<ParsedTariff>>> {
+    let region = region.unwrap_or_else(|| "chelyabinsk".to_string());
+    match ai::fetch_tariffs_from_t2_website(&region).await {
+        Ok(tariffs) => ApiResponse::success(tariffs),
+        Err(e) => ApiResponse::error(&format!("Failed to fetch tariffs from T2 website: {}", e)),
+    }
+}
+
 // ============ SALES ============
 
 #[get("/t2/sales?<limit>&<offset>")]

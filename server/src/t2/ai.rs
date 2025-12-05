@@ -632,6 +632,184 @@ pub async fn parse_tariffs_from_image(image_base64: &str) -> Result<Vec<ParsedTa
     Ok(parsed.tariffs)
 }
 
+/// Fetch and parse tariffs from T2 website
+pub async fn fetch_tariffs_from_t2_website(region: &str) -> Result<Vec<ParsedTariff>, String> {
+    let url = format!("https://{}.t2.ru/tariffs", region);
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch T2 website: {}", e))?;
+
+    let html = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    // Extract text content and JSON data from HTML
+    let text_content = extract_tariff_data_from_html(&html);
+
+    if text_content.is_empty() {
+        return Err("No tariff data found on page".to_string());
+    }
+
+    // Use AI to parse the extracted content
+    let prompt = format!(r#"Ты - система парсинга тарифов оператора Tele2 (T2).
+
+Проанализируй следующие данные с сайта t2.ru и извлеки информацию о всех тарифах.
+
+Данные:
+{}
+
+Верни ТОЛЬКО JSON (без markdown):
+{{
+    "tariffs": [
+        {{
+            "name": "Название тарифа",
+            "price": 500,
+            "minutes": 500,
+            "sms": 100,
+            "gb": 30,
+            "unlimited_t2": true,
+            "unlimited_internet": false,
+            "unlimited_sms": false,
+            "unlimited_calls": false,
+            "unlimited_apps": "YouTube, Telegram, WhatsApp",
+            "description": "Описание тарифа"
+        }}
+    ]
+}}
+
+Правила:
+- Если минуты/SMS/GB безлимитные, укажи соответствующий флаг unlimited_* = true и число = null
+- Если значение не указано, используй null
+- Цену указывай как число (в рублях за месяц)
+- unlimited_apps - список приложений с безлимитным трафиком через запятую
+- Извлекай ВСЕ тарифы которые найдёшь
+- Типичные названия тарифов T2: "Мой Онлайн", "Мой Онлайн+", "Игровой", "Премиум", "Везде онлайн" и т.д."#, text_content);
+
+    let messages = vec![Message {
+        role: "user".to_string(),
+        content: vec![ContentPart::Text { text: prompt }],
+    }];
+
+    let response = call_openrouter(messages, 0.2).await?;
+
+    let json_str = if response.contains("```json") {
+        response
+            .split("```json")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .unwrap_or(&response)
+            .trim()
+    } else if response.contains("```") {
+        response
+            .split("```")
+            .nth(1)
+            .unwrap_or(&response)
+            .trim()
+    } else {
+        response.trim()
+    };
+
+    #[derive(Deserialize)]
+    struct AIResponse {
+        tariffs: Vec<ParsedTariff>,
+    }
+
+    let parsed: AIResponse = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse AI response: {} - {}", e, json_str))?;
+
+    Ok(parsed.tariffs)
+}
+
+/// Extract tariff-related data from HTML
+fn extract_tariff_data_from_html(html: &str) -> String {
+    let mut result = String::new();
+
+    // Try to find JSON data in script tags (Next.js/React often embed data this way)
+    if let Some(start) = html.find("__NEXT_DATA__") {
+        if let Some(json_start) = html[start..].find('>') {
+            let after_tag = &html[start + json_start + 1..];
+            if let Some(json_end) = after_tag.find("</script>") {
+                let json_data = &after_tag[..json_end];
+                result.push_str("JSON Data:\n");
+                result.push_str(json_data);
+                result.push_str("\n\n");
+            }
+        }
+    }
+
+    // Look for window.__PRELOADED_STATE__ or similar
+    for pattern in &["__PRELOADED_STATE__", "__INITIAL_STATE__", "window.__DATA__"] {
+        if let Some(start) = html.find(pattern) {
+            if let Some(eq_pos) = html[start..].find('=') {
+                let after_eq = &html[start + eq_pos + 1..];
+                // Find the end of JSON (look for </script> or ;)
+                let end = after_eq.find("</script>")
+                    .or_else(|| after_eq.find(";\n"))
+                    .unwrap_or(after_eq.len().min(10000));
+                let json_data = after_eq[..end].trim().trim_end_matches(';');
+                result.push_str(&format!("{} Data:\n", pattern));
+                result.push_str(json_data);
+                result.push_str("\n\n");
+            }
+        }
+    }
+
+    // Extract visible text that might contain tariff info
+    // Look for price patterns and tariff names
+    let price_pattern = regex::Regex::new(r#"(\d{2,4})\s*[₽руб]"#).ok();
+    let tariff_keywords = ["тариф", "Мой Онлайн", "Игровой", "Премиум", "минут", "ГБ", "SMS", "безлимит"];
+
+    // Extract text between tags that might contain tariff info
+    let tag_pattern = regex::Regex::new(r#">([^<]{10,500})<"#).ok();
+    if let Some(re) = tag_pattern {
+        for cap in re.captures_iter(html) {
+            if let Some(text) = cap.get(1) {
+                let t = text.as_str().trim();
+                // Check if text contains tariff-related keywords
+                let has_keyword = tariff_keywords.iter().any(|k| t.to_lowercase().contains(&k.to_lowercase()));
+                let has_price = price_pattern.as_ref().map(|p| p.is_match(t)).unwrap_or(false);
+
+                if (has_keyword || has_price) && !t.contains("function") && !t.contains("var ") {
+                    result.push_str(t);
+                    result.push('\n');
+                }
+            }
+        }
+    }
+
+    // If still empty, just extract all text content
+    if result.len() < 100 {
+        let text_pattern = regex::Regex::new(r#">([^<]+)<"#).ok();
+        if let Some(re) = text_pattern {
+            for cap in re.captures_iter(html) {
+                if let Some(text) = cap.get(1) {
+                    let t = text.as_str().trim();
+                    if t.len() > 3 && !t.contains("function") && !t.contains("var ") && !t.starts_with("//") {
+                        result.push_str(t);
+                        result.push(' ');
+                    }
+                }
+            }
+        }
+    }
+
+    // Limit the size
+    if result.len() > 15000 {
+        result.truncate(15000);
+    }
+
+    result
+}
+
 /// Check if a phone is a smartphone (not a feature phone)
 pub fn is_smartphone(product: &T2ProductWithDetails) -> bool {
     // Check category

@@ -688,9 +688,11 @@ function AddProductModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [cameraMode, setCameraMode] = useState<"analyze" | "cover">("analyze");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingProduct) {
@@ -722,7 +724,8 @@ function AddProductModal({
     setImageUrl("");
   };
 
-  const startCamera = async () => {
+  const startCamera = async (mode: "analyze" | "cover" = "analyze") => {
+    setCameraMode(mode);
     setShowCamera(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -756,8 +759,16 @@ function AddProductModal({
     const ctx = canvas.getContext("2d");
     ctx?.drawImage(video, 0, 0);
 
-    const base64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-    analyzeImage(base64);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+    const base64 = dataUrl.split(",")[1];
+
+    if (cameraMode === "cover") {
+      // Just set the cover image
+      setImageUrl(dataUrl);
+    } else {
+      // Analyze and set as cover
+      analyzeImage(base64, dataUrl);
+    }
     stopCamera();
   };
 
@@ -767,17 +778,33 @@ function AddProductModal({
 
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      analyzeImage(base64);
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      analyzeImage(base64, dataUrl);
     };
     reader.readAsDataURL(file);
   };
 
-  const analyzeImage = async (base64: string) => {
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const analyzeImage = async (base64: string, dataUrl?: string) => {
     setIsAnalyzing(true);
     try {
       const result = await t2ApiService.analyzePriceTag(base64);
       applyAnalyzedData(result);
+      // Set the analyzed image as cover
+      if (dataUrl) {
+        setImageUrl(dataUrl);
+      }
     } catch (e) {
       console.error("Analysis failed:", e);
       alert("Не удалось распознать ценник");
@@ -863,6 +890,19 @@ function AddProductModal({
         {/* Camera View */}
         {showCamera && (
           <div className="p-6 border-b border-gray-800">
+            <div className="flex items-center gap-2 mb-4">
+              {cameraMode === "analyze" ? (
+                <>
+                  <ScanLine className="w-5 h-5 text-cyan-500" />
+                  <span className="font-semibold">Сфотографируйте ценник</span>
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="w-5 h-5 text-cyan-500" />
+                  <span className="font-semibold">Сфотографируйте товар для обложки</span>
+                </>
+              )}
+            </div>
             <div className="relative rounded-xl overflow-hidden bg-black">
               <video
                 ref={videoRef}
@@ -871,11 +911,13 @@ function AddProductModal({
                 className="w-full"
               />
               <canvas ref={canvasRef} className="hidden" />
-              <div className="absolute inset-0 border-2 border-cyan-500/50 pointer-events-none">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-32 border-2 border-cyan-500 rounded-lg">
-                  <ScanLine className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 text-cyan-500 animate-pulse" />
+              {cameraMode === "analyze" && (
+                <div className="absolute inset-0 border-2 border-cyan-500/50 pointer-events-none">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-32 border-2 border-cyan-500 rounded-lg">
+                    <ScanLine className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 text-cyan-500 animate-pulse" />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             <div className="flex gap-3 mt-4">
               <button
@@ -898,13 +940,14 @@ function AddProductModal({
         {/* AI Scanner Buttons */}
         {!showCamera && (
           <div className="p-6 border-b border-gray-800">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-2">
               <Sparkles className="w-5 h-5 text-cyan-500" />
               <span className="font-semibold">AI-распознавание ценника</span>
             </div>
+            <p className="text-xs text-gray-500 mb-4">Фото будет использовано как обложка товара</p>
             <div className="flex gap-3">
               <motion.button
-                onClick={startCamera}
+                onClick={() => startCamera("analyze")}
                 disabled={isAnalyzing}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -1016,23 +1059,84 @@ function AddProductModal({
             </div>
           </div>
 
-          {/* Image URL */}
+          {/* Cover Image */}
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Ссылка на изображение</label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://..."
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-gray-700 focus:border-cyan-500 outline-none transition-colors"
-              />
-              {imageUrl && (
-                <div className="w-12 h-12 rounded-xl bg-black/30 overflow-hidden">
+            <label className="block text-sm text-gray-400 mb-2">Обложка товара</label>
+            {imageUrl ? (
+              <div className="flex gap-4 items-start">
+                <div className="w-32 h-32 rounded-xl bg-black/30 overflow-hidden border border-gray-700 relative group">
                   <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => coverInputRef.current?.click()}
+                      className="p-2 rounded-lg bg-cyan-500 text-black"
+                      title="Загрузить другое фото"
+                    >
+                      <Upload className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startCamera("cover")}
+                      className="p-2 rounded-lg bg-cyan-500 text-black"
+                      title="Сделать фото"
+                    >
+                      <Camera className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl("")}
+                      className="p-2 rounded-lg bg-red-500 text-white"
+                      title="Удалить"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
+                <div className="flex-1">
+                  <input
+                    type="url"
+                    value={imageUrl.startsWith("data:") ? "" : imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="Или вставьте ссылку на изображение..."
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-gray-700 focus:border-cyan-500 outline-none transition-colors text-sm"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    {imageUrl.startsWith("data:") ? "Фото загружено" : "Ссылка на изображение"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <motion.button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex-1 py-4 rounded-xl bg-white/5 border border-gray-700 hover:border-cyan-500 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Upload className="w-5 h-5 text-cyan-500" />
+                  <span>Загрузить фото</span>
+                </motion.button>
+                <motion.button
+                  type="button"
+                  onClick={() => startCamera("cover")}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex-1 py-4 rounded-xl bg-white/5 border border-gray-700 hover:border-cyan-500 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Camera className="w-5 h-5 text-cyan-500" />
+                  <span>Сделать фото</span>
+                </motion.button>
+              </div>
+            )}
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleCoverUpload}
+            />
           </div>
 
           {/* Tags */}
@@ -1441,6 +1545,7 @@ function TariffModal({
   const [importText, setImportText] = useState("");
   const [isParsing, setIsParsing] = useState(false);
   const [parsedTariffs, setParsedTariffs] = useState<ParsedTariff[]>([]);
+  const [region, setRegion] = useState("chelyabinsk");
   const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1471,6 +1576,19 @@ function TariffModal({
     setParsedTariffs([]);
     setImportText("");
   }, [editingTariff, isOpen]);
+
+  const handleFetchFromWebsite = async () => {
+    setIsParsing(true);
+    try {
+      const tariffs = await t2ApiService.fetchTariffsFromWebsite(region);
+      setParsedTariffs(tariffs);
+    } catch (e) {
+      console.error("Failed to fetch tariffs from website:", e);
+      alert("Не удалось загрузить тарифы с сайта T2");
+    } finally {
+      setIsParsing(false);
+    }
+  };
 
   const handleParseText = async () => {
     if (!importText.trim()) return;
@@ -1627,9 +1745,50 @@ function TariffModal({
 
             {showImport && (
               <div className="mt-4 space-y-4">
-                <p className="text-sm text-gray-400">
-                  Вставьте текст с сайта t2.ru или загрузите скриншот с тарифами
-                </p>
+                {/* Auto-fetch from T2 website */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-5 h-5 text-cyan-500" />
+                    <span className="font-medium">Автоматический импорт с сайта T2</span>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    <select
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-gray-700 focus:border-cyan-500 outline-none text-sm"
+                    >
+                      <option value="chelyabinsk">Челябинск</option>
+                      <option value="moscow">Москва</option>
+                      <option value="spb">Санкт-Петербург</option>
+                      <option value="ekaterinburg">Екатеринбург</option>
+                      <option value="novosibirsk">Новосибирск</option>
+                      <option value="kazan">Казань</option>
+                      <option value="nizhnynovgorod">Нижний Новгород</option>
+                      <option value="samara">Самара</option>
+                      <option value="ufa">Уфа</option>
+                      <option value="krasnodar">Краснодар</option>
+                    </select>
+                    <motion.button
+                      onClick={handleFetchFromWebsite}
+                      disabled={isParsing}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="px-6 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 text-black font-semibold disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isParsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                      {isParsing ? "Загрузка..." : "Загрузить"}
+                    </motion.button>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Автоматически загрузит все актуальные тарифы с сайта t2.ru
+                  </p>
+                </div>
+
+                <div className="relative flex items-center">
+                  <div className="flex-1 border-t border-gray-700"></div>
+                  <span className="px-4 text-xs text-gray-500">или вручную</span>
+                  <div className="flex-1 border-t border-gray-700"></div>
+                </div>
 
                 <div className="flex gap-2">
                   <motion.button

@@ -500,6 +500,13 @@ export const t2ApiService = {
     return res.data.data!;
   },
 
+  async fetchTariffsFromWebsite(region?: string): Promise<ParsedTariff[]> {
+    const params = region ? `?region=${encodeURIComponent(region)}` : "";
+    const res = await t2Api.get<ApiResponse<ParsedTariff[]>>(`/t2/ai/fetch-tariffs-from-website${params}`);
+    if (!res.data.success) throw new Error(res.data.error);
+    return res.data.data!;
+  },
+
   // Sales
   async getSales(limit?: number, offset?: number): Promise<T2Sale[]> {
     const params = new URLSearchParams();
