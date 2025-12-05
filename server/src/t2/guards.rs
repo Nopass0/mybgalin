@@ -31,7 +31,7 @@ impl<'r> FromRequest<'r> for T2AuthGuard {
         };
 
         // Validate token and get employee
-        let session = match sqlx::query_as::<_, (i64, String)>(
+        let session = match sqlx::query_as::<_, (i32, String)>(
             r#"
             SELECT employee_id, expires_at FROM t2_sessions
             WHERE token = ? AND expires_at > datetime('now')
@@ -46,7 +46,7 @@ impl<'r> FromRequest<'r> for T2AuthGuard {
             Err(_) => return Outcome::Error((Status::InternalServerError, "Database error")),
         };
 
-        let employee_id = session.0;
+        let employee_id: i64 = session.0.into();
 
         // Get employee details
         let employee = match sqlx::query_as::<_, super::models::T2Employee>(
