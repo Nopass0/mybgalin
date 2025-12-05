@@ -385,3 +385,28 @@ pub struct SearchProductsRequest {
     pub query: String,
     pub category_id: Option<i64>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedTariff {
+    pub name: String,
+    pub price: Option<f64>,
+    pub minutes: Option<i32>,
+    pub sms: Option<i32>,
+    pub gb: Option<i32>,
+    pub unlimited_t2: Option<bool>,
+    pub unlimited_internet: Option<bool>,
+    pub unlimited_sms: Option<bool>,
+    pub unlimited_calls: Option<bool>,
+    pub unlimited_apps: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ParseTariffsTextRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ParseTariffsImageRequest {
+    pub image_base64: String,
+}

@@ -160,8 +160,8 @@ pub async fn analyze_price_tag(image_base64: &str) -> Result<AnalyzedPriceTag, S
 
     #[derive(Deserialize)]
     struct SpecParsed {
-        name: String,
-        value: String,
+        name: Option<String>,
+        value: Option<String>,
     }
 
     let parsed: ParsedTag = serde_json::from_str(json_str)
@@ -175,7 +175,15 @@ pub async fn analyze_price_tag(image_base64: &str) -> Result<AnalyzedPriceTag, S
         specs: parsed.specs
             .unwrap_or_default()
             .into_iter()
-            .map(|s| ProductSpecInput { name: s.name, value: s.value })
+            .filter_map(|s| {
+                // Filter out specs with null name or value
+                match (s.name, s.value) {
+                    (Some(name), Some(value)) if !name.is_empty() && !value.is_empty() => {
+                        Some(ProductSpecInput { name, value })
+                    }
+                    _ => None,
+                }
+            })
             .collect(),
         raw_text: parsed.raw_text.unwrap_or_default(),
     })
@@ -478,6 +486,150 @@ pub async fn recommend_tariffs(
         .collect();
 
     Ok(recommendations)
+}
+
+/// Parse tariff information from text or image
+pub async fn parse_tariffs_from_text(text: &str) -> Result<Vec<ParsedTariff>, String> {
+    let prompt = format!(r#"Ты - система парсинга тарифов оператора Tele2 (T2).
+
+Проанализируй следующий текст с информацией о тарифах и извлеки данные о каждом тарифе.
+
+Текст:
+{}
+
+Верни ТОЛЬКО JSON (без markdown):
+{{
+    "tariffs": [
+        {{
+            "name": "Название тарифа",
+            "price": 500,
+            "minutes": 500,
+            "sms": 100,
+            "gb": 30,
+            "unlimited_t2": true,
+            "unlimited_internet": false,
+            "unlimited_sms": false,
+            "unlimited_calls": false,
+            "unlimited_apps": "YouTube, Telegram, WhatsApp",
+            "description": "Описание тарифа"
+        }}
+    ]
+}}
+
+Правила:
+- Если минуты/SMS/GB безлимитные, укажи соответствующий флаг unlimited_* = true и число = null
+- Если значение не указано, используй null
+- Цену указывай как число (в рублях за месяц)
+- unlimited_apps - список приложений с безлимитным трафиком через запятую
+- Извлекай ВСЕ тарифы из текста"#, text);
+
+    let messages = vec![Message {
+        role: "user".to_string(),
+        content: vec![ContentPart::Text { text: prompt }],
+    }];
+
+    let response = call_openrouter(messages, 0.1).await?;
+
+    let json_str = if response.contains("```json") {
+        response
+            .split("```json")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .unwrap_or(&response)
+            .trim()
+    } else if response.contains("```") {
+        response
+            .split("```")
+            .nth(1)
+            .unwrap_or(&response)
+            .trim()
+    } else {
+        response.trim()
+    };
+
+    #[derive(Deserialize)]
+    struct AIResponse {
+        tariffs: Vec<ParsedTariff>,
+    }
+
+    let parsed: AIResponse = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse AI response: {} - {}", e, json_str))?;
+
+    Ok(parsed.tariffs)
+}
+
+/// Parse tariff information from image
+pub async fn parse_tariffs_from_image(image_base64: &str) -> Result<Vec<ParsedTariff>, String> {
+    let prompt = r#"Ты - система парсинга тарифов оператора Tele2 (T2).
+
+Проанализируй изображение с информацией о тарифах и извлеки данные о каждом тарифе.
+
+Верни ТОЛЬКО JSON (без markdown):
+{
+    "tariffs": [
+        {
+            "name": "Название тарифа",
+            "price": 500,
+            "minutes": 500,
+            "sms": 100,
+            "gb": 30,
+            "unlimited_t2": true,
+            "unlimited_internet": false,
+            "unlimited_sms": false,
+            "unlimited_calls": false,
+            "unlimited_apps": "YouTube, Telegram, WhatsApp",
+            "description": "Описание тарифа"
+        }
+    ]
+}
+
+Правила:
+- Если минуты/SMS/GB безлимитные, укажи соответствующий флаг unlimited_* = true и число = null
+- Если значение не указано, используй null
+- Цену указывай как число (в рублях за месяц)
+- unlimited_apps - список приложений с безлимитным трафиком через запятую
+- Извлекай ВСЕ тарифы с изображения"#;
+
+    let messages = vec![Message {
+        role: "user".to_string(),
+        content: vec![
+            ContentPart::Text { text: prompt.to_string() },
+            ContentPart::ImageUrl {
+                image_url: ImageUrlContent {
+                    url: format!("data:image/jpeg;base64,{}", image_base64),
+                },
+            },
+        ],
+    }];
+
+    let response = call_openrouter(messages, 0.1).await?;
+
+    let json_str = if response.contains("```json") {
+        response
+            .split("```json")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .unwrap_or(&response)
+            .trim()
+    } else if response.contains("```") {
+        response
+            .split("```")
+            .nth(1)
+            .unwrap_or(&response)
+            .trim()
+    } else {
+        response.trim()
+    };
+
+    #[derive(Deserialize)]
+    struct AIResponse {
+        tariffs: Vec<ParsedTariff>,
+    }
+
+    let parsed: AIResponse = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse AI response: {} - {}", e, json_str))?;
+
+    Ok(parsed.tariffs)
 }
 
 /// Check if a phone is a smartphone (not a feature phone)

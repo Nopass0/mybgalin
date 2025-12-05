@@ -70,6 +70,7 @@ export default function T2Layout({ children }: { children: React.ReactNode }) {
   };
 
   const navItems = [
+    { href: "/t2/dashboard", icon: User, label: "Кабинет" },
     { href: "/t2/catalog", icon: Package, label: "Каталог" },
     { href: "/t2/sale", icon: ShoppingCart, label: "Продажа" },
     ...(employee?.is_admin ? [{ href: "/t2/admin", icon: Settings, label: "Админ" }] : []),
@@ -140,9 +141,9 @@ export default function T2Layout({ children }: { children: React.ReactNode }) {
 
           {/* Store Selector & User */}
           <div className="hidden md:flex items-center gap-4">
-            {/* Store Selector */}
-            {employee.stores.length > 1 && (
-              <div className="relative">
+            {/* Store Selector/Display */}
+            <div className="relative">
+              {employee.stores.length > 1 ? (
                 <button
                   onClick={() => setIsStoreDropdownOpen(!isStoreDropdownOpen)}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
@@ -151,31 +152,36 @@ export default function T2Layout({ children }: { children: React.ReactNode }) {
                   <span className="text-sm truncate max-w-[150px]">{currentStore?.name}</span>
                   <ChevronDown className={`w-4 h-4 transition-transform ${isStoreDropdownOpen ? "rotate-180" : ""}`} />
                 </button>
-                <AnimatePresence>
-                  {isStoreDropdownOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute right-0 top-full mt-2 w-64 bg-[#1a1a1a] rounded-xl border border-cyan-500/20 shadow-xl overflow-hidden"
-                    >
-                      {employee.stores.map((store) => (
-                        <button
-                          key={store.id}
-                          onClick={() => handleStoreChange(store)}
-                          className={`w-full px-4 py-3 text-left hover:bg-white/5 transition-colors ${
-                            store.id === currentStore?.id ? "bg-cyan-500/10 text-cyan-400" : ""
-                          }`}
-                        >
-                          <div className="font-medium">{store.name}</div>
-                          <div className="text-xs text-gray-500">{store.address}</div>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5">
+                  <Store className="w-4 h-4 text-cyan-500" />
+                  <span className="text-sm truncate max-w-[150px]">{currentStore?.name}</span>
+                </div>
+              )}
+              <AnimatePresence>
+                {isStoreDropdownOpen && employee.stores.length > 1 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute right-0 top-full mt-2 w-64 bg-[#1a1a1a] rounded-xl border border-cyan-500/20 shadow-xl overflow-hidden"
+                  >
+                    {employee.stores.map((store) => (
+                      <button
+                        key={store.id}
+                        onClick={() => handleStoreChange(store)}
+                        className={`w-full px-4 py-3 text-left hover:bg-white/5 transition-colors ${
+                          store.id === currentStore?.id ? "bg-cyan-500/10 text-cyan-400" : ""
+                        }`}
+                      >
+                        <div className="font-medium">{store.name}</div>
+                        <div className="text-xs text-gray-500">{store.address}</div>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* User */}
             <div className="flex items-center gap-3">
@@ -238,10 +244,12 @@ export default function T2Layout({ children }: { children: React.ReactNode }) {
               })}
 
               {/* Store selector for mobile */}
-              {employee.stores.length > 1 && (
-                <div className="pt-2 border-t border-white/10">
-                  <div className="text-xs text-gray-500 px-4 py-2">Выбрать точку</div>
-                  {employee.stores.map((store) => (
+              <div className="pt-2 border-t border-white/10">
+                <div className="text-xs text-gray-500 px-4 py-2">
+                  {employee.stores.length > 1 ? "Выбрать точку" : "Торговая точка"}
+                </div>
+                {employee.stores.length > 1 ? (
+                  employee.stores.map((store) => (
                     <button
                       key={store.id}
                       onClick={() => handleStoreChange(store)}
@@ -253,9 +261,14 @@ export default function T2Layout({ children }: { children: React.ReactNode }) {
                     >
                       {store.name}
                     </button>
-                  ))}
-                </div>
-              )}
+                  ))
+                ) : (
+                  <div className="px-4 py-3 flex items-center gap-2 text-cyan-400">
+                    <Store className="w-4 h-4" />
+                    {currentStore?.name}
+                  </div>
+                )}
+              </div>
 
               {/* User info and logout */}
               <div className="pt-2 border-t border-white/10">
