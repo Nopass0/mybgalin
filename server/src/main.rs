@@ -418,6 +418,8 @@ async fn rocket() -> _ {
                 t2::routes::t2_recommend_accessories,
                 t2::routes::t2_recommend_tariffs,
                 t2::routes::t2_is_smartphone,
+                t2::routes::t2_parse_tariffs_text,
+                t2::routes::t2_parse_tariffs_image,
                 t2::routes::t2_get_sales,
                 t2::routes::t2_get_my_sales,
                 t2::routes::t2_create_sale,

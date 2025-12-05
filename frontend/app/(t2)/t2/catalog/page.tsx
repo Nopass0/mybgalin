@@ -25,6 +25,9 @@ import {
   Wifi,
   Settings,
   Phone,
+  Globe,
+  FileText,
+  Import,
 } from "lucide-react";
 import {
   T2Product,
@@ -34,6 +37,7 @@ import {
   T2Service,
   t2ApiService,
   AnalyzedPriceTag,
+  ParsedTariff,
 } from "@/lib/t2-api";
 
 type TabType = "products" | "tags" | "tariffs" | "services";
@@ -1432,6 +1436,13 @@ function TariffModal({
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Import from T2 state
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
+  const [parsedTariffs, setParsedTariffs] = useState<ParsedTariff[]>([]);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (editingTariff) {
       setName(editingTariff.name);
@@ -1456,7 +1467,92 @@ function TariffModal({
       setUnlimitedCalls(false);
       setDescription("");
     }
+    setShowImport(false);
+    setParsedTariffs([]);
+    setImportText("");
   }, [editingTariff, isOpen]);
+
+  const handleParseText = async () => {
+    if (!importText.trim()) return;
+    setIsParsing(true);
+    try {
+      const tariffs = await t2ApiService.parseTariffsFromText(importText);
+      setParsedTariffs(tariffs);
+    } catch (e) {
+      console.error("Failed to parse tariffs:", e);
+      alert("Не удалось распознать тарифы");
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  const handleParseImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsing(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1];
+        try {
+          const tariffs = await t2ApiService.parseTariffsFromImage(base64);
+          setParsedTariffs(tariffs);
+        } catch (err) {
+          console.error("Failed to parse tariffs:", err);
+          alert("Не удалось распознать тарифы с изображения");
+        } finally {
+          setIsParsing(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (e) {
+      setIsParsing(false);
+      console.error("Failed to read file:", e);
+    }
+  };
+
+  const applyParsedTariff = (tariff: ParsedTariff) => {
+    setName(tariff.name);
+    setPrice(tariff.price?.toString() || "");
+    setMinutes(tariff.minutes?.toString() || "");
+    setSms(tariff.sms?.toString() || "");
+    setGb(tariff.gb?.toString() || "");
+    setUnlimitedT2(tariff.unlimited_t2 || false);
+    setUnlimitedInternet(tariff.unlimited_internet || false);
+    setUnlimitedSms(tariff.unlimited_sms || false);
+    setUnlimitedCalls(tariff.unlimited_calls || false);
+    setDescription(tariff.description || tariff.unlimited_apps || "");
+    setShowImport(false);
+    setParsedTariffs([]);
+  };
+
+  const importAllTariffs = async () => {
+    setIsLoading(true);
+    try {
+      for (const tariff of parsedTariffs) {
+        await t2ApiService.createTariff({
+          name: tariff.name,
+          price: tariff.price || 0,
+          minutes: tariff.minutes || undefined,
+          sms: tariff.sms || undefined,
+          gb: tariff.gb || undefined,
+          unlimited_t2: tariff.unlimited_t2 || false,
+          unlimited_internet: tariff.unlimited_internet || false,
+          unlimited_sms: tariff.unlimited_sms || false,
+          unlimited_calls: tariff.unlimited_calls || false,
+          unlimited_apps: tariff.unlimited_apps || undefined,
+          description: tariff.description || undefined,
+        });
+      }
+      onSuccess();
+    } catch (e) {
+      console.error("Failed to import tariffs:", e);
+      alert("Ошибка импорта тарифов");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!name || !price) {
@@ -1514,6 +1610,107 @@ function TariffModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Import from T2 Section */}
+        {!editingTariff && (
+          <div className="p-6 border-b border-gray-800">
+            <button
+              onClick={() => setShowImport(!showImport)}
+              className="w-full flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 hover:border-cyan-500 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-cyan-500" />
+                <span className="font-medium">Импорт с сайта T2</span>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-cyan-500 transition-transform ${showImport ? "rotate-180" : ""}`} />
+            </button>
+
+            {showImport && (
+              <div className="mt-4 space-y-4">
+                <p className="text-sm text-gray-400">
+                  Вставьте текст с сайта t2.ru или загрузите скриншот с тарифами
+                </p>
+
+                <div className="flex gap-2">
+                  <motion.button
+                    onClick={() => importFileRef.current?.click()}
+                    disabled={isParsing}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="flex-1 py-3 rounded-xl bg-white/5 border border-gray-700 hover:border-cyan-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Upload className="w-5 h-5 text-cyan-500" />
+                    <span>Загрузить скриншот</span>
+                  </motion.button>
+                  <input
+                    ref={importFileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleParseImage}
+                  />
+                </div>
+
+                <div>
+                  <textarea
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    placeholder="Или вставьте текст с описанием тарифов..."
+                    rows={4}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-gray-700 focus:border-cyan-500 outline-none resize-none text-sm"
+                  />
+                  <motion.button
+                    onClick={handleParseText}
+                    disabled={isParsing || !importText.trim()}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="mt-2 w-full py-2 rounded-xl bg-cyan-500/20 text-cyan-500 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isParsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {isParsing ? "Распознавание..." : "Распознать тарифы"}
+                  </motion.button>
+                </div>
+
+                {/* Parsed Tariffs List */}
+                {parsedTariffs.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-400">Найдено тарифов: {parsedTariffs.length}</span>
+                      <button
+                        onClick={importAllTariffs}
+                        disabled={isLoading}
+                        className="text-sm text-cyan-500 hover:text-cyan-400 flex items-center gap-1"
+                      >
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        Импортировать все
+                      </button>
+                    </div>
+                    {parsedTariffs.map((tariff, i) => (
+                      <button
+                        key={i}
+                        onClick={() => applyParsedTariff(tariff)}
+                        className="w-full p-3 rounded-xl bg-white/5 border border-gray-700 hover:border-cyan-500 transition-colors text-left"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium">{tariff.name}</span>
+                          <span className="text-cyan-400 font-semibold">{tariff.price} ₽</span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {tariff.minutes && `${tariff.minutes} мин`}
+                          {tariff.sms && ` • ${tariff.sms} SMS`}
+                          {tariff.gb && ` • ${tariff.gb} ГБ`}
+                          {tariff.unlimited_internet && " • Безлимит инет"}
+                          {tariff.unlimited_calls && " • Безлимит звонки"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-2">Название *</label>

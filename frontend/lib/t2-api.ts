@@ -206,6 +206,20 @@ export interface T2Stats {
   total_revenue: number;
 }
 
+export interface ParsedTariff {
+  name: string;
+  price: number | null;
+  minutes: number | null;
+  sms: number | null;
+  gb: number | null;
+  unlimited_t2: boolean | null;
+  unlimited_internet: boolean | null;
+  unlimited_sms: boolean | null;
+  unlimited_calls: boolean | null;
+  unlimited_apps: string | null;
+  description: string | null;
+}
+
 // API Response wrapper
 interface ApiResponse<T> {
   success: boolean;
@@ -470,6 +484,18 @@ export const t2ApiService = {
 
   async isSmartphone(productId: number): Promise<boolean> {
     const res = await t2Api.get<ApiResponse<boolean>>(`/t2/ai/is-smartphone/${productId}`);
+    if (!res.data.success) throw new Error(res.data.error);
+    return res.data.data!;
+  },
+
+  async parseTariffsFromText(text: string): Promise<ParsedTariff[]> {
+    const res = await t2Api.post<ApiResponse<ParsedTariff[]>>("/t2/ai/parse-tariffs-text", { text });
+    if (!res.data.success) throw new Error(res.data.error);
+    return res.data.data!;
+  },
+
+  async parseTariffsFromImage(imageBase64: string): Promise<ParsedTariff[]> {
+    const res = await t2Api.post<ApiResponse<ParsedTariff[]>>("/t2/ai/parse-tariffs-image", { image_base64: imageBase64 });
     if (!res.data.success) throw new Error(res.data.error);
     return res.data.data!;
   },

@@ -1188,6 +1188,28 @@ pub async fn t2_is_smartphone(
     }
 }
 
+#[post("/t2/ai/parse-tariffs-text", data = "<request>")]
+pub async fn t2_parse_tariffs_text(
+    _auth: T2AuthGuard,
+    request: Json<ParseTariffsTextRequest>,
+) -> Json<ApiResponse<Vec<ParsedTariff>>> {
+    match ai::parse_tariffs_from_text(&request.text).await {
+        Ok(tariffs) => ApiResponse::success(tariffs),
+        Err(e) => ApiResponse::error(&format!("Failed to parse tariffs: {}", e)),
+    }
+}
+
+#[post("/t2/ai/parse-tariffs-image", data = "<request>")]
+pub async fn t2_parse_tariffs_image(
+    _auth: T2AuthGuard,
+    request: Json<ParseTariffsImageRequest>,
+) -> Json<ApiResponse<Vec<ParsedTariff>>> {
+    match ai::parse_tariffs_from_image(&request.image_base64).await {
+        Ok(tariffs) => ApiResponse::success(tariffs),
+        Err(e) => ApiResponse::error(&format!("Failed to parse tariffs: {}", e)),
+    }
+}
+
 // ============ SALES ============
 
 #[get("/t2/sales?<limit>&<offset>")]
