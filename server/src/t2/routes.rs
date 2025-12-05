@@ -230,7 +230,7 @@ pub async fn t2_create_store(
 pub async fn t2_delete_store(
     pool: &State<SqlitePool>,
     _auth: T2AdminGuard,
-    store_id: i64,
+    store_id: i32,
 ) -> Json<ApiResponse<()>> {
     if store_id == 1 {
         return ApiResponse::error("Cannot delete main office");
@@ -292,7 +292,7 @@ pub async fn t2_create_employee(
 pub async fn t2_delete_employee(
     pool: &State<SqlitePool>,
     _auth: T2AdminGuard,
-    employee_id: i64,
+    employee_id: i32,
 ) -> Json<ApiResponse<()>> {
     if employee_id == 1 {
         return ApiResponse::error("Cannot delete main admin");
@@ -312,8 +312,8 @@ pub async fn t2_delete_employee(
 pub async fn t2_add_employee_store(
     pool: &State<SqlitePool>,
     _auth: T2AdminGuard,
-    employee_id: i64,
-    store_id: i64,
+    employee_id: i32,
+    store_id: i32,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query(
         "INSERT OR IGNORE INTO t2_employee_stores (employee_id, store_id) VALUES (?, ?)",
@@ -395,7 +395,7 @@ pub async fn t2_create_tag(
 pub async fn t2_update_tag(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tag_id: i64,
+    tag_id: i32,
     request: Json<super::models::UpdateTagRequest>,
 ) -> Json<ApiResponse<T2Tag>> {
     // Check ownership
@@ -453,7 +453,7 @@ pub async fn t2_update_tag(
 pub async fn t2_delete_tag(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tag_id: i64,
+    tag_id: i32,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_tags WHERE id = ? AND store_id = ?")
         .bind(tag_id)
@@ -468,7 +468,7 @@ pub async fn t2_delete_tag(
 
 // ============ PRODUCTS ============
 
-async fn get_product_with_details(pool: &SqlitePool, product_id: i64) -> Option<T2ProductWithDetails> {
+async fn get_product_with_details(pool: &SqlitePool, product_id: i32) -> Option<T2ProductWithDetails> {
     let product = sqlx::query_as::<_, T2Product>(
         "SELECT id, store_id, category_id, name, brand, model, price, quantity, image_url, created_at, updated_at FROM t2_products WHERE id = ?",
     )
@@ -528,7 +528,7 @@ async fn get_product_with_details(pool: &SqlitePool, product_id: i64) -> Option<
 pub async fn t2_get_products(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    category_id: Option<i64>,
+    category_id: Option<i32>,
     search: Option<String>,
 ) -> Json<ApiResponse<Vec<T2ProductWithDetails>>> {
     // Prepare search pattern if needed
@@ -583,7 +583,7 @@ pub async fn t2_get_products(
 
     let mut products = Vec::new();
     for id in product_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id).await {
             products.push(product);
         }
     }
@@ -595,7 +595,7 @@ pub async fn t2_get_products(
 pub async fn t2_get_product(
     pool: &State<SqlitePool>,
     _auth: T2AuthGuard,
-    product_id: i64,
+    product_id: i32,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     match get_product_with_details(pool.inner(), product_id).await {
         Some(product) => ApiResponse::success(product),
@@ -653,7 +653,7 @@ pub async fn t2_create_product(
             .await;
     }
 
-    match get_product_with_details(pool.inner(), product_id.into()).await {
+    match get_product_with_details(pool.inner(), product_id).await {
         Some(product) => ApiResponse::success(product),
         None => ApiResponse::error("Failed to fetch created product"),
     }
@@ -663,7 +663,7 @@ pub async fn t2_create_product(
 pub async fn t2_update_product(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    product_id: i64,
+    product_id: i32,
     request: Json<UpdateProductRequest>,
 ) -> Json<ApiResponse<T2ProductWithDetails>> {
     // Check ownership
@@ -766,7 +766,7 @@ pub async fn t2_update_product(
 pub async fn t2_delete_product(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    product_id: i64,
+    product_id: i32,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_products WHERE id = ? AND store_id = ?")
         .bind(product_id)
@@ -839,7 +839,7 @@ pub async fn t2_create_tariff(
 pub async fn t2_update_tariff(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tariff_id: i64,
+    tariff_id: i32,
     request: Json<super::models::UpdateTariffRequest>,
 ) -> Json<ApiResponse<T2Tariff>> {
     // Check ownership
@@ -911,7 +911,7 @@ pub async fn t2_update_tariff(
 pub async fn t2_delete_tariff(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    tariff_id: i64,
+    tariff_id: i32,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_tariffs WHERE id = ? AND store_id = ?")
         .bind(tariff_id)
@@ -973,7 +973,7 @@ pub async fn t2_create_service(
 pub async fn t2_update_service(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    service_id: i64,
+    service_id: i32,
     request: Json<super::models::UpdateServiceRequest>,
 ) -> Json<ApiResponse<T2Service>> {
     // Check ownership
@@ -1030,7 +1030,7 @@ pub async fn t2_update_service(
 pub async fn t2_delete_service(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    service_id: i64,
+    service_id: i32,
 ) -> Json<ApiResponse<()>> {
     match sqlx::query("DELETE FROM t2_services WHERE id = ? AND store_id = ?")
         .bind(service_id)
@@ -1079,7 +1079,7 @@ pub async fn t2_recommend_products(
 
     let mut products = Vec::new();
     for id in product_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id).await {
             products.push(product);
         }
     }
@@ -1105,7 +1105,7 @@ pub async fn t2_recommend_products(
 pub async fn t2_recommend_accessories(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    product_id: i64,
+    product_id: i32,
 ) -> Json<ApiResponse<Vec<AccessoryRecommendation>>> {
     let phone = match get_product_with_details(pool.inner(), product_id).await {
         Some(p) => p,
@@ -1123,7 +1123,7 @@ pub async fn t2_recommend_accessories(
 
     let mut accessories = Vec::new();
     for id in accessory_ids {
-        if let Some(product) = get_product_with_details(pool.inner(), id.into()).await {
+        if let Some(product) = get_product_with_details(pool.inner(), id).await {
             accessories.push(product);
         }
     }
@@ -1145,7 +1145,8 @@ pub async fn t2_recommend_tariffs(
         .unwrap_or("");
 
     let product_id = request.get("product_id")
-        .and_then(|v| v.as_i64());
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
 
     let phone = if let Some(id) = product_id {
         get_product_with_details(pool.inner(), id).await
@@ -1180,7 +1181,7 @@ pub async fn t2_recommend_tariffs(
 pub async fn t2_is_smartphone(
     pool: &State<SqlitePool>,
     _auth: T2AuthGuard,
-    product_id: i64,
+    product_id: i32,
 ) -> Json<ApiResponse<bool>> {
     match get_product_with_details(pool.inner(), product_id).await {
         Some(product) => ApiResponse::success(ai::is_smartphone(&product)),
@@ -1194,8 +1195,8 @@ pub async fn t2_is_smartphone(
 pub async fn t2_get_sales(
     pool: &State<SqlitePool>,
     auth: T2AuthGuard,
-    limit: Option<i64>,
-    offset: Option<i64>,
+    limit: Option<i32>,
+    offset: Option<i32>,
 ) -> Json<ApiResponse<Vec<T2SaleWithDetails>>> {
     let limit = limit.unwrap_or(50);
     let offset = offset.unwrap_or(0);
