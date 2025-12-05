@@ -50,8 +50,6 @@ export default function AdminPage() {
       setStep("verify");
     } catch (error: any) {
       toast.error(error.message || "Не удалось отправить код");
-      // Temporary alert for debugging
-      alert(`Error: ${error.message}`);
     } finally {
       setRequesting(false);
     }
@@ -100,24 +98,23 @@ export default function AdminPage() {
             </div>
             <CardTitle>Вход в админку</CardTitle>
             <CardDescription>
-              {step === "request"
-                ? "Получите код подтверждения в Telegram"
-                : "Введите код из Telegram сообщения"}
+              Авторизация через Telegram
             </CardDescription>
-            {/* Debug Info */}
-            <div className="text-xs text-red-500 mt-2">
-              Step: {step}, Requesting: {requesting ? "yes" : "no"}
-            </div>
           </CardHeader>
           <CardContent>
-            {step === "request" ? (
-              <div className="space-y-4">
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              {/* Кнопка запроса кода */}
+              <div className="space-y-2">
                 <p className="text-sm text-muted-foreground text-center">
-                  Нажмите кнопку ниже, чтобы получить одноразовый код в Telegram
+                  {step === "verify"
+                    ? "Код отправлен! Введите его ниже"
+                    : "Нажмите кнопку, чтобы получить код в Telegram"}
                 </p>
                 <Button
+                  type="button"
                   onClick={handleRequestOtp}
                   disabled={requesting}
+                  variant={step === "verify" ? "outline" : "default"}
                   className="w-full"
                   size="lg"
                 >
@@ -126,53 +123,50 @@ export default function AdminPage() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Отправка...
                     </>
+                  ) : step === "verify" ? (
+                    "Отправить код снова"
                   ) : (
                     "Отправить код"
                   )}
                 </Button>
               </div>
-            ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="code">Код подтверждения</Label>
-                  <Input
-                    id="code"
-                    type="text"
-                    placeholder="000000"
-                    value={code}
-                    onChange={(e) =>
-                      setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    maxLength={6}
-                    className="text-center text-2xl tracking-widest"
-                    autoFocus
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  disabled={isLoading || code.length !== 6}
-                  className="w-full"
-                  size="lg"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Проверка...
-                    </>
-                  ) : (
-                    "Войти"
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setStep("request")}
-                  className="w-full"
-                >
-                  Отправить код снова
-                </Button>
-              </form>
-            )}
+
+              {/* Поле ввода кода - всегда видимое */}
+              <div className="space-y-2">
+                <Label htmlFor="code">Код подтверждения</Label>
+                <Input
+                  id="code"
+                  type="text"
+                  placeholder="000000"
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  maxLength={6}
+                  className="text-center text-2xl tracking-widest"
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Введите 6-значный код из Telegram
+                </p>
+              </div>
+
+              {/* Кнопка входа */}
+              <Button
+                type="submit"
+                disabled={isLoading || code.length !== 6}
+                className="w-full"
+                size="lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Проверка...
+                  </>
+                ) : (
+                  "Войти"
+                )}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </motion.div>
