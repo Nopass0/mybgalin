@@ -3,9 +3,19 @@ use std::time::Duration;
 
 pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(Duration::from_secs(3))
+        .max_connections(10)
+        .acquire_timeout(Duration::from_secs(30))
         .connect(database_url)
+        .await?;
+
+    // Enable WAL mode for better concurrency
+    sqlx::query("PRAGMA journal_mode = WAL;")
+        .execute(&pool)
+        .await?;
+
+    // Set busy timeout to wait for locks instead of failing immediately
+    sqlx::query("PRAGMA busy_timeout = 30000;")
+        .execute(&pool)
         .await?;
 
     // Enable foreign keys

@@ -6,7 +6,7 @@ use super::models::T2EmployeeWithStores;
 
 pub struct T2AuthGuard {
     pub employee: T2EmployeeWithStores,
-    pub current_store_id: i32,
+    pub current_store_id: i64,
 }
 
 #[rocket::async_trait]
@@ -31,7 +31,7 @@ impl<'r> FromRequest<'r> for T2AuthGuard {
         };
 
         // Validate token and get employee
-        let session = match sqlx::query_as::<_, (i32, String)>(
+        let session = match sqlx::query_as::<_, (i64, String)>(
             r#"
             SELECT employee_id, expires_at FROM t2_sessions
             WHERE token = ? AND expires_at > datetime('now')
@@ -105,7 +105,7 @@ impl<'r> FromRequest<'r> for T2AuthGuard {
 
         // Determine current store ID
         let current_store_id = if let Some(id_str) = store_id_header {
-            if let Ok(id) = id_str.parse::<i32>() {
+            if let Ok(id) = id_str.parse::<i64>() {
                 // Check if employee has access to this store
                 if stores.iter().any(|s| s.id == id) {
                     id
