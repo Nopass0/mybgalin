@@ -373,10 +373,11 @@ async fn rocket() -> _ {
                 routes::menu::update_menu_settings,
             ],
         )
-        // T2 Sales System routes (public auth)
+        // T2 Sales System routes (public)
         .mount(
             "/api",
             routes![
+                t2::routes::t2_health,
                 t2::routes::t2_login,
             ],
         )
