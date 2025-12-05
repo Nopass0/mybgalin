@@ -47,6 +47,14 @@ fn generate_token() -> String {
     format!("{:x}", hasher.finalize())
 }
 
+// ============ HEALTH CHECK ============
+
+#[get("/t2/health")]
+pub async fn t2_health() -> Json<ApiResponse<String>> {
+    println!("T2 health check called");
+    ApiResponse::success("T2 API is running".to_string())
+}
+
 // ============ AUTH ROUTES ============
 
 #[post("/t2/auth/login", data = "<request>")]
@@ -54,6 +62,8 @@ pub async fn t2_login(
     pool: &State<SqlitePool>,
     request: Json<LoginRequest>,
 ) -> Json<ApiResponse<LoginResponse>> {
+    println!("T2 login attempt with code: {}", request.code);
+
     // Find employee by code
     let employee = match sqlx::query_as::<_, T2Employee>(
         r#"SELECT id, store_id, name, code, is_admin, created_at FROM t2_employees WHERE code = ?"#,
