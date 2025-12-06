@@ -830,29 +830,76 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
               const fromPortIndex = fromNode.definition.outputs.findIndex((p) => p.id === conn.fromPort);
               const toPortIndex = toNode.definition.inputs.findIndex((p) => p.id === conn.toPort);
 
-              const x1 = fromNode.position.x + 180;
-              const y1 = fromNode.position.y + 40 + fromPortIndex * 24 + 12;
-              const x2 = toNode.position.x;
-              const y2 = toNode.position.y + 40 + toPortIndex * 24 + 12;
+              // Node width is 176px (w-44), header is 28px, port row is 24px
+              const nodeWidth = 176;
+              const headerHeight = 28;
+              const portHeight = 24;
+              const inputsCount = fromNode.definition.inputs.length;
 
-              const midX = (x1 + x2) / 2;
+              const x1 = fromNode.position.x + nodeWidth;
+              const y1 = fromNode.position.y + headerHeight + (inputsCount > 0 ? inputsCount * portHeight : 0) + fromPortIndex * portHeight + 12;
+              const x2 = toNode.position.x;
+              const y2 = toNode.position.y + headerHeight + toPortIndex * portHeight + 12;
+
+              const dx = Math.abs(x2 - x1);
+              const curve = Math.max(50, dx * 0.5);
 
               return (
                 <g key={conn.id}>
+                  {/* Shadow/glow effect */}
                   <path
-                    d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
-                    stroke="#f97316"
-                    strokeWidth={2}
+                    d={`M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`}
+                    stroke="#f9731640"
+                    strokeWidth={6}
                     fill="none"
-                    className="pointer-events-auto cursor-pointer"
+                  />
+                  {/* Main connection line */}
+                  <path
+                    d={`M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`}
+                    stroke="#f97316"
+                    strokeWidth={2.5}
+                    fill="none"
+                    className="pointer-events-auto cursor-pointer hover:stroke-red-500 transition-colors"
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteConnection(conn.id);
                     }}
                   />
+                  {/* End circles */}
+                  <circle cx={x1} cy={y1} r={4} fill="#f97316" />
+                  <circle cx={x2} cy={y2} r={4} fill="#f97316" />
                 </g>
               );
             })}
+
+            {/* Drawing connection line */}
+            {connectingFrom && (
+              <line
+                x1={(() => {
+                  const node = nodes.find(n => n.id === connectingFrom.node);
+                  if (!node) return 0;
+                  return connectingFrom.type === 'output'
+                    ? node.position.x + 176
+                    : node.position.x;
+                })()}
+                y1={(() => {
+                  const node = nodes.find(n => n.id === connectingFrom.node);
+                  if (!node) return 0;
+                  const portIndex = connectingFrom.type === 'output'
+                    ? node.definition.outputs.findIndex(p => p.id === connectingFrom.port)
+                    : node.definition.inputs.findIndex(p => p.id === connectingFrom.port);
+                  const inputsCount = node.definition.inputs.length;
+                  return connectingFrom.type === 'output'
+                    ? node.position.y + 28 + (inputsCount > 0 ? inputsCount * 24 : 0) + portIndex * 24 + 12
+                    : node.position.y + 28 + portIndex * 24 + 12;
+                })()}
+                x2={(nodePickerPosition.x - pan.x) / zoom}
+                y2={(nodePickerPosition.y - pan.y) / zoom}
+                stroke="#f97316"
+                strokeWidth={2}
+                strokeDasharray="5,5"
+              />
+            )}
           </svg>
 
           {/* Nodes */}
@@ -1088,8 +1135,8 @@ function NodeComponent({
   return (
     <div
       className={cn(
-        'absolute w-44 bg-zinc-800 rounded-lg border-2 overflow-hidden shadow-lg',
-        isSelected ? 'border-orange-500' : getCategoryColor(node.definition.category),
+        'absolute w-44 bg-zinc-800 rounded-lg border-2 shadow-lg select-none',
+        isSelected ? 'border-orange-500 shadow-orange-500/20' : getCategoryColor(node.definition.category),
         isDragging && 'cursor-grabbing'
       )}
       style={{ left: node.position.x, top: node.position.y }}
@@ -1097,7 +1144,7 @@ function NodeComponent({
     >
       {/* Header */}
       <div
-        className={cn('node-header px-2 py-1.5 text-xs font-medium cursor-grab', getCategoryHeaderColor(node.definition.category))}
+        className={cn('node-header px-3 py-1.5 text-xs font-medium cursor-grab rounded-t-md', getCategoryHeaderColor(node.definition.category))}
       >
         <span className="text-black/80">{node.definition.name}</span>
       </div>
@@ -1105,20 +1152,23 @@ function NodeComponent({
       {/* Inputs */}
       {node.definition.inputs.length > 0 && (
         <div className="py-1">
-          {node.definition.inputs.map((input) => (
-            <div key={input.id} className="flex items-center h-6 px-2">
+          {node.definition.inputs.map((input, idx) => (
+            <div key={input.id} className="relative flex items-center h-6 px-3">
+              {/* Input port - positioned at left edge */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onPortClick(input.id, false);
                 }}
                 className={cn(
-                  'w-3 h-3 rounded-full border-2 border-zinc-600 bg-zinc-800 -ml-4 mr-2',
-                  'hover:border-orange-500 hover:bg-orange-500/20 transition-colors',
-                  connectingFrom && 'border-orange-500 animate-pulse'
+                  'absolute -left-2 w-4 h-4 rounded-full border-2 bg-zinc-900 z-10',
+                  'hover:scale-125 hover:border-orange-500 hover:bg-orange-500/30 transition-all',
+                  connectingFrom?.type === 'output' ? 'border-orange-500 bg-orange-500/20' : 'border-zinc-500'
                 )}
+                title={`${input.name} (${input.type})`}
               />
-              <span className="text-[10px] text-zinc-400">{input.name}</span>
+              <span className="text-[10px] text-zinc-400 ml-2">{input.name}</span>
+              <span className="text-[8px] text-zinc-600 ml-auto">{input.type}</span>
             </div>
           ))}
         </div>
@@ -1127,24 +1177,30 @@ function NodeComponent({
       {/* Outputs */}
       {node.definition.outputs.length > 0 && (
         <div className="py-1">
-          {node.definition.outputs.map((output) => (
-            <div key={output.id} className="flex items-center justify-end h-6 px-2">
-              <span className="text-[10px] text-zinc-400">{output.name}</span>
+          {node.definition.outputs.map((output, idx) => (
+            <div key={output.id} className="relative flex items-center justify-end h-6 px-3">
+              <span className="text-[8px] text-zinc-600 mr-auto">{output.type}</span>
+              <span className="text-[10px] text-zinc-400 mr-2">{output.name}</span>
+              {/* Output port - positioned at right edge */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onPortClick(output.id, true);
                 }}
                 className={cn(
-                  'w-3 h-3 rounded-full border-2 border-zinc-600 bg-zinc-800 -mr-4 ml-2',
-                  'hover:border-orange-500 hover:bg-orange-500/20 transition-colors',
-                  connectingFrom && 'border-orange-500 animate-pulse'
+                  'absolute -right-2 w-4 h-4 rounded-full border-2 bg-zinc-900 z-10',
+                  'hover:scale-125 hover:border-orange-500 hover:bg-orange-500/30 transition-all',
+                  connectingFrom?.type === 'input' ? 'border-orange-500 bg-orange-500/20' : 'border-zinc-500'
                 )}
+                title={`${output.name} (${output.type})`}
               />
             </div>
           ))}
         </div>
       )}
+
+      {/* Bottom padding */}
+      <div className="h-1" />
     </div>
   );
 }

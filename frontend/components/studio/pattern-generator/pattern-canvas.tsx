@@ -2619,6 +2619,770 @@ export const PatternCanvas = memo(function PatternCanvas({
       ctx.fillRect(0, 0, width, height);
     };
 
+    // ==================== ADDITIONAL UNIQUE PATTERNS ====================
+
+    const drawNeural = () => {
+      // Neural network pattern - connected nodes
+      const nodeCount = Math.floor(20 + actualDensity * 0.3);
+      const nodes: { x: number; y: number; layer: number }[] = [];
+      const layers = 4;
+
+      // Create nodes in layers
+      for (let layer = 0; layer < layers; layer++) {
+        const nodesInLayer = Math.floor(nodeCount / layers);
+        for (let i = 0; i < nodesInLayer; i++) {
+          nodes.push({
+            x: (layer + 0.5) * (width / layers),
+            y: (i + 0.5) * (height / nodesInLayer),
+            layer,
+          });
+        }
+      }
+
+      // Draw connections
+      ctx.strokeStyle = colors.secondary + '60';
+      ctx.lineWidth = lineWidth * 0.5;
+      maskCtx.strokeStyle = getMaskColor(0.3);
+
+      nodes.forEach((node) => {
+        const nextLayerNodes = nodes.filter((n) => n.layer === node.layer + 1);
+        nextLayerNodes.forEach((target) => {
+          if (random() > 0.3) {
+            allCtx.forEach((c) => {
+              c.beginPath();
+              c.moveTo(node.x, node.y);
+              c.lineTo(target.x, target.y);
+              c.stroke();
+            });
+          }
+        });
+      });
+
+      // Draw nodes
+      nodes.forEach((node) => {
+        const size = 5 + random() * actualSize * 0.3;
+        const intensity = 0.5 + node.layer * 0.15;
+
+        ctx.fillStyle = node.layer === 0 ? colors.accent : node.layer === layers - 1 ? colors.primary : colors.secondary;
+        maskCtx.fillStyle = getMaskColor(intensity);
+        normalCtx.fillStyle = getNormalColor(0, -1);
+        heightCtx.fillStyle = getHeightColor(intensity);
+
+        allCtx.forEach((c) => {
+          c.beginPath();
+          c.arc(node.x, node.y, size, 0, Math.PI * 2);
+          c.fill();
+        });
+      });
+    };
+
+    const drawDNA = () => {
+      const strands = 2;
+      const frequency = 0.02 + complexity * 0.0002;
+      const amplitude = 50 + actualSize;
+      const basePairs = Math.floor(height / 20);
+
+      for (let strand = 0; strand < strands; strand++) {
+        const phase = (strand * Math.PI);
+
+        ctx.strokeStyle = strand === 0 ? colors.primary : colors.secondary;
+        ctx.lineWidth = lineWidth * 2;
+        maskCtx.strokeStyle = getMaskColor(0.8);
+
+        ctx.beginPath();
+        maskCtx.beginPath();
+
+        for (let y = 0; y < height; y += 2) {
+          const x = width / 2 + Math.sin(y * frequency + phase) * amplitude;
+          if (y === 0) {
+            ctx.moveTo(x, y);
+            maskCtx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+          }
+        }
+
+        ctx.stroke();
+        maskCtx.stroke();
+      }
+
+      // Base pairs
+      for (let i = 0; i < basePairs; i++) {
+        const y = i * 20 + 10;
+        const x1 = width / 2 + Math.sin(y * frequency) * amplitude;
+        const x2 = width / 2 + Math.sin(y * frequency + Math.PI) * amplitude;
+
+        ctx.strokeStyle = colors.accent;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x2, y);
+        ctx.stroke();
+
+        // Nucleotide markers
+        const nucleotides = ['A', 'T', 'G', 'C'];
+        ctx.fillStyle = colors.primary;
+        ctx.font = `${8 + actualSize * 0.1}px monospace`;
+        ctx.fillText(nucleotides[i % 4], (x1 + x2) / 2 - 4, y + 3);
+      }
+    };
+
+    const drawCarbon = () => {
+      // Carbon fiber weave pattern
+      const weaveSize = Math.max(10, Math.floor(30 - actualDensity * 0.15));
+      const rows = Math.ceil(height / weaveSize) + 1;
+      const cols = Math.ceil(width / weaveSize) + 1;
+
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const x = i * weaveSize;
+          const y = j * weaveSize;
+          const isOver = (i + j) % 2 === 0;
+          const intensity = isOver ? 0.8 : 0.4;
+
+          ctx.fillStyle = isOver ? colors.primary : colors.secondary;
+          maskCtx.fillStyle = getMaskColor(intensity);
+          normalCtx.fillStyle = getNormalColor(isOver ? 0.3 : -0.3, isOver ? 0.3 : -0.3);
+          roughCtx.fillStyle = getRoughColor(intensity);
+          heightCtx.fillStyle = getHeightColor(isOver ? 0.7 : 0.3);
+
+          // Draw diagonal weave
+          allCtx.forEach((c) => {
+            c.beginPath();
+            c.moveTo(x, y);
+            c.lineTo(x + weaveSize, y + weaveSize);
+            c.lineTo(x + weaveSize, y + weaveSize - weaveSize * 0.3);
+            c.lineTo(x + weaveSize * 0.3, y);
+            c.closePath();
+            c.fill();
+          });
+        }
+      }
+    };
+
+    const drawMotherboard = () => {
+      // More detailed motherboard with chips and traces
+      const chipCount = Math.floor(5 + actualDensity * 0.1);
+      const traceCount = Math.floor(30 + actualDensity * 0.5);
+
+      // Draw traces
+      ctx.strokeStyle = colors.secondary;
+      ctx.lineWidth = lineWidth;
+      maskCtx.strokeStyle = getMaskColor(0.5);
+
+      for (let t = 0; t < traceCount; t++) {
+        const startX = random() * width;
+        const startY = random() * height;
+        const isHorizontal = random() > 0.5;
+
+        ctx.beginPath();
+        maskCtx.beginPath();
+        ctx.moveTo(startX, startY);
+        maskCtx.moveTo(startX, startY);
+
+        let x = startX, y = startY;
+        for (let s = 0; s < 5; s++) {
+          if (isHorizontal) {
+            x += (random() - 0.5) * 100;
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+            y += (random() > 0.5 ? 1 : -1) * 20;
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+          } else {
+            y += (random() - 0.5) * 100;
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+            x += (random() > 0.5 ? 1 : -1) * 20;
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+          }
+        }
+
+        ctx.stroke();
+        maskCtx.stroke();
+      }
+
+      // Draw chips
+      for (let c = 0; c < chipCount; c++) {
+        const chipX = random() * (width - 80) + 40;
+        const chipY = random() * (height - 60) + 30;
+        const chipW = 40 + random() * 40;
+        const chipH = 30 + random() * 30;
+        const intensity = 0.7 + random() * 0.3;
+
+        ctx.fillStyle = colors.primary;
+        maskCtx.fillStyle = getMaskColor(intensity);
+        normalCtx.fillStyle = getNormalColor(0, -1);
+        heightCtx.fillStyle = getHeightColor(0.8);
+
+        allCtx.forEach((ctx2) => {
+          ctx2.fillRect(chipX, chipY, chipW, chipH);
+        });
+
+        // Chip pins
+        const pinCount = Math.floor(chipW / 8);
+        ctx.fillStyle = colors.accent;
+        for (let p = 0; p < pinCount; p++) {
+          ctx.fillRect(chipX + p * 8 + 2, chipY - 5, 4, 5);
+          ctx.fillRect(chipX + p * 8 + 2, chipY + chipH, 4, 5);
+        }
+
+        // Chip text
+        ctx.fillStyle = colors.accent;
+        ctx.font = '8px monospace';
+        ctx.fillText(`IC${c + 1}`, chipX + 5, chipY + chipH / 2);
+      }
+    };
+
+    const drawRadar = () => {
+      const cx = width / 2;
+      const cy = height / 2;
+      const maxRadius = Math.min(width, height) * 0.45;
+      const ringCount = 5 + Math.floor(actualDensity * 0.05);
+      const sweepAngle = (Date.now() * 0.001) % (Math.PI * 2);
+
+      // Draw rings
+      for (let r = 1; r <= ringCount; r++) {
+        const radius = (r / ringCount) * maxRadius;
+        const intensity = 0.3 + (r / ringCount) * 0.4;
+
+        ctx.strokeStyle = colors.primary + '80';
+        ctx.lineWidth = lineWidth;
+        maskCtx.strokeStyle = getMaskColor(intensity);
+
+        allCtx.forEach((c) => {
+          c.beginPath();
+          c.arc(cx, cy, radius, 0, Math.PI * 2);
+          c.stroke();
+        });
+      }
+
+      // Draw cross lines
+      ctx.strokeStyle = colors.secondary + '60';
+      for (let a = 0; a < 4; a++) {
+        const angle = (a / 4) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(angle) * maxRadius, cy + Math.sin(angle) * maxRadius);
+        ctx.stroke();
+      }
+
+      // Draw sweep
+      const gradient = ctx.createConicGradient(sweepAngle, cx, cy);
+      gradient.addColorStop(0, colors.accent + '80');
+      gradient.addColorStop(0.1, colors.accent + '20');
+      gradient.addColorStop(0.2, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw blips
+      const blipCount = Math.floor(5 + actualDensity * 0.1);
+      for (let b = 0; b < blipCount; b++) {
+        const blipAngle = random() * Math.PI * 2;
+        const blipDist = random() * maxRadius;
+        const bx = cx + Math.cos(blipAngle) * blipDist;
+        const by = cy + Math.sin(blipAngle) * blipDist;
+
+        ctx.fillStyle = colors.accent;
+        maskCtx.fillStyle = getMaskColor(0.9);
+        heightCtx.fillStyle = getHeightColor(0.9);
+
+        [ctx, maskCtx, heightCtx].forEach((c) => {
+          c.beginPath();
+          c.arc(bx, by, 3 + random() * 4, 0, Math.PI * 2);
+          c.fill();
+        });
+      }
+    };
+
+    const drawOscilloscope = () => {
+      const lineCount = 3 + Math.floor(complexity * 0.03);
+      const gridSize = 40;
+
+      // Draw grid
+      ctx.strokeStyle = colors.secondary + '30';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x < width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+
+      // Draw waveforms
+      for (let l = 0; l < lineCount; l++) {
+        const freq = 0.02 + l * 0.01 + random() * 0.02;
+        const amp = 30 + random() * 50;
+        const phase = random() * Math.PI * 2;
+        const yOffset = ((l + 0.5) / lineCount) * height;
+        const color = l === 0 ? colors.primary : l === 1 ? colors.secondary : colors.accent;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth * 1.5;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        maskCtx.strokeStyle = getMaskColor(0.8);
+
+        ctx.beginPath();
+        maskCtx.beginPath();
+
+        for (let x = 0; x < width; x += 2) {
+          const y = yOffset + Math.sin(x * freq + phase) * amp;
+          if (x === 0) {
+            ctx.moveTo(x, y);
+            maskCtx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+          }
+        }
+
+        ctx.stroke();
+        maskCtx.stroke();
+        ctx.shadowBlur = patternSettings.glowIntensity;
+      }
+    };
+
+    const drawMarble = () => {
+      // Marble with veins
+      const noiseScale = 0.005 + complexity * 0.00005;
+      const veinCount = 5 + Math.floor(actualDensity * 0.1);
+
+      // Base marble
+      for (let y = 0; y < height; y += 2) {
+        for (let x = 0; x < width; x += 2) {
+          const n = fbm(x * noiseScale, y * noiseScale, 6, 0.5, 2, patternSettings.seed);
+          const intensity = 0.7 + n * 0.3;
+
+          ctx.fillStyle = `rgb(${200 + n * 55}, ${195 + n * 60}, ${190 + n * 65})`;
+          maskCtx.fillStyle = getMaskColor(intensity);
+          roughCtx.fillStyle = getRoughColor(0.2 + n * 0.3);
+
+          ctx.fillRect(x, y, 2, 2);
+          maskCtx.fillRect(x, y, 2, 2);
+          roughCtx.fillRect(x, y, 2, 2);
+        }
+      }
+
+      // Veins
+      for (let v = 0; v < veinCount; v++) {
+        let x = random() * width;
+        let y = random() * height;
+        const veinLength = 100 + random() * 200;
+
+        ctx.strokeStyle = colors.secondary + '40';
+        ctx.lineWidth = 0.5 + random() * 1.5;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+
+        for (let i = 0; i < veinLength; i++) {
+          const angle = fbm(x * 0.01, y * 0.01, 2, 0.5, 2, patternSettings.seed + v) * Math.PI * 4;
+          x += Math.cos(angle) * 2;
+          y += Math.sin(angle) * 2;
+          ctx.lineTo(x, y);
+        }
+
+        ctx.stroke();
+      }
+    };
+
+    const drawWood = () => {
+      const ringSpacing = 10 + actualSize * 0.5;
+      const noiseScale = 0.02;
+      const cx = width / 2 + (random() - 0.5) * 100;
+      const cy = height / 2 + (random() - 0.5) * 100;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const dx = x - cx;
+          const dy = y - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const noiseVal = fbm(x * noiseScale, y * noiseScale, 3, 0.5, 2, patternSettings.seed) * 20;
+          const ring = (dist + noiseVal) % ringSpacing;
+          const intensity = ring / ringSpacing;
+
+          const baseColor = 139 + intensity * 40;
+          const r = Math.floor(baseColor);
+          const g = Math.floor(baseColor * 0.6);
+          const b = Math.floor(baseColor * 0.3);
+
+          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          maskCtx.fillStyle = getMaskColor(0.3 + intensity * 0.5);
+          roughCtx.fillStyle = getRoughColor(0.4 + intensity * 0.3);
+
+          ctx.fillRect(x, y, 1, 1);
+          maskCtx.fillRect(x, y, 1, 1);
+          roughCtx.fillRect(x, y, 1, 1);
+        }
+      }
+    };
+
+    const drawAgate = () => {
+      const bands = 8 + Math.floor(actualDensity * 0.1);
+      const cx = width / 2 + (random() - 0.5) * width * 0.3;
+      const cy = height / 2 + (random() - 0.5) * height * 0.3;
+      const maxRadius = Math.max(width, height);
+
+      for (let b = bands; b >= 0; b--) {
+        const radius = (b / bands) * maxRadius;
+        const noiseScale = 0.01;
+        const distortion = 20 + random() * 30;
+        const intensity = 0.3 + (1 - b / bands) * 0.7;
+        const colorIdx = b % 3;
+
+        ctx.fillStyle = colorIdx === 0 ? colors.primary : colorIdx === 1 ? colors.secondary : colors.accent;
+        ctx.globalAlpha = 0.6 + (1 - b / bands) * 0.4;
+        maskCtx.fillStyle = getMaskColor(intensity);
+        heightCtx.fillStyle = getHeightColor(intensity);
+
+        ctx.beginPath();
+        for (let a = 0; a <= 360; a += 5) {
+          const angle = (a * Math.PI) / 180;
+          const noise = fbm(Math.cos(angle) * 2, Math.sin(angle) * 2, 3, 0.5, 2, patternSettings.seed + b) * distortion;
+          const r = radius + noise;
+          const px = cx + Math.cos(angle) * r;
+          const py = cy + Math.sin(angle) * r;
+
+          if (a === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        maskCtx.fill();
+        heightCtx.fill();
+      }
+      ctx.globalAlpha = 1;
+    };
+
+    const drawCaustics = () => {
+      const cellSize = 4;
+      const noiseScale = 0.02 + complexity * 0.0002;
+      const time = patternSettings.seed * 0.1;
+
+      for (let y = 0; y < height; y += cellSize) {
+        for (let x = 0; x < width; x += cellSize) {
+          const n1 = fbm(x * noiseScale + time, y * noiseScale, 3, 0.5, 2, patternSettings.seed);
+          const n2 = fbm(x * noiseScale, y * noiseScale + time, 3, 0.5, 2, patternSettings.seed + 1000);
+          const combined = Math.sin(n1 * 10) * Math.cos(n2 * 10);
+          const intensity = (combined + 1) / 2;
+
+          ctx.fillStyle = `rgba(${Math.floor(100 + intensity * 155)}, ${Math.floor(150 + intensity * 105)}, 255, ${0.3 + intensity * 0.7})`;
+          maskCtx.fillStyle = getMaskColor(intensity);
+          pearlCtx.fillStyle = getPearlColor(intensity);
+          heightCtx.fillStyle = getHeightColor(intensity);
+
+          ctx.fillRect(x, y, cellSize, cellSize);
+          maskCtx.fillRect(x, y, cellSize, cellSize);
+          pearlCtx.fillRect(x, y, cellSize, cellSize);
+          heightCtx.fillRect(x, y, cellSize, cellSize);
+        }
+      }
+    };
+
+    const drawPlasma = () => {
+      const cellSize = 3;
+      const scale1 = 0.01 + complexity * 0.0001;
+      const scale2 = 0.02 + complexity * 0.0002;
+      const time = patternSettings.seed * 0.05;
+
+      for (let y = 0; y < height; y += cellSize) {
+        for (let x = 0; x < width; x += cellSize) {
+          const v1 = Math.sin(x * scale1 + time);
+          const v2 = Math.sin((y * scale1 + time) * 1.1);
+          const v3 = Math.sin((x * scale2 + y * scale2 + time) * 0.8);
+          const v4 = Math.sin(Math.sqrt((x * scale1) ** 2 + (y * scale1) ** 2) + time);
+          const value = (v1 + v2 + v3 + v4) / 4;
+          const intensity = (value + 1) / 2;
+
+          const r = Math.floor(128 + 127 * Math.sin(value * Math.PI));
+          const g = Math.floor(128 + 127 * Math.sin(value * Math.PI + 2));
+          const b = Math.floor(128 + 127 * Math.sin(value * Math.PI + 4));
+
+          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          maskCtx.fillStyle = getMaskColor(intensity);
+          pearlCtx.fillStyle = getPearlColor(intensity);
+          heightCtx.fillStyle = getHeightColor(intensity);
+
+          ctx.fillRect(x, y, cellSize, cellSize);
+          maskCtx.fillRect(x, y, cellSize, cellSize);
+          pearlCtx.fillRect(x, y, cellSize, cellSize);
+          heightCtx.fillRect(x, y, cellSize, cellSize);
+        }
+      }
+    };
+
+    const drawGrunge = () => {
+      // First layer - noise
+      for (let y = 0; y < height; y += 2) {
+        for (let x = 0; x < width; x += 2) {
+          const n = random();
+          if (n > 0.7) {
+            const size = 2 + random() * 8;
+            const intensity = 0.2 + random() * 0.4;
+
+            ctx.fillStyle = colors.primary + Math.floor(intensity * 255).toString(16).padStart(2, '0');
+            maskCtx.fillStyle = getMaskColor(intensity);
+            roughCtx.fillStyle = getRoughColor(0.8);
+
+            ctx.fillRect(x, y, size, size);
+            maskCtx.fillRect(x, y, size, size);
+            roughCtx.fillRect(x, y, size, size);
+          }
+        }
+      }
+
+      // Scratches
+      const scratchCount = Math.floor(20 + actualDensity * 0.3);
+      for (let s = 0; s < scratchCount; s++) {
+        const x1 = random() * width;
+        const y1 = random() * height;
+        const length = 20 + random() * 100;
+        const angle = random() * Math.PI * 2;
+        const x2 = x1 + Math.cos(angle) * length;
+        const y2 = y1 + Math.sin(angle) * length;
+
+        ctx.strokeStyle = colors.secondary + '40';
+        ctx.lineWidth = 0.5 + random() * 1;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      // Splatters
+      const splatCount = Math.floor(10 + actualDensity * 0.2);
+      for (let sp = 0; sp < splatCount; sp++) {
+        const x = random() * width;
+        const y = random() * height;
+        const size = 10 + random() * 30;
+        const drops = 5 + Math.floor(random() * 10);
+
+        for (let d = 0; d < drops; d++) {
+          const dx = x + (random() - 0.5) * size;
+          const dy = y + (random() - 0.5) * size;
+          const ds = 2 + random() * 6;
+
+          ctx.fillStyle = colors.accent + '60';
+          ctx.beginPath();
+          ctx.arc(dx, dy, ds, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+
+    const drawSplatter = () => {
+      const splatCount = Math.floor(15 + actualDensity * 0.3);
+
+      for (let s = 0; s < splatCount; s++) {
+        const cx = random() * width;
+        const cy = random() * height;
+        const mainSize = 20 + random() * actualSize * 2;
+        const dropCount = 10 + Math.floor(random() * 20);
+        const colorChoice = Math.floor(random() * 3);
+        const color = colorChoice === 0 ? colors.primary : colorChoice === 1 ? colors.secondary : colors.accent;
+        const intensity = 0.5 + random() * 0.5;
+
+        // Main splat
+        ctx.fillStyle = color;
+        maskCtx.fillStyle = getMaskColor(intensity);
+        heightCtx.fillStyle = getHeightColor(intensity);
+
+        const drawSplat = () => {
+          ctx.beginPath();
+          for (let a = 0; a < 360; a += 10) {
+            const angle = (a * Math.PI) / 180;
+            const r = mainSize * (0.5 + random() * 0.5);
+            const px = cx + Math.cos(angle) * r;
+            const py = cy + Math.sin(angle) * r;
+            if (a === 0) ctx.moveTo(px, py);
+            else ctx.quadraticCurveTo(cx + Math.cos(angle - 0.1) * r * 1.1, cy + Math.sin(angle - 0.1) * r * 1.1, px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          maskCtx.fill();
+          heightCtx.fill();
+        };
+        drawSeamless(drawSplat);
+
+        // Droplets
+        for (let d = 0; d < dropCount; d++) {
+          const angle = random() * Math.PI * 2;
+          const dist = mainSize + random() * mainSize;
+          const dx = cx + Math.cos(angle) * dist;
+          const dy = cy + Math.sin(angle) * dist;
+          const dropSize = 2 + random() * 8;
+
+          ctx.fillStyle = color + 'aa';
+          ctx.beginPath();
+          ctx.arc(dx, dy, dropSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+
+    const drawMoire = () => {
+      const cx1 = width * 0.4;
+      const cy1 = height * 0.5;
+      const cx2 = width * 0.6;
+      const cy2 = height * 0.5;
+      const lineSpacing = 3 + Math.floor(10 - actualDensity * 0.05);
+      const maxRadius = Math.max(width, height);
+
+      // First set of concentric circles
+      ctx.strokeStyle = colors.primary + '80';
+      ctx.lineWidth = 1;
+      for (let r = lineSpacing; r < maxRadius; r += lineSpacing) {
+        ctx.beginPath();
+        ctx.arc(cx1, cy1, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Second set - creates moire pattern
+      ctx.strokeStyle = colors.secondary + '80';
+      for (let r = lineSpacing; r < maxRadius; r += lineSpacing) {
+        ctx.beginPath();
+        ctx.arc(cx2, cy2, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Generate mask based on combined pattern
+      for (let y = 0; y < height; y += 2) {
+        for (let x = 0; x < width; x += 2) {
+          const d1 = Math.sqrt((x - cx1) ** 2 + (y - cy1) ** 2);
+          const d2 = Math.sqrt((x - cx2) ** 2 + (y - cy2) ** 2);
+          const v1 = Math.sin(d1 / lineSpacing * Math.PI);
+          const v2 = Math.sin(d2 / lineSpacing * Math.PI);
+          const combined = Math.abs(v1 * v2);
+
+          maskCtx.fillStyle = getMaskColor(combined);
+          heightCtx.fillStyle = getHeightColor(combined);
+          maskCtx.fillRect(x, y, 2, 2);
+          heightCtx.fillRect(x, y, 2, 2);
+        }
+      }
+    };
+
+    const drawGuilloche = () => {
+      const cx = width / 2;
+      const cy = height / 2;
+      const turns = 20 + actualDensity * 0.3;
+      const layers = 3;
+
+      for (let l = 0; l < layers; l++) {
+        const R = 100 + l * 40 + actualSize;
+        const r = 30 + l * 15;
+        const d = 20 + l * 10;
+        const color = l === 0 ? colors.primary : l === 1 ? colors.secondary : colors.accent;
+
+        ctx.strokeStyle = color + '80';
+        ctx.lineWidth = lineWidth * 0.5;
+        maskCtx.strokeStyle = getMaskColor(0.5 + l * 0.15);
+
+        ctx.beginPath();
+        maskCtx.beginPath();
+
+        for (let t = 0; t < turns * Math.PI * 2; t += 0.02) {
+          const x = cx + (R - r) * Math.cos(t) + d * Math.cos((R - r) / r * t);
+          const y = cy + (R - r) * Math.sin(t) - d * Math.sin((R - r) / r * t);
+
+          if (t === 0) {
+            ctx.moveTo(x, y);
+            maskCtx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+            maskCtx.lineTo(x, y);
+          }
+        }
+
+        ctx.stroke();
+        maskCtx.stroke();
+      }
+    };
+
+    const drawStippling = () => {
+      const dotCount = Math.floor(500 + actualDensity * 10);
+
+      for (let i = 0; i < dotCount; i++) {
+        const x = random() * width;
+        const y = random() * height;
+
+        // Density varies by position for gradient effect
+        const distFromCenter = Math.sqrt((x - width / 2) ** 2 + (y - height / 2) ** 2);
+        const maxDist = Math.sqrt((width / 2) ** 2 + (height / 2) ** 2);
+        const densityFactor = 1 - distFromCenter / maxDist;
+
+        if (random() < densityFactor) {
+          const size = 1 + random() * 2;
+          const intensity = 0.5 + densityFactor * 0.5;
+
+          ctx.fillStyle = colors.primary;
+          maskCtx.fillStyle = getMaskColor(intensity);
+          heightCtx.fillStyle = getHeightColor(intensity);
+
+          allCtx.forEach((c) => {
+            c.beginPath();
+            c.arc(x, y, size, 0, Math.PI * 2);
+            c.fill();
+          });
+        }
+      }
+    };
+
+    const drawEngraving = () => {
+      const lineSpacing = 4 + Math.floor(10 - actualDensity * 0.05);
+      const waveAmp = 5 + complexity * 0.05;
+
+      // Horizontal lines with varying thickness
+      for (let y = 0; y < height; y += lineSpacing) {
+        ctx.strokeStyle = colors.primary;
+        maskCtx.strokeStyle = getMaskColor(0.7);
+
+        ctx.beginPath();
+        maskCtx.beginPath();
+
+        for (let x = 0; x < width; x += 2) {
+          const noise = fbm(x * 0.01, y * 0.01, 2, 0.5, 2, patternSettings.seed);
+          const yOffset = y + Math.sin(x * 0.05) * waveAmp * noise;
+          const thickness = 1 + noise * 2;
+
+          ctx.lineWidth = thickness;
+          maskCtx.lineWidth = thickness;
+
+          if (x === 0) {
+            ctx.moveTo(x, yOffset);
+            maskCtx.moveTo(x, yOffset);
+          } else {
+            ctx.lineTo(x, yOffset);
+            maskCtx.lineTo(x, yOffset);
+          }
+        }
+
+        ctx.stroke();
+        maskCtx.stroke();
+      }
+
+      // Cross-hatching for darker areas
+      for (let x = 0; x < width; x += lineSpacing * 2) {
+        ctx.strokeStyle = colors.secondary + '60';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + height * 0.3, height);
+        ctx.stroke();
+      }
+    };
+
     // ==================== EXECUTE PATTERN ====================
 
     switch (patternSettings.style) {
@@ -2677,16 +3441,16 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawScanlines();
         break;
       case 'neural':
-        drawCircuit();
+        drawNeural();
         break;
       case 'dna':
-        drawSpiral();
+        drawDNA();
         break;
       case 'carbon':
-        drawCrosshatch();
+        drawCarbon();
         break;
       case 'motherboard':
-        drawChipset();
+        drawMotherboard();
         break;
       case 'processor':
         drawChipset();
@@ -2701,13 +3465,13 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawGlitch();
         break;
       case 'radar':
-        drawCircles();
+        drawRadar();
         break;
       case 'oscilloscope':
-        drawWaves();
+        drawOscilloscope();
         break;
       case 'frequency':
-        drawWaves();
+        drawOscilloscope();
         break;
       case 'waveform':
         drawWaves();
@@ -2730,10 +3494,10 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawScales();
         break;
       case 'marble':
-        drawNoise();
+        drawMarble();
         break;
       case 'wood':
-        drawNoise();
+        drawWood();
         break;
       case 'topographic':
         drawWireframe3D();
@@ -2763,7 +3527,7 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawMosaic();
         break;
       case 'agate':
-        drawCircles();
+        drawAgate();
         break;
       case 'geode':
         drawVoronoi();
@@ -2777,13 +3541,13 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawVoronoi();
         break;
       case 'plasma':
-        drawNoise();
+        drawPlasma();
         break;
       case 'fractal':
         drawTerrain3D();
         break;
       case 'grunge':
-        drawNoise();
+        drawGrunge();
         break;
       case 'reaction':
         drawMetaballs();
@@ -2792,7 +3556,7 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawVoronoi();
         break;
       case 'caustics':
-        drawVoronoi();
+        drawCaustics();
         break;
       case 'nebula':
         drawNebula();
@@ -2809,7 +3573,7 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawDigiCamo();
         break;
       case 'splatter':
-        drawMosaic();
+        drawSplatter();
         break;
       case 'sediment':
         drawTerrain3D();
@@ -2844,19 +3608,19 @@ export const PatternCanvas = memo(function PatternCanvas({
         drawCircuit();
         break;
       case 'guilloche':
-        drawSpiral();
+        drawGuilloche();
         break;
       case 'moire':
-        drawCircles();
+        drawMoire();
         break;
       case 'interference':
         drawWaves();
         break;
       case 'stippling':
-        drawDots();
+        drawStippling();
         break;
       case 'engraving':
-        drawCrosshatch();
+        drawEngraving();
         break;
       case 'lsystem':
         drawCoral();
