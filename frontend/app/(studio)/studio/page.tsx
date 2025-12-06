@@ -19,6 +19,7 @@ import {
   Video,
   Palette,
   HardDrive,
+  Grid3X3,
 } from 'lucide-react';
 import { useStudioAuth } from '@/hooks/useStudioAuth';
 import { StudioProject, StickerType } from '@/types/studio';
@@ -345,6 +346,14 @@ export default function StudioPage() {
               >
                 <Palette className="w-4 h-4 mr-2" />
                 Projects
+              </TabsTrigger>
+              <TabsTrigger
+                value="patterns"
+                className="data-[state=active]:bg-green-500 data-[state=active]:text-white px-6"
+                onClick={() => router.push('/studio/patterns')}
+              >
+                <Grid3X3 className="w-4 h-4 mr-2" />
+                Pattern Generator
               </TabsTrigger>
               <TabsTrigger
                 value="publish"
