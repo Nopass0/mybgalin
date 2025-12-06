@@ -77,6 +77,15 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
     outputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
     parameters: [{ id: 'color', name: 'Цвет', type: 'color', value: '#ff6600' }],
   },
+  {
+    type: 'time-input',
+    name: 'Время',
+    category: 'input',
+    description: 'Анимационное время (0-1)',
+    inputs: [],
+    outputs: [{ id: 'time', name: 'Время', type: 'float' }],
+    parameters: [{ id: 'speed', name: 'Скорость', type: 'float', value: 1, min: 0.1, max: 10 }],
+  },
 
   // Noise Nodes
   {
@@ -123,6 +132,34 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
       { id: 'scale', name: 'Масштаб', type: 'float', value: 5, min: 0.1, max: 50 },
       { id: 'octaves', name: 'Октавы', type: 'int', value: 6, min: 1, max: 16 },
       { id: 'lacunarity', name: 'Лакунарность', type: 'float', value: 2, min: 1, max: 4 },
+      { id: 'seed', name: 'Seed', type: 'int', value: 0, min: 0, max: 9999 },
+    ],
+  },
+  {
+    type: 'noise-worley',
+    name: 'Worley Noise',
+    category: 'noise',
+    description: 'Клеточный шум',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [
+      { id: 'f1', name: 'F1', type: 'float' },
+      { id: 'f2', name: 'F2', type: 'float' },
+      { id: 'edge', name: 'Грани', type: 'float' },
+    ],
+    parameters: [
+      { id: 'scale', name: 'Масштаб', type: 'float', value: 5, min: 0.1, max: 30 },
+      { id: 'seed', name: 'Seed', type: 'int', value: 0, min: 0, max: 9999 },
+    ],
+  },
+  {
+    type: 'noise-simplex',
+    name: 'Simplex Noise',
+    category: 'noise',
+    description: 'Улучшенный шум',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'value', name: 'Значение', type: 'float' }],
+    parameters: [
+      { id: 'scale', name: 'Масштаб', type: 'float', value: 5, min: 0.1, max: 50 },
       { id: 'seed', name: 'Seed', type: 'int', value: 0, min: 0, max: 9999 },
     ],
   },
@@ -185,6 +222,72 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
       { id: 'distortion', name: 'Искажение', type: 'float', value: 0, min: 0, max: 10 },
     ],
   },
+  {
+    type: 'pattern-brick',
+    name: 'Кирпич',
+    category: 'pattern',
+    description: 'Кирпичная кладка',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [
+      { id: 'fac', name: 'Фактор', type: 'float' },
+      { id: 'mortar', name: 'Шов', type: 'float' },
+    ],
+    parameters: [
+      { id: 'scaleX', name: 'Масштаб X', type: 'float', value: 4, min: 1, max: 20 },
+      { id: 'scaleY', name: 'Масштаб Y', type: 'float', value: 8, min: 1, max: 40 },
+      { id: 'offset', name: 'Смещение', type: 'float', value: 0.5, min: 0, max: 1 },
+      { id: 'mortarSize', name: 'Толщина шва', type: 'float', value: 0.05, min: 0, max: 0.2 },
+    ],
+  },
+  {
+    type: 'pattern-rings',
+    name: 'Кольца',
+    category: 'pattern',
+    description: 'Концентрические кольца',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'fac', name: 'Фактор', type: 'float' }],
+    parameters: [
+      { id: 'scale', name: 'Масштаб', type: 'float', value: 10, min: 1, max: 50 },
+      { id: 'centerX', name: 'Центр X', type: 'float', value: 0.5, min: 0, max: 1 },
+      { id: 'centerY', name: 'Центр Y', type: 'float', value: 0.5, min: 0, max: 1 },
+    ],
+  },
+  {
+    type: 'pattern-spiral',
+    name: 'Спираль',
+    category: 'pattern',
+    description: 'Спиральный паттерн',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'fac', name: 'Фактор', type: 'float' }],
+    parameters: [
+      { id: 'arms', name: 'Лучи', type: 'int', value: 4, min: 1, max: 16 },
+      { id: 'twist', name: 'Закрутка', type: 'float', value: 2, min: 0.1, max: 10 },
+    ],
+  },
+  {
+    type: 'pattern-grid',
+    name: 'Сетка',
+    category: 'pattern',
+    description: 'Линейная сетка',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'fac', name: 'Фактор', type: 'float' }],
+    parameters: [
+      { id: 'scale', name: 'Масштаб', type: 'float', value: 10, min: 1, max: 50 },
+      { id: 'thickness', name: 'Толщина', type: 'float', value: 0.1, min: 0.01, max: 0.5 },
+    ],
+  },
+  {
+    type: 'pattern-triangle',
+    name: 'Треугольники',
+    category: 'pattern',
+    description: 'Треугольная сетка',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [
+      { id: 'fac', name: 'Фактор', type: 'float' },
+      { id: 'cell', name: 'Ячейка', type: 'float' },
+    ],
+    parameters: [{ id: 'scale', name: 'Масштаб', type: 'float', value: 5, min: 1, max: 30 }],
+  },
 
   // Math Nodes
   {
@@ -200,6 +303,18 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
     parameters: [],
   },
   {
+    type: 'math-subtract',
+    name: 'Вычитание',
+    category: 'math',
+    description: 'A - B',
+    inputs: [
+      { id: 'a', name: 'A', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
     type: 'math-multiply',
     name: 'Умножение',
     category: 'math',
@@ -207,6 +322,30 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
     inputs: [
       { id: 'a', name: 'A', type: 'float' },
       { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-divide',
+    name: 'Деление',
+    category: 'math',
+    description: 'A ÷ B',
+    inputs: [
+      { id: 'a', name: 'A', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-power',
+    name: 'Степень',
+    category: 'math',
+    description: 'A^B',
+    inputs: [
+      { id: 'base', name: 'Основание', type: 'float' },
+      { id: 'exp', name: 'Степень', type: 'float' },
     ],
     outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
     parameters: [],
@@ -236,6 +375,115 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
       { id: 'max', name: 'Max', type: 'float', value: 1, min: 0, max: 1 },
     ],
   },
+  {
+    type: 'math-abs',
+    name: 'Модуль',
+    category: 'math',
+    description: '|A|',
+    inputs: [{ id: 'value', name: 'Значение', type: 'float' }],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-step',
+    name: 'Step',
+    category: 'math',
+    description: '0 если < edge, иначе 1',
+    inputs: [
+      { id: 'value', name: 'Значение', type: 'float' },
+      { id: 'edge', name: 'Граница', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-smoothstep',
+    name: 'Smoothstep',
+    category: 'math',
+    description: 'Плавный переход',
+    inputs: [
+      { id: 'value', name: 'Значение', type: 'float' },
+      { id: 'edge0', name: 'Край 0', type: 'float' },
+      { id: 'edge1', name: 'Край 1', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-sine',
+    name: 'Синус',
+    category: 'math',
+    description: 'sin(A)',
+    inputs: [{ id: 'value', name: 'Значение', type: 'float' }],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-cosine',
+    name: 'Косинус',
+    category: 'math',
+    description: 'cos(A)',
+    inputs: [{ id: 'value', name: 'Значение', type: 'float' }],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-fract',
+    name: 'Дробная часть',
+    category: 'math',
+    description: 'fract(A)',
+    inputs: [{ id: 'value', name: 'Значение', type: 'float' }],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-mod',
+    name: 'Остаток',
+    category: 'math',
+    description: 'A mod B',
+    inputs: [
+      { id: 'a', name: 'A', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-min',
+    name: 'Минимум',
+    category: 'math',
+    description: 'min(A, B)',
+    inputs: [
+      { id: 'a', name: 'A', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-max',
+    name: 'Максимум',
+    category: 'math',
+    description: 'max(A, B)',
+    inputs: [
+      { id: 'a', name: 'A', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [],
+  },
+  {
+    type: 'math-distance',
+    name: 'Расстояние',
+    category: 'math',
+    description: 'Расстояние от центра',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'result', name: 'Результат', type: 'float' }],
+    parameters: [
+      { id: 'centerX', name: 'Центр X', type: 'float', value: 0.5, min: 0, max: 1 },
+      { id: 'centerY', name: 'Центр Y', type: 'float', value: 0.5, min: 0, max: 1 },
+    ],
+  },
 
   // Color Nodes
   {
@@ -263,6 +511,80 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
       { id: 'color2', name: 'Цвет 2', type: 'color', value: '#ffffff' },
     ],
   },
+  {
+    type: 'color-ramp',
+    name: 'Цветовая рампа',
+    category: 'color',
+    description: '3-цветный градиент',
+    inputs: [{ id: 'fac', name: 'Фактор', type: 'float' }],
+    outputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    parameters: [
+      { id: 'color1', name: 'Цвет 1', type: 'color', value: '#1a1a2e' },
+      { id: 'color2', name: 'Цвет 2', type: 'color', value: '#ff6b35' },
+      { id: 'color3', name: 'Цвет 3', type: 'color', value: '#ffffff' },
+      { id: 'pos2', name: 'Позиция 2', type: 'float', value: 0.5, min: 0, max: 1 },
+    ],
+  },
+  {
+    type: 'color-hsv',
+    name: 'HSV в RGB',
+    category: 'color',
+    description: 'Преобразование из HSV',
+    inputs: [
+      { id: 'h', name: 'H', type: 'float' },
+      { id: 's', name: 'S', type: 'float' },
+      { id: 'v', name: 'V', type: 'float' },
+    ],
+    outputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    parameters: [],
+  },
+  {
+    type: 'color-brightness',
+    name: 'Яркость/Контраст',
+    category: 'color',
+    description: 'Настройка яркости',
+    inputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    outputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    parameters: [
+      { id: 'brightness', name: 'Яркость', type: 'float', value: 0, min: -1, max: 1 },
+      { id: 'contrast', name: 'Контраст', type: 'float', value: 0, min: -1, max: 1 },
+    ],
+  },
+  {
+    type: 'color-invert',
+    name: 'Инверсия цвета',
+    category: 'color',
+    description: 'Инвертировать цвет',
+    inputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    outputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    parameters: [{ id: 'fac', name: 'Сила', type: 'float', value: 1, min: 0, max: 1 }],
+  },
+  {
+    type: 'color-separate',
+    name: 'Разделить RGB',
+    category: 'color',
+    description: 'Разделить на каналы',
+    inputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    outputs: [
+      { id: 'r', name: 'R', type: 'float' },
+      { id: 'g', name: 'G', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    parameters: [],
+  },
+  {
+    type: 'color-combine',
+    name: 'Объединить RGB',
+    category: 'color',
+    description: 'Собрать из каналов',
+    inputs: [
+      { id: 'r', name: 'R', type: 'float' },
+      { id: 'g', name: 'G', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'color', name: 'Цвет', type: 'color' }],
+    parameters: [],
+  },
 
   // Transform Nodes
   {
@@ -286,6 +608,57 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
     outputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
     parameters: [{ id: 'angle', name: 'Угол', type: 'float', value: 0, min: 0, max: 360 }],
   },
+  {
+    type: 'transform-translate',
+    name: 'Смещение UV',
+    category: 'transform',
+    description: 'Сместить координаты',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    parameters: [
+      { id: 'offsetX', name: 'X', type: 'float', value: 0, min: -1, max: 1 },
+      { id: 'offsetY', name: 'Y', type: 'float', value: 0, min: -1, max: 1 },
+    ],
+  },
+  {
+    type: 'transform-tile',
+    name: 'Тайлинг',
+    category: 'transform',
+    description: 'Повторить координаты',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    parameters: [
+      { id: 'tilesX', name: 'Тайлы X', type: 'int', value: 2, min: 1, max: 10 },
+      { id: 'tilesY', name: 'Тайлы Y', type: 'int', value: 2, min: 1, max: 10 },
+    ],
+  },
+  {
+    type: 'transform-mirror',
+    name: 'Зеркало',
+    category: 'transform',
+    description: 'Зеркалить координаты',
+    inputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    outputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    parameters: [
+      { id: 'mirrorX', name: 'Зеркало X', type: 'int', value: 0, min: 0, max: 1 },
+      { id: 'mirrorY', name: 'Зеркало Y', type: 'int', value: 0, min: 0, max: 1 },
+    ],
+  },
+  {
+    type: 'transform-distort',
+    name: 'Искажение',
+    category: 'transform',
+    description: 'Искажение шумом',
+    inputs: [
+      { id: 'uv', name: 'UV', type: 'vector2' },
+      { id: 'amount', name: 'Сила', type: 'float' },
+    ],
+    outputs: [{ id: 'uv', name: 'UV', type: 'vector2' }],
+    parameters: [
+      { id: 'scale', name: 'Масштаб', type: 'float', value: 5, min: 0.1, max: 20 },
+      { id: 'strength', name: 'Сила', type: 'float', value: 0.1, min: 0, max: 0.5 },
+    ],
+  },
 
   // Mask Nodes
   {
@@ -305,6 +678,27 @@ const NODE_DEFINITIONS: NodeDefinition[] = [
     inputs: [{ id: 'mask', name: 'Маска', type: 'float' }],
     outputs: [{ id: 'mask', name: 'Маска', type: 'float' }],
     parameters: [],
+  },
+  {
+    type: 'mask-blend',
+    name: 'Смешать маски',
+    category: 'mask',
+    description: 'Blend mode',
+    inputs: [
+      { id: 'a', name: 'A', type: 'float' },
+      { id: 'b', name: 'B', type: 'float' },
+    ],
+    outputs: [{ id: 'mask', name: 'Маска', type: 'float' }],
+    parameters: [{ id: 'mode', name: 'Режим', type: 'int', value: 0, min: 0, max: 5 }],
+  },
+  {
+    type: 'mask-edge',
+    name: 'Края',
+    category: 'mask',
+    description: 'Выделить края',
+    inputs: [{ id: 'mask', name: 'Маска', type: 'float' }],
+    outputs: [{ id: 'mask', name: 'Маска', type: 'float' }],
+    parameters: [{ id: 'width', name: 'Ширина', type: 'float', value: 0.1, min: 0.01, max: 0.5 }],
   },
 
   // Output Nodes
@@ -601,14 +995,30 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
     canvas.width = size;
     canvas.height = size;
 
+    // ==================== NOISE UTILITIES ====================
+
     // Simple seeded random
-    let seed = 12345;
-    const random = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      return seed / 0x7fffffff;
+    const createRandom = (seed: number) => {
+      let s = seed;
+      return () => {
+        s = (s * 1103515245 + 12345) & 0x7fffffff;
+        return s / 0x7fffffff;
+      };
     };
 
-    // Perlin noise helper
+    // Generate permutation table for noise
+    const createPermTable = (seed: number) => {
+      const random = createRandom(seed);
+      const perm: number[] = [];
+      for (let i = 0; i < 256; i++) perm[i] = i;
+      for (let i = 255; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        [perm[i], perm[j]] = [perm[j], perm[i]];
+      }
+      for (let i = 0; i < 256; i++) perm[256 + i] = perm[i];
+      return perm;
+    };
+
     const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
     const lerp = (a: number, b: number, t: number) => a + t * (b - a);
     const grad = (hash: number, x: number, y: number) => {
@@ -618,16 +1028,7 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
       return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
     };
 
-    // Generate permutation table
-    const perm: number[] = [];
-    for (let i = 0; i < 256; i++) perm[i] = i;
-    for (let i = 255; i > 0; i--) {
-      const j = Math.floor(random() * (i + 1));
-      [perm[i], perm[j]] = [perm[j], perm[i]];
-    }
-    for (let i = 0; i < 256; i++) perm[256 + i] = perm[i];
-
-    const perlin = (x: number, y: number) => {
+    const perlin = (perm: number[], x: number, y: number) => {
       const X = Math.floor(x) & 255;
       const Y = Math.floor(y) & 255;
       x -= Math.floor(x);
@@ -643,35 +1044,713 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
       );
     };
 
-    // Get node by type
-    const getNodeByType = (type: string) => nodes.find(n => n.definition.type === type);
+    // Voronoi distance
+    const voronoi = (seed: number, x: number, y: number, randomness: number) => {
+      const random = createRandom(seed);
+      const cellX = Math.floor(x);
+      const cellY = Math.floor(y);
+      let minDist = 1e10;
+      let cellValue = 0;
 
-    // Get connected input value
-    const getInputConnection = (nodeId: string, inputId: string) => {
-      return connections.find(c => c.toNode === nodeId && c.toPort === inputId);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const cx = cellX + dx;
+          const cy = cellY + dy;
+          const hashSeed = (cx * 374761393 + cy * 668265263) ^ seed;
+          const cellRandom = createRandom(hashSeed);
+          const px = cx + lerp(0.5, cellRandom(), randomness);
+          const py = cy + lerp(0.5, cellRandom(), randomness);
+          const dist = Math.sqrt((x - px) ** 2 + (y - py) ** 2);
+          if (dist < minDist) {
+            minDist = dist;
+            cellValue = cellRandom();
+          }
+        }
+      }
+      return { distance: Math.min(1, minDist), cell: cellValue };
     };
 
-    // Parse color
+    // ==================== COLOR UTILITIES ====================
+
     const parseColor = (hex: string) => {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
       return { r, g, b };
     };
 
-    // Find output node and trace back
-    const outputNode = getNodeByType('output-pattern');
+    // ==================== NODE VALUE TYPES ====================
+
+    type NodeValue = {
+      float?: number;
+      vector2?: { x: number; y: number };
+      color?: { r: number; g: number; b: number };
+    };
+
+    // ==================== TOPOLOGICAL SORT ====================
+
+    const sortNodes = () => {
+      const nodeIds = new Set(nodes.map(n => n.id));
+      const inDegree = new Map<string, number>();
+      const adjacency = new Map<string, string[]>();
+
+      // Initialize
+      nodes.forEach(n => {
+        inDegree.set(n.id, 0);
+        adjacency.set(n.id, []);
+      });
+
+      // Build graph
+      connections.forEach(c => {
+        if (nodeIds.has(c.fromNode) && nodeIds.has(c.toNode)) {
+          adjacency.get(c.fromNode)?.push(c.toNode);
+          inDegree.set(c.toNode, (inDegree.get(c.toNode) || 0) + 1);
+        }
+      });
+
+      // Kahn's algorithm
+      const queue = nodes.filter(n => inDegree.get(n.id) === 0);
+      const sorted: EditorNode[] = [];
+
+      while (queue.length > 0) {
+        const node = queue.shift()!;
+        sorted.push(node);
+        adjacency.get(node.id)?.forEach(neighborId => {
+          const deg = (inDegree.get(neighborId) || 0) - 1;
+          inDegree.set(neighborId, deg);
+          if (deg === 0) {
+            const neighbor = nodes.find(n => n.id === neighborId);
+            if (neighbor) queue.push(neighbor);
+          }
+        });
+      }
+
+      return sorted;
+    };
+
+    // ==================== EVALUATE NODE ====================
+
+    const evaluateNode = (
+      node: EditorNode,
+      x: number,
+      y: number,
+      nodeOutputs: Map<string, Map<string, NodeValue>>,
+      permTable: number[]
+    ): Map<string, NodeValue> => {
+      const outputs = new Map<string, NodeValue>();
+      const params = node.parameterValues;
+
+      // Get input value from connected node
+      const getInput = (inputId: string): NodeValue => {
+        const conn = connections.find(c => c.toNode === node.id && c.toPort === inputId);
+        if (conn) {
+          const sourceOutputs = nodeOutputs.get(conn.fromNode);
+          if (sourceOutputs) {
+            return sourceOutputs.get(conn.fromPort) || {};
+          }
+        }
+        return {};
+      };
+
+      switch (node.definition.type) {
+        // ===== INPUT NODES =====
+        case 'uv-input': {
+          outputs.set('uv', { vector2: { x, y } });
+          outputs.set('x', { float: x });
+          outputs.set('y', { float: y });
+          break;
+        }
+        case 'value-input': {
+          outputs.set('value', { float: Number(params.value) || 0.5 });
+          break;
+        }
+        case 'color-input': {
+          outputs.set('color', { color: parseColor(String(params.color) || '#ff6600') });
+          break;
+        }
+
+        // ===== NOISE NODES =====
+        case 'noise-perlin': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 10;
+          const octaves = Number(params.octaves) || 4;
+          const persistence = Number(params.persistence) || 0.5;
+
+          let noiseVal = 0;
+          let amplitude = 1;
+          let frequency = 1;
+          let maxValue = 0;
+
+          for (let o = 0; o < octaves; o++) {
+            noiseVal += perlin(permTable, uv.x * scale * frequency, uv.y * scale * frequency) * amplitude;
+            maxValue += amplitude;
+            amplitude *= persistence;
+            frequency *= 2;
+          }
+
+          const value = (noiseVal / maxValue + 1) / 2;
+          outputs.set('value', { float: value });
+          outputs.set('color', { color: { r: value, g: value, b: value } });
+          break;
+        }
+        case 'noise-voronoi': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+          const randomness = Number(params.randomness) || 1;
+          const seed = Number(params.seed) || 0;
+
+          const result = voronoi(seed, uv.x * scale, uv.y * scale, randomness);
+          outputs.set('distance', { float: result.distance });
+          outputs.set('cell', { float: result.cell });
+          break;
+        }
+        case 'noise-fbm': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+          const octaves = Number(params.octaves) || 6;
+          const lacunarity = Number(params.lacunarity) || 2;
+
+          let noiseVal = 0;
+          let amplitude = 1;
+          let frequency = 1;
+          let maxValue = 0;
+
+          for (let o = 0; o < octaves; o++) {
+            noiseVal += perlin(permTable, uv.x * scale * frequency, uv.y * scale * frequency) * amplitude;
+            maxValue += amplitude;
+            amplitude *= 0.5;
+            frequency *= lacunarity;
+          }
+
+          outputs.set('value', { float: (noiseVal / maxValue + 1) / 2 });
+          break;
+        }
+        case 'noise-worley': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+          const seed = Number(params.seed) || 0;
+
+          const cellX = Math.floor(uv.x * scale);
+          const cellY = Math.floor(uv.y * scale);
+          const fx = (uv.x * scale) % 1;
+          const fy = (uv.y * scale) % 1;
+
+          let f1 = 1e10, f2 = 1e10;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const cx = cellX + dx;
+              const cy = cellY + dy;
+              const hashSeed = (cx * 374761393 + cy * 668265263) ^ seed;
+              const cellRandom = createRandom(hashSeed);
+              const px = dx + cellRandom() - fx;
+              const py = dy + cellRandom() - fy;
+              const dist = Math.sqrt(px * px + py * py);
+              if (dist < f1) { f2 = f1; f1 = dist; }
+              else if (dist < f2) { f2 = dist; }
+            }
+          }
+
+          outputs.set('f1', { float: Math.min(1, f1) });
+          outputs.set('f2', { float: Math.min(1, f2) });
+          outputs.set('edge', { float: Math.min(1, f2 - f1) });
+          break;
+        }
+        case 'noise-simplex': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+          // Simplified simplex using perlin as base
+          const sx = uv.x * scale;
+          const sy = uv.y * scale;
+          const value = (perlin(permTable, sx, sy) + perlin(permTable, sx * 1.5 + 100, sy * 1.5 + 100) * 0.5) / 1.5;
+          outputs.set('value', { float: (value + 1) / 2 });
+          break;
+        }
+        case 'time-input': {
+          // Static for now (would need animation frame for real time)
+          outputs.set('time', { float: 0.5 });
+          break;
+        }
+
+        // ===== PATTERN NODES =====
+        case 'pattern-checker': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 8;
+          const cx = Math.floor(uv.x * scale);
+          const cy = Math.floor(uv.y * scale);
+          outputs.set('fac', { float: (cx + cy) % 2 === 0 ? 1 : 0 });
+          break;
+        }
+        case 'pattern-stripes': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 10;
+          const angle = (Number(params.angle) || 0) * Math.PI / 180;
+          const rotatedX = uv.x * Math.cos(angle) - uv.y * Math.sin(angle);
+          outputs.set('fac', { float: (Math.sin(rotatedX * scale * Math.PI * 2) + 1) / 2 });
+          break;
+        }
+        case 'pattern-dots': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 10;
+          const radius = Number(params.radius) || 0.3;
+          const px = (uv.x * scale) % 1;
+          const py = (uv.y * scale) % 1;
+          const dist = Math.sqrt((px - 0.5) ** 2 + (py - 0.5) ** 2);
+          outputs.set('fac', { float: dist < radius ? 1 : 0 });
+          break;
+        }
+        case 'pattern-hexagon': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+          const sx = uv.x * scale;
+          const sy = uv.y * scale * 0.866;
+          const row = Math.floor(sy);
+          const offsetX = row % 2 === 0 ? 0 : 0.5;
+          const col = Math.floor(sx + offsetX);
+          const cellRandom = createRandom(row * 1000 + col);
+          outputs.set('fac', { float: (Math.sin(sx * 3) + Math.cos(sy * 3) + 2) / 4 });
+          outputs.set('cell', { float: cellRandom() });
+          break;
+        }
+        case 'pattern-wave': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+          const distortion = Number(params.distortion) || 0;
+          let wave = Math.sin(uv.x * scale * Math.PI * 2);
+          if (distortion > 0) {
+            wave += Math.sin(uv.y * scale * distortion) * 0.5;
+          }
+          outputs.set('fac', { float: (wave + 1) / 2 });
+          break;
+        }
+        case 'pattern-brick': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scaleX = Number(params.scaleX) || 4;
+          const scaleY = Number(params.scaleY) || 8;
+          const offset = Number(params.offset) || 0.5;
+          const mortarSize = Number(params.mortarSize) || 0.05;
+
+          const row = Math.floor(uv.y * scaleY);
+          const brickX = (uv.x + (row % 2) * offset) * scaleX;
+          const brickY = uv.y * scaleY;
+          const fx = brickX % 1;
+          const fy = brickY % 1;
+
+          const isMortar = fx < mortarSize || fx > 1 - mortarSize || fy < mortarSize || fy > 1 - mortarSize;
+          outputs.set('fac', { float: isMortar ? 0 : 1 });
+          outputs.set('mortar', { float: isMortar ? 1 : 0 });
+          break;
+        }
+        case 'pattern-rings': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 10;
+          const centerX = Number(params.centerX) || 0.5;
+          const centerY = Number(params.centerY) || 0.5;
+
+          const dx = uv.x - centerX;
+          const dy = uv.y - centerY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          outputs.set('fac', { float: (Math.sin(dist * scale * Math.PI * 2) + 1) / 2 });
+          break;
+        }
+        case 'pattern-spiral': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const arms = Number(params.arms) || 4;
+          const twist = Number(params.twist) || 2;
+
+          const dx = uv.x - 0.5;
+          const dy = uv.y - 0.5;
+          const angle = Math.atan2(dy, dx);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const spiral = (angle / Math.PI / 2 + dist * twist) * arms;
+          outputs.set('fac', { float: (Math.sin(spiral * Math.PI * 2) + 1) / 2 });
+          break;
+        }
+        case 'pattern-grid': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 10;
+          const thickness = Number(params.thickness) || 0.1;
+
+          const fx = (uv.x * scale) % 1;
+          const fy = (uv.y * scale) % 1;
+          const isLine = fx < thickness || fy < thickness;
+          outputs.set('fac', { float: isLine ? 1 : 0 });
+          break;
+        }
+        case 'pattern-triangle': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scale = Number(params.scale) || 5;
+
+          const sx = uv.x * scale;
+          const sy = uv.y * scale * 0.866;
+          const row = Math.floor(sy);
+          const col = Math.floor(sx + (row % 2) * 0.5);
+          const fx = (sx + (row % 2) * 0.5) % 1;
+          const fy = sy % 1;
+
+          const inTriangle = row % 2 === 0 ? (fx + fy < 1) : (fx > fy);
+          const cellRandom = createRandom(row * 1000 + col);
+          outputs.set('fac', { float: inTriangle ? 1 : 0 });
+          outputs.set('cell', { float: cellRandom() });
+          break;
+        }
+
+        // ===== MATH NODES =====
+        case 'math-add': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 0;
+          outputs.set('result', { float: a + b });
+          break;
+        }
+        case 'math-multiply': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 1;
+          outputs.set('result', { float: a * b });
+          break;
+        }
+        case 'math-mix': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 1;
+          const fac = getInput('fac').float ?? 0.5;
+          outputs.set('result', { float: lerp(a, b, fac) });
+          break;
+        }
+        case 'math-clamp': {
+          const value = getInput('value').float ?? 0.5;
+          const min = Number(params.min) ?? 0;
+          const max = Number(params.max) ?? 1;
+          outputs.set('result', { float: Math.max(min, Math.min(max, value)) });
+          break;
+        }
+        case 'math-subtract': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 0;
+          outputs.set('result', { float: a - b });
+          break;
+        }
+        case 'math-divide': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 1;
+          outputs.set('result', { float: b !== 0 ? a / b : 0 });
+          break;
+        }
+        case 'math-power': {
+          const base = getInput('base').float ?? 0;
+          const exp = getInput('exp').float ?? 1;
+          outputs.set('result', { float: Math.pow(Math.abs(base), exp) });
+          break;
+        }
+        case 'math-abs': {
+          const value = getInput('value').float ?? 0;
+          outputs.set('result', { float: Math.abs(value) });
+          break;
+        }
+        case 'math-step': {
+          const value = getInput('value').float ?? 0;
+          const edge = getInput('edge').float ?? 0.5;
+          outputs.set('result', { float: value < edge ? 0 : 1 });
+          break;
+        }
+        case 'math-smoothstep': {
+          const value = getInput('value').float ?? 0;
+          const edge0 = getInput('edge0').float ?? 0;
+          const edge1 = getInput('edge1').float ?? 1;
+          const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+          outputs.set('result', { float: t * t * (3 - 2 * t) });
+          break;
+        }
+        case 'math-sine': {
+          const value = getInput('value').float ?? 0;
+          outputs.set('result', { float: (Math.sin(value * Math.PI * 2) + 1) / 2 });
+          break;
+        }
+        case 'math-cosine': {
+          const value = getInput('value').float ?? 0;
+          outputs.set('result', { float: (Math.cos(value * Math.PI * 2) + 1) / 2 });
+          break;
+        }
+        case 'math-fract': {
+          const value = getInput('value').float ?? 0;
+          outputs.set('result', { float: value - Math.floor(value) });
+          break;
+        }
+        case 'math-mod': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 1;
+          outputs.set('result', { float: b !== 0 ? ((a % b) + b) % b : 0 });
+          break;
+        }
+        case 'math-min': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 0;
+          outputs.set('result', { float: Math.min(a, b) });
+          break;
+        }
+        case 'math-max': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 0;
+          outputs.set('result', { float: Math.max(a, b) });
+          break;
+        }
+        case 'math-distance': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const centerX = Number(params.centerX) || 0.5;
+          const centerY = Number(params.centerY) || 0.5;
+          const dx = uv.x - centerX;
+          const dy = uv.y - centerY;
+          outputs.set('result', { float: Math.sqrt(dx * dx + dy * dy) * Math.SQRT2 });
+          break;
+        }
+
+        // ===== COLOR NODES =====
+        case 'color-mix': {
+          const a = getInput('a').color || { r: 0, g: 0, b: 0 };
+          const b = getInput('b').color || { r: 1, g: 1, b: 1 };
+          const fac = getInput('fac').float ?? 0.5;
+          outputs.set('color', {
+            color: {
+              r: lerp(a.r, b.r, fac),
+              g: lerp(a.g, b.g, fac),
+              b: lerp(a.b, b.b, fac),
+            },
+          });
+          break;
+        }
+        case 'color-gradient': {
+          const fac = getInput('fac').float ?? 0.5;
+          const c1 = parseColor(String(params.color1) || '#000000');
+          const c2 = parseColor(String(params.color2) || '#ffffff');
+          outputs.set('color', {
+            color: {
+              r: lerp(c1.r, c2.r, fac),
+              g: lerp(c1.g, c2.g, fac),
+              b: lerp(c1.b, c2.b, fac),
+            },
+          });
+          break;
+        }
+        case 'color-ramp': {
+          const fac = getInput('fac').float ?? 0.5;
+          const c1 = parseColor(String(params.color1) || '#1a1a2e');
+          const c2 = parseColor(String(params.color2) || '#ff6b35');
+          const c3 = parseColor(String(params.color3) || '#ffffff');
+          const pos2 = Number(params.pos2) || 0.5;
+
+          let color;
+          if (fac < pos2) {
+            const t = fac / pos2;
+            color = { r: lerp(c1.r, c2.r, t), g: lerp(c1.g, c2.g, t), b: lerp(c1.b, c2.b, t) };
+          } else {
+            const t = (fac - pos2) / (1 - pos2);
+            color = { r: lerp(c2.r, c3.r, t), g: lerp(c2.g, c3.g, t), b: lerp(c2.b, c3.b, t) };
+          }
+          outputs.set('color', { color });
+          break;
+        }
+        case 'color-hsv': {
+          const h = getInput('h').float ?? 0;
+          const s = getInput('s').float ?? 1;
+          const v = getInput('v').float ?? 1;
+
+          // HSV to RGB conversion
+          const i = Math.floor(h * 6);
+          const f = h * 6 - i;
+          const p = v * (1 - s);
+          const q = v * (1 - f * s);
+          const t = v * (1 - (1 - f) * s);
+
+          let r, g, b;
+          switch (i % 6) {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            case 5: r = v; g = p; b = q; break;
+            default: r = g = b = 0;
+          }
+          outputs.set('color', { color: { r, g, b } });
+          break;
+        }
+        case 'color-brightness': {
+          const color = getInput('color').color || { r: 0.5, g: 0.5, b: 0.5 };
+          const brightness = Number(params.brightness) || 0;
+          const contrast = Number(params.contrast) || 0;
+
+          const adjustContrast = (c: number) => (c - 0.5) * (1 + contrast) + 0.5;
+          outputs.set('color', {
+            color: {
+              r: Math.max(0, Math.min(1, adjustContrast(color.r) + brightness)),
+              g: Math.max(0, Math.min(1, adjustContrast(color.g) + brightness)),
+              b: Math.max(0, Math.min(1, adjustContrast(color.b) + brightness)),
+            },
+          });
+          break;
+        }
+        case 'color-invert': {
+          const color = getInput('color').color || { r: 0.5, g: 0.5, b: 0.5 };
+          const fac = Number(params.fac) || 1;
+          outputs.set('color', {
+            color: {
+              r: lerp(color.r, 1 - color.r, fac),
+              g: lerp(color.g, 1 - color.g, fac),
+              b: lerp(color.b, 1 - color.b, fac),
+            },
+          });
+          break;
+        }
+        case 'color-separate': {
+          const color = getInput('color').color || { r: 0, g: 0, b: 0 };
+          outputs.set('r', { float: color.r });
+          outputs.set('g', { float: color.g });
+          outputs.set('b', { float: color.b });
+          break;
+        }
+        case 'color-combine': {
+          const r = getInput('r').float ?? 0;
+          const g = getInput('g').float ?? 0;
+          const b = getInput('b').float ?? 0;
+          outputs.set('color', { color: { r, g, b } });
+          break;
+        }
+
+        // ===== TRANSFORM NODES =====
+        case 'transform-scale': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const scaleX = Number(params.scaleX) || 1;
+          const scaleY = Number(params.scaleY) || 1;
+          outputs.set('uv', { vector2: { x: uv.x * scaleX, y: uv.y * scaleY } });
+          break;
+        }
+        case 'transform-rotate': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const angle = (Number(params.angle) || 0) * Math.PI / 180;
+          const cx = 0.5, cy = 0.5;
+          const dx = uv.x - cx, dy = uv.y - cy;
+          outputs.set('uv', {
+            vector2: {
+              x: dx * Math.cos(angle) - dy * Math.sin(angle) + cx,
+              y: dx * Math.sin(angle) + dy * Math.cos(angle) + cy,
+            },
+          });
+          break;
+        }
+        case 'transform-translate': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const offsetX = Number(params.offsetX) || 0;
+          const offsetY = Number(params.offsetY) || 0;
+          outputs.set('uv', { vector2: { x: uv.x + offsetX, y: uv.y + offsetY } });
+          break;
+        }
+        case 'transform-tile': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const tilesX = Number(params.tilesX) || 2;
+          const tilesY = Number(params.tilesY) || 2;
+          outputs.set('uv', {
+            vector2: {
+              x: ((uv.x * tilesX) % 1 + 1) % 1,
+              y: ((uv.y * tilesY) % 1 + 1) % 1,
+            },
+          });
+          break;
+        }
+        case 'transform-mirror': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const mirrorX = Number(params.mirrorX) || 0;
+          const mirrorY = Number(params.mirrorY) || 0;
+
+          let mx = uv.x;
+          let my = uv.y;
+          if (mirrorX && uv.x > 0.5) mx = 1 - uv.x;
+          if (mirrorY && uv.y > 0.5) my = 1 - uv.y;
+          outputs.set('uv', { vector2: { x: mx, y: my } });
+          break;
+        }
+        case 'transform-distort': {
+          const uv = getInput('uv').vector2 || { x, y };
+          const amount = getInput('amount').float ?? Number(params.strength) || 0.1;
+          const scale = Number(params.scale) || 5;
+
+          const noiseX = perlin(permTable, uv.x * scale, uv.y * scale);
+          const noiseY = perlin(permTable, uv.x * scale + 100, uv.y * scale + 100);
+          outputs.set('uv', {
+            vector2: {
+              x: uv.x + noiseX * amount,
+              y: uv.y + noiseY * amount,
+            },
+          });
+          break;
+        }
+
+        // ===== MASK NODES =====
+        case 'mask-threshold': {
+          const value = getInput('value').float ?? 0.5;
+          const threshold = Number(params.threshold) || 0.5;
+          outputs.set('mask', { float: value > threshold ? 1 : 0 });
+          break;
+        }
+        case 'mask-invert': {
+          const mask = getInput('mask').float ?? 0;
+          outputs.set('mask', { float: 1 - mask });
+          break;
+        }
+        case 'mask-blend': {
+          const a = getInput('a').float ?? 0;
+          const b = getInput('b').float ?? 0;
+          const mode = Number(params.mode) || 0;
+
+          let result;
+          switch (mode) {
+            case 0: result = a + b; break; // Add
+            case 1: result = a * b; break; // Multiply
+            case 2: result = Math.max(a, b); break; // Max (Lighten)
+            case 3: result = Math.min(a, b); break; // Min (Darken)
+            case 4: result = 1 - (1 - a) * (1 - b); break; // Screen
+            case 5: result = a < 0.5 ? 2 * a * b : 1 - 2 * (1 - a) * (1 - b); break; // Overlay
+            default: result = a + b;
+          }
+          outputs.set('mask', { float: Math.max(0, Math.min(1, result)) });
+          break;
+        }
+        case 'mask-edge': {
+          // Edge detection approximation using gradient
+          const mask = getInput('mask').float ?? 0;
+          const width = Number(params.width) || 0.1;
+          // This is a simplified edge - true edge would need neighboring pixel access
+          const edge = Math.abs(mask - 0.5) < width ? 1 : 0;
+          outputs.set('mask', { float: edge });
+          break;
+        }
+
+        // ===== OUTPUT NODES =====
+        case 'output-pattern': {
+          const color = getInput('color').color || { r: 0.5, g: 0.5, b: 0.5 };
+          const mask = getInput('mask').float ?? 1;
+          outputs.set('final', {
+            color: {
+              r: color.r * mask,
+              g: color.g * mask,
+              b: color.b * mask,
+            },
+          });
+          break;
+        }
+      }
+
+      return outputs;
+    };
+
+    // ==================== RENDER ====================
+
+    // Find output node
+    const outputNode = nodes.find(n => n.definition.type === 'output-pattern');
     if (!outputNode) return;
 
-    // Get noise node settings
-    const noiseNode = nodes.find(n => n.definition.type.startsWith('noise-'));
-    const scale = (noiseNode?.parameterValues.scale as number) || 10;
-    const octaves = (noiseNode?.parameterValues.octaves as number) || 4;
+    // Create perm table
+    const noiseSeed = nodes.find(n => n.definition.type.startsWith('noise-'))?.parameterValues.seed as number || 12345;
+    const permTable = createPermTable(noiseSeed);
 
-    // Get gradient colors
-    const gradientNode = getNodeByType('color-gradient');
-    const color1 = parseColor((gradientNode?.parameterValues.color1 as string) || '#000000');
-    const color2 = parseColor((gradientNode?.parameterValues.color2 as string) || '#ffffff');
+    // Sort nodes topologically
+    const sortedNodes = sortNodes();
 
     // Render
     const imageData = ctx.createImageData(size, size);
@@ -681,30 +1760,22 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
         const x = px / size;
         const y = py / size;
 
-        // Generate noise
-        let noiseVal = 0;
-        let amplitude = 1;
-        let frequency = 1;
-        let maxValue = 0;
+        // Evaluate all nodes
+        const nodeOutputs = new Map<string, Map<string, NodeValue>>();
 
-        for (let o = 0; o < octaves; o++) {
-          noiseVal += perlin(x * scale * frequency, y * scale * frequency) * amplitude;
-          maxValue += amplitude;
-          amplitude *= 0.5;
-          frequency *= 2;
+        for (const node of sortedNodes) {
+          const outputs = evaluateNode(node, x, y, nodeOutputs, permTable);
+          nodeOutputs.set(node.id, outputs);
         }
 
-        noiseVal = (noiseVal / maxValue + 1) / 2; // Normalize to 0-1
-
-        // Apply gradient
-        const r = Math.floor(lerp(color1.r, color2.r, noiseVal));
-        const g = Math.floor(lerp(color1.g, color2.g, noiseVal));
-        const b = Math.floor(lerp(color1.b, color2.b, noiseVal));
+        // Get final color from output node
+        const outputValues = nodeOutputs.get(outputNode.id);
+        const finalColor = outputValues?.get('final')?.color || { r: 0.5, g: 0.5, b: 0.5 };
 
         const idx = (py * size + px) * 4;
-        imageData.data[idx] = r;
-        imageData.data[idx + 1] = g;
-        imageData.data[idx + 2] = b;
+        imageData.data[idx] = Math.floor(Math.max(0, Math.min(1, finalColor.r)) * 255);
+        imageData.data[idx + 1] = Math.floor(Math.max(0, Math.min(1, finalColor.g)) * 255);
+        imageData.data[idx + 2] = Math.floor(Math.max(0, Math.min(1, finalColor.b)) * 255);
         imageData.data[idx + 3] = 255;
       }
     }
