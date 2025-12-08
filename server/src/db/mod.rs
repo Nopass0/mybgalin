@@ -1060,5 +1060,323 @@ pub async fn create_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> 
     .execute(&pool)
     .await?;
 
+    // === English Learning System Tables ===
+
+    // Word categories/topics
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            name_ru TEXT NOT NULL,
+            description TEXT,
+            icon TEXT,
+            color TEXT DEFAULT '#3b82f6',
+            word_count INTEGER DEFAULT 0,
+            display_order INTEGER DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default categories
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO english_categories (id, name, name_ru, icon, color, display_order) VALUES
+        (1, 'Basic Vocabulary', 'Базовый словарь', 'book', '#3b82f6', 1),
+        (2, 'Travel', 'Путешествия', 'plane', '#10b981', 2),
+        (3, 'Business', 'Бизнес', 'briefcase', '#8b5cf6', 3),
+        (4, 'Technology', 'Технологии', 'cpu', '#f59e0b', 4),
+        (5, 'Food & Cooking', 'Еда и кулинария', 'utensils', '#ef4444', 5),
+        (6, 'Health & Body', 'Здоровье и тело', 'heart', '#ec4899', 6),
+        (7, 'Nature', 'Природа', 'leaf', '#22c55e', 7),
+        (8, 'Emotions', 'Эмоции', 'smile', '#f97316', 8),
+        (9, 'Phrasal Verbs', 'Фразовые глаголы', 'zap', '#6366f1', 9),
+        (10, 'Idioms', 'Идиомы', 'message-circle', '#14b8a6', 10)
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Words table with comprehensive data
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_words (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_id INTEGER,
+            word TEXT NOT NULL,
+            transcription TEXT,
+            translation TEXT NOT NULL,
+            definition TEXT,
+            part_of_speech TEXT,
+            examples TEXT,
+            synonyms TEXT,
+            antonyms TEXT,
+            audio_url TEXT,
+            image_url TEXT,
+            difficulty INTEGER DEFAULT 1,
+            frequency INTEGER DEFAULT 0,
+            cefr_level TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES english_categories(id) ON DELETE SET NULL
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // SRS (Spaced Repetition System) progress for each word
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_word_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_id INTEGER NOT NULL,
+            ease_factor REAL DEFAULT 2.5,
+            interval_days INTEGER DEFAULT 0,
+            repetitions INTEGER DEFAULT 0,
+            next_review DATETIME,
+            last_review DATETIME,
+            correct_count INTEGER DEFAULT 0,
+            incorrect_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'new',
+            mastery_level INTEGER DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (word_id) REFERENCES english_words(id) ON DELETE CASCADE,
+            UNIQUE(word_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Grammar rules and lessons
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_grammar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            title_ru TEXT NOT NULL,
+            category TEXT NOT NULL,
+            difficulty INTEGER DEFAULT 1,
+            cefr_level TEXT,
+            explanation TEXT NOT NULL,
+            explanation_ru TEXT NOT NULL,
+            examples TEXT,
+            common_mistakes TEXT,
+            tips TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Grammar progress
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_grammar_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grammar_id INTEGER NOT NULL,
+            studied BOOLEAN DEFAULT FALSE,
+            mastery_level INTEGER DEFAULT 0,
+            quiz_score INTEGER,
+            last_studied DATETIME,
+            next_review DATETIME,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (grammar_id) REFERENCES english_grammar(id) ON DELETE CASCADE,
+            UNIQUE(grammar_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Sentences for practice (reading, listening, translation)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_sentences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sentence TEXT NOT NULL,
+            translation TEXT NOT NULL,
+            audio_url TEXT,
+            difficulty INTEGER DEFAULT 1,
+            category TEXT,
+            grammar_focus TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Quiz/test results
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_quiz_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            quiz_type TEXT NOT NULL,
+            category_id INTEGER,
+            score INTEGER NOT NULL,
+            total_questions INTEGER NOT NULL,
+            correct_answers INTEGER NOT NULL,
+            time_spent_seconds INTEGER,
+            details TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES english_categories(id) ON DELETE SET NULL
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Daily learning statistics
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_daily_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            words_learned INTEGER DEFAULT 0,
+            words_reviewed INTEGER DEFAULT 0,
+            new_words_added INTEGER DEFAULT 0,
+            quizzes_completed INTEGER DEFAULT 0,
+            correct_answers INTEGER DEFAULT 0,
+            incorrect_answers INTEGER DEFAULT 0,
+            time_spent_minutes INTEGER DEFAULT 0,
+            streak_days INTEGER DEFAULT 0,
+            xp_earned INTEGER DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Learning settings and goals
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            daily_goal_words INTEGER DEFAULT 10,
+            daily_goal_minutes INTEGER DEFAULT 15,
+            preferred_difficulty INTEGER DEFAULT 2,
+            show_transcription BOOLEAN DEFAULT TRUE,
+            show_examples BOOLEAN DEFAULT TRUE,
+            auto_play_audio BOOLEAN DEFAULT TRUE,
+            review_notification BOOLEAN DEFAULT TRUE,
+            current_streak INTEGER DEFAULT 0,
+            longest_streak INTEGER DEFAULT 0,
+            total_xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 1,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default settings
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO english_settings (id) VALUES (1)
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Achievements/badges
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_achievements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            achievement_type TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            icon TEXT,
+            xp_reward INTEGER DEFAULT 0,
+            unlocked_at DATETIME,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default achievements
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO english_achievements (achievement_type, title, description, icon, xp_reward) VALUES
+        ('first_word', 'First Steps', 'Learn your first word', 'star', 10),
+        ('words_10', 'Vocabulary Builder', 'Learn 10 words', 'book-open', 50),
+        ('words_50', 'Word Collector', 'Learn 50 words', 'library', 100),
+        ('words_100', 'Lexicon Master', 'Learn 100 words', 'graduation-cap', 200),
+        ('words_500', 'Dictionary', 'Learn 500 words', 'book', 500),
+        ('streak_3', 'Consistent', '3 day streak', 'flame', 30),
+        ('streak_7', 'Week Warrior', '7 day streak', 'zap', 70),
+        ('streak_30', 'Monthly Master', '30 day streak', 'trophy', 300),
+        ('perfect_quiz', 'Perfect Score', 'Get 100% on a quiz', 'award', 50),
+        ('grammar_5', 'Grammar Guru', 'Master 5 grammar rules', 'check-circle', 100),
+        ('speed_demon', 'Speed Demon', 'Answer 10 questions in under 30 seconds', 'clock', 75)
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Word lists (custom collections)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_word_lists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            is_public BOOLEAN DEFAULT FALSE,
+            word_ids TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Learning sessions log
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_type TEXT NOT NULL,
+            started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            ended_at DATETIME,
+            words_practiced INTEGER DEFAULT 0,
+            correct_count INTEGER DEFAULT 0,
+            incorrect_count INTEGER DEFAULT 0,
+            xp_earned INTEGER DEFAULT 0
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    // Create indexes for English learning tables
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_english_words_category ON english_words(category_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_english_words_difficulty ON english_words(difficulty)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_english_progress_next ON english_word_progress(next_review)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_english_progress_status ON english_word_progress(status)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_english_quiz_date ON english_quiz_results(created_at)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_english_daily_date ON english_daily_stats(date)")
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

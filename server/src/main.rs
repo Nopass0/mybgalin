@@ -428,4 +428,27 @@ async fn rocket() -> _ {
                 t2::routes::t2_get_stats,
             ],
         )
+        // English Learning System routes (protected)
+        .mount(
+            "/api",
+            routes![
+                routes::english::get_categories,
+                routes::english::create_category,
+                routes::english::get_words,
+                routes::english::add_word,
+                routes::english::delete_word,
+                routes::english::get_due_words,
+                routes::english::submit_review,
+                routes::english::get_flashcards,
+                routes::english::get_quiz,
+                routes::english::save_quiz_result,
+                routes::english::get_grammar,
+                routes::english::add_grammar,
+                routes::english::get_dashboard,
+                routes::english::get_settings,
+                routes::english::update_settings,
+                routes::english::get_achievements,
+                routes::english::import_words,
+            ],
+        )
 }

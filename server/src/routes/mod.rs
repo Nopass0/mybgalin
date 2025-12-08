@@ -13,3 +13,4 @@ pub mod links;
 pub mod database;
 pub mod console;
 pub mod menu;
+pub mod english;
