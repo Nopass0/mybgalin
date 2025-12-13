@@ -6,7 +6,7 @@ use super::models::T2EmployeeWithStores;
 
 pub struct T2AuthGuard {
     pub employee: T2EmployeeWithStores,
-    pub current_store_id: i64,
+    pub current_store_id: i32,
 }
 
 #[rocket::async_trait]
@@ -46,7 +46,7 @@ impl<'r> FromRequest<'r> for T2AuthGuard {
             Err(_) => return Outcome::Error((Status::InternalServerError, "Database error")),
         };
 
-        let employee_id: i64 = session.0.into();
+        let employee_id = session.0;
 
         // Get employee details
         let employee = match sqlx::query_as::<_, super::models::T2Employee>(
@@ -105,7 +105,7 @@ impl<'r> FromRequest<'r> for T2AuthGuard {
 
         // Determine current store ID
         let current_store_id = if let Some(id_str) = store_id_header {
-            if let Ok(id) = id_str.parse::<i64>() {
+            if let Ok(id) = id_str.parse::<i32>() {
                 // Check if employee has access to this store
                 if stores.iter().any(|s| s.id == id) {
                     id
