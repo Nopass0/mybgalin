@@ -13,35 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Clean up before deploy
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          script: |
-            # Free up memory before file transfer
-            sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null || true
-            # Stop services temporarily to free memory
-            sudo systemctl stop bgalin-backend.service || true
-            pm2 stop bgalin-frontend || true
-
-      - name: Copy files to server
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          source: "server/,frontend/,.github/"
-          target: "/var/www/bgalin"
-          rm: false
-          strip_components: 0
-
-      - name: Deploy to server
+      - name: Deploy via SSH (git pull)
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -55,6 +27,31 @@ jobs:
             set -e
 
             echo "🚀 Starting deployment..."
+
+            # Free up memory
+            sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null || true
+
+            # Stop services to free memory
+            sudo systemctl stop bgalin-backend.service || true
+            pm2 stop all || true
+
+            # Setup project directory
+            echo "📁 Setting up project directory..."
+            sudo mkdir -p /var/www/bgalin
+            sudo chown -R $USER:$USER /var/www/bgalin
+            cd /var/www/bgalin
+
+            # Clone or update repository using git
+            echo "📥 Fetching latest code..."
+            if [ -d ".git" ]; then
+              # Repository exists, fetch and reset
+              git fetch origin main --depth=1
+              git reset --hard origin/main
+              git clean -fd
+            else
+              # Clone repository
+              git clone --depth=1 https://github.com/${{ github.repository }}.git .
+            fi
 
             # Check and install system dependencies
             echo "📦 Checking system dependencies..."
@@ -114,11 +111,6 @@ jobs:
               sudo apt-get install -y nginx
             fi
 
-            # Ensure project directory ownership
-            echo "📁 Setting up project directory..."
-            sudo chown -R $USER:$USER /var/www/bgalin
-            cd /var/www/bgalin
-
             # Create/update .env file with secrets from GitHub
             echo "🔐 Updating environment variables..."
             cd server
@@ -139,6 +131,8 @@ jobs:
             ROCKET_ADDRESS=0.0.0.0
             ROCKET_PORT=3001
             ROCKET_ENV=production
+            ALICE_CLIENT_ID=${{ secrets.ALICE_CLIENT_ID }}
+            ALICE_CLIENT_SECRET=${{ secrets.ALICE_CLIENT_SECRET }}
             ENVEOF
 
             # Ensure data directory exists for database
@@ -164,13 +158,6 @@ jobs:
             # Show sccache stats
             if command -v sccache &> /dev/null; then
               sccache --show-stats || true
-            fi
-
-            # Check if migrations exist and run them
-            if [ -d "migrations" ]; then
-              echo "🗄️ Running database migrations..."
-              # Add migration command if you're using sqlx or diesel
-              # sqlx migrate run || true
             fi
 
             # Build frontend
@@ -245,6 +232,16 @@ jobs:
                 # Backend API
                 location /api/ {
                     proxy_pass http://localhost:3001/api/;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                }
+
+                # Alice Smart Home API (at root path)
+                location /alice/ {
+                    proxy_pass http://localhost:3001/alice/;
                     proxy_http_version 1.1;
                     proxy_set_header Host \$host;
                     proxy_set_header X-Real-IP \$remote_addr;
