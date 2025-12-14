@@ -1,3 +1,4 @@
+mod alice;
 mod anime;
 mod auth;
 mod cs2;
@@ -26,9 +27,6 @@ async fn rocket() -> _ {
 
     // Get configuration from environment
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    if !database_url.starts_with("sqlite:") {
-        panic!("DATABASE_URL must start with 'sqlite:'");
-    }
 
     let telegram_bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set");
     let admin_telegram_id: i64 = env::var("ADMIN_TELEGRAM_ID")
@@ -54,11 +52,18 @@ async fn rocket() -> _ {
     let player_stats_client = cs2::PlayerStatsClient::new(steam_api_key.clone(), faceit_api_key.clone());
     let match_state_manager = cs2::MatchStateManager::new();
 
-    // Initialize job search system
-    let job_scheduler = jobs::JobScheduler::new(pool.clone());
-
-    // Spawn background job scheduler task
-    job_scheduler.clone().spawn_scheduler();
+    // Initialize job search system (SQLite only for now)
+    let job_scheduler = jobs::MaybeJobScheduler::new(match &pool {
+        db::DbPool::Sqlite(sqlite_pool) => {
+            let scheduler = jobs::JobScheduler::new(sqlite_pool.clone());
+            scheduler.clone().spawn_scheduler();
+            Some(scheduler)
+        }
+        db::DbPool::Postgres(_) => {
+            println!("⚠️  Job scheduler not available with PostgreSQL (SQLite-only feature)");
+            None
+        }
+    });
 
     // Initialize publish service
     let publish_service = publish::PublishService::new();
@@ -78,6 +83,9 @@ async fn rocket() -> _ {
     // Initialize sync service
     sync::SyncService::init().expect("Failed to initialize sync service");
 
+    // Initialize Alice Smart Home state
+    let alice_state = alice::AliceState::new();
+
     println!("🚀 Server starting...");
     println!("📊 Database: {}", database_url);
     println!("👤 Admin Telegram ID: {}", admin_telegram_id);
@@ -90,6 +98,7 @@ async fn rocket() -> _ {
     println!("☁️  Cloud Sync: ready");
     println!("🔗 Link Shortener: ready");
     println!("📱 T2 Sales System: ready");
+    println!("🏠 Alice Smart Home: ready");
     println!("✅ All systems ready");
 
     // Configure CORS
@@ -122,6 +131,7 @@ async fn rocket() -> _ {
         .manage(job_scheduler)
         .manage(admin_telegram_id)
         .manage(publish_service)
+        .manage(alice_state)
         // Public routes
         .mount(
             "/",
@@ -449,6 +459,33 @@ async fn rocket() -> _ {
                 routes::english::update_settings,
                 routes::english::get_achievements,
                 routes::english::import_words,
+            ],
+        )
+        // Alice Smart Home API routes (Yandex Alice integration)
+        .mount(
+            "/",
+            routes![
+                routes::alice::alice_health,
+                routes::alice::alice_unlink,
+                routes::alice::alice_get_devices,
+                routes::alice::alice_query_devices,
+                routes::alice::alice_action,
+                routes::alice::alice_auth_page,
+                routes::alice::alice_auth_login,
+                routes::alice::alice_token,
+            ],
+        )
+        // Alice Admin API routes (protected)
+        .mount(
+            "/api",
+            routes![
+                routes::alice::alice_admin_get_devices,
+                routes::alice::alice_admin_update_config,
+                routes::alice::alice_admin_get_commands,
+                routes::alice::alice_get_notifications,
+                routes::alice::alice_test_notification,
+                routes::alice::alice_admin_telegram,
+                routes::alice::alice_admin_wake_pc,
             ],
         )
 }

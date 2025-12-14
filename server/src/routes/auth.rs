@@ -1,21 +1,21 @@
 use crate::auth::AuthService;
+use crate::db::DbPool;
 use crate::models::{ApiResponse, RequestOtpRequest, RequestOtpResponse, VerifyOtpRequest, VerifyOtpResponse};
 use crate::telegram::TelegramBot;
 use rocket::serde::json::Json;
 use rocket::{post, State};
-use sqlx::SqlitePool;
 
 #[post("/auth/request-otp", data = "<_request>")]
 pub async fn request_otp(
     _request: Json<RequestOtpRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
     telegram_bot: &State<TelegramBot>,
     admin_telegram_id: &State<i64>,
 ) -> Json<ApiResponse<RequestOtpResponse>> {
     let telegram_id = **admin_telegram_id;
 
     // Get or create user
-    let user = match AuthService::get_or_create_user(pool, telegram_id).await {
+    let user = match AuthService::get_or_create_user(pool.inner(), telegram_id).await {
         Ok(user) => user,
         Err(e) => {
             return Json(ApiResponse::error(format!("Database error: {}", e)));
@@ -26,7 +26,7 @@ pub async fn request_otp(
     let code = AuthService::generate_otp();
 
     // Save OTP to database
-    if let Err(e) = AuthService::create_otp(pool, user.id, &code).await {
+    if let Err(e) = AuthService::create_otp(pool.inner(), user.id, &code).await {
         return Json(ApiResponse::error(format!("Failed to create OTP: {}", e)));
     }
 
@@ -47,12 +47,12 @@ pub async fn request_otp(
 #[post("/auth/verify-otp", data = "<request>")]
 pub async fn verify_otp(
     request: Json<VerifyOtpRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
     admin_telegram_id: &State<i64>,
 ) -> Json<ApiResponse<VerifyOtpResponse>> {
     let telegram_id = **admin_telegram_id;
 
-    match AuthService::verify_otp(pool, telegram_id, &request.code).await {
+    match AuthService::verify_otp(pool.inner(), telegram_id, &request.code).await {
         Ok(Some(token)) => Json(ApiResponse::success(VerifyOtpResponse {
             success: true,
             token: Some(token),

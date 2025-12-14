@@ -1,10 +1,18 @@
+use crate::db::DbPool;
 use crate::guards::AuthGuard;
 use crate::jobs::*;
 use crate::models::ApiResponse;
 use rocket::serde::json::Json;
 use rocket::{get, post, put, State};
 use rocket::response::Redirect;
-use sqlx::SqlitePool;
+
+// Helper to get SQLite pool from DbPool (jobs is SQLite-only feature)
+fn get_sqlite_pool(pool: &DbPool) -> Option<&sqlx::SqlitePool> {
+    match pool {
+        DbPool::Sqlite(p) => Some(p),
+        DbPool::Postgres(_) => None,
+    }
+}
 
 // ==================
 // SEARCH CONTROL
@@ -13,32 +21,46 @@ use sqlx::SqlitePool;
 #[post("/jobs/search/start")]
 pub async fn start_job_search(
     _auth: AuthGuard,
-    scheduler: &State<JobScheduler>,
+    scheduler: &State<MaybeJobScheduler>,
 ) -> Json<ApiResponse<String>> {
-    scheduler.start();
-    Json(ApiResponse::success("Job search started".to_string()))
+    match scheduler.get() {
+        Some(s) => {
+            s.start();
+            Json(ApiResponse::success("Job search started".to_string()))
+        }
+        None => Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    }
 }
 
 #[post("/jobs/search/stop")]
 pub async fn stop_job_search(
     _auth: AuthGuard,
-    scheduler: &State<JobScheduler>,
+    scheduler: &State<MaybeJobScheduler>,
 ) -> Json<ApiResponse<String>> {
-    scheduler.stop();
-    Json(ApiResponse::success("Job search stopped".to_string()))
+    match scheduler.get() {
+        Some(s) => {
+            s.stop();
+            Json(ApiResponse::success("Job search stopped".to_string()))
+        }
+        None => Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    }
 }
 
 #[get("/jobs/search/status")]
 pub async fn get_search_status(
     _auth: AuthGuard,
-    scheduler: &State<JobScheduler>,
-    pool: &State<SqlitePool>,
+    scheduler: &State<MaybeJobScheduler>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<SearchStatus>> {
-    let is_active = scheduler.is_running();
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
+    let is_active = scheduler.get().map(|s| s.is_running()).unwrap_or(false);
 
     // Check if HH token exists
     let has_token: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM hh_tokens")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(false);
 
@@ -47,7 +69,7 @@ pub async fn get_search_status(
         "SELECT id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at, auto_tags_enabled, search_tags_json, min_ai_score, auto_apply_enabled, search_interval_minutes
          FROM job_search_settings ORDER BY id DESC LIMIT 1"
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(sqlite_pool)
     .await
     .unwrap_or(None);
 
@@ -56,7 +78,7 @@ pub async fn get_search_status(
         "SELECT id, tag_type, value, is_active, search_count, found_count, applied_count, created_at
          FROM job_search_tags WHERE is_active = 1 ORDER BY applied_count DESC"
     )
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
@@ -68,7 +90,7 @@ pub async fn get_search_status(
     let last_search: Option<(String,)> = sqlx::query_as(
         "SELECT found_at FROM job_vacancies ORDER BY found_at DESC LIMIT 1"
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(sqlite_pool)
     .await
     .unwrap_or(None);
 
@@ -92,8 +114,12 @@ pub async fn get_search_status(
 pub async fn update_search_settings(
     _auth: AuthGuard,
     request: Json<UpdateSearchSettingsRequest>,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<JobSearchSettings>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let area_ids_json = request.area_ids.as_ref().map(|ids| serde_json::to_string(ids).unwrap());
 
     // Upsert settings with new AI fields
@@ -125,7 +151,7 @@ pub async fn update_search_settings(
     .bind(request.min_ai_score.unwrap_or(50))
     .bind(request.auto_apply_enabled.unwrap_or(true))
     .bind(request.search_interval_minutes.unwrap_or(60))
-    .execute(pool.inner())
+    .execute(sqlite_pool)
     .await
     .ok();
 
@@ -133,7 +159,7 @@ pub async fn update_search_settings(
         "SELECT id, is_active, search_text, area_ids, experience, schedule, employment, salary_from, only_with_salary, updated_at, auto_tags_enabled, search_tags_json, min_ai_score, auto_apply_enabled, search_interval_minutes
          FROM job_search_settings WHERE id = 1"
     )
-    .fetch_one(pool.inner())
+    .fetch_one(sqlite_pool)
     .await
     .unwrap();
 
@@ -147,13 +173,17 @@ pub async fn update_search_settings(
 #[get("/jobs/vacancies")]
 pub async fn get_vacancies(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment
          FROM job_vacancies ORDER BY COALESCE(ai_priority, 0) DESC, found_at DESC LIMIT 200"
     )
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
@@ -164,7 +194,7 @@ pub async fn get_vacancies(
              FROM job_responses WHERE vacancy_id = $1 LIMIT 1"
         )
         .bind(vacancy.id)
-        .fetch_optional(pool.inner())
+        .fetch_optional(sqlite_pool)
         .await
         .unwrap_or(None);
 
@@ -173,7 +203,7 @@ pub async fn get_vacancies(
              FROM job_chats_v2 WHERE vacancy_id = $1 LIMIT 1"
         )
         .bind(vacancy.id)
-        .fetch_optional(pool.inner())
+        .fetch_optional(sqlite_pool)
         .await
         .unwrap_or(None);
 
@@ -187,14 +217,18 @@ pub async fn get_vacancies(
 pub async fn get_vacancy_details(
     _auth: AuthGuard,
     id: i32,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<VacancyWithResponse>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let vacancy: Option<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment
          FROM job_vacancies WHERE id = $1"
     )
     .bind(id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(sqlite_pool)
     .await
     .unwrap_or(None);
 
@@ -208,7 +242,7 @@ pub async fn get_vacancy_details(
          FROM job_responses WHERE vacancy_id = $1 LIMIT 1"
     )
     .bind(id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(sqlite_pool)
     .await
     .unwrap_or(None);
 
@@ -217,7 +251,7 @@ pub async fn get_vacancy_details(
          FROM job_chats_v2 WHERE vacancy_id = $1 LIMIT 1"
     )
     .bind(id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(sqlite_pool)
     .await
     .unwrap_or(None);
 
@@ -228,14 +262,18 @@ pub async fn get_vacancy_details(
 pub async fn get_vacancies_by_status(
     _auth: AuthGuard,
     status: &str,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<VacancyWithResponse>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let vacancies: Vec<JobVacancy> = sqlx::query_as(
         "SELECT id, hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, found_at, applied_at, updated_at, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment
          FROM job_vacancies WHERE status = $1 ORDER BY COALESCE(ai_priority, 0) DESC, found_at DESC"
     )
     .bind(status)
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
@@ -246,7 +284,7 @@ pub async fn get_vacancies_by_status(
              FROM job_responses WHERE vacancy_id = $1 LIMIT 1"
         )
         .bind(vacancy.id)
-        .fetch_optional(pool.inner())
+        .fetch_optional(sqlite_pool)
         .await
         .unwrap_or(None);
 
@@ -255,7 +293,7 @@ pub async fn get_vacancies_by_status(
              FROM job_chats_v2 WHERE vacancy_id = $1 LIMIT 1"
         )
         .bind(vacancy.id)
-        .fetch_optional(pool.inner())
+        .fetch_optional(sqlite_pool)
         .await
         .unwrap_or(None);
 
@@ -268,36 +306,40 @@ pub async fn get_vacancies_by_status(
 #[get("/jobs/stats")]
 pub async fn get_job_stats(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<JobStats>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let total_found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let total_applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE status IN ('applied', 'viewed', 'invited', 'rejected')")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let invited: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE status = 'invited'")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE status = 'rejected'")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let in_progress: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE status IN ('applied', 'viewed')")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     // Extended stats
     let avg_ai_score: Option<f64> = sqlx::query_scalar("SELECT AVG(ai_score) FROM job_vacancies WHERE ai_score IS NOT NULL")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(None);
 
@@ -308,26 +350,26 @@ pub async fn get_job_stats(
     };
 
     let active_chats: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_chats_v2 c JOIN job_vacancies v ON c.vacancy_id = v.id WHERE v.status IN ('applied', 'viewed', 'invited')")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let telegram_invites_sent: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_chats_v2 WHERE telegram_invited = 1")
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let today_applications: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE date(applied_at) = ?")
         .bind(&today)
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
     let week_ago = (chrono::Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
     let this_week_applications: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job_vacancies WHERE date(applied_at) >= ?")
         .bind(&week_ago)
-        .fetch_one(pool.inner())
+        .fetch_one(sqlite_pool)
         .await
         .unwrap_or(0);
 
@@ -350,11 +392,15 @@ pub async fn get_job_stats(
 pub async fn ignore_vacancy(
     _auth: AuthGuard,
     id: i32,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<String>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     sqlx::query("UPDATE job_vacancies SET status = 'ignored' WHERE id = $1")
         .bind(id)
-        .execute(pool.inner())
+        .execute(sqlite_pool)
         .await
         .ok();
 
@@ -367,7 +413,7 @@ pub async fn hh_oauth_callback(
     code: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Redirect {
     // If there's an error from HH, redirect to frontend with error
     if let Some(err) = error {
@@ -378,6 +424,11 @@ pub async fn hh_oauth_callback(
     // If no code, redirect with error
     let Some(code) = code else {
         return Redirect::to("/auth/hh/callback?error=no_code&error_description=Authorization code not received");
+    };
+
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Redirect::to("/auth/hh/callback?error=db_error&error_description=Job search not available (PostgreSQL mode)"),
     };
 
     let client_id = std::env::var("HH_CLIENT_ID").unwrap_or_default();
@@ -394,7 +445,7 @@ pub async fn hh_oauth_callback(
             .bind(&access_token)
             .bind(&refresh_token)
             .bind(expires_at.to_rfc3339())
-            .execute(pool.inner())
+            .execute(sqlite_pool)
             .await {
                 Ok(_) => Redirect::to("/auth/hh/callback?success=true"),
                 Err(e) => Redirect::to(format!("/auth/hh/callback?error=db_error&error_description={}", e)),
@@ -420,15 +471,19 @@ pub async fn start_hh_auth(_auth: AuthGuard) -> Json<ApiResponse<String>> {
 #[get("/jobs/chats")]
 pub async fn get_chats(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<ChatWithMessages>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let chats: Vec<(i32, i32, String, Option<String>, bool, bool, bool, Option<String>, i32, String, String, String, String)> = sqlx::query_as(
         r#"SELECT c.id, c.vacancy_id, c.hh_chat_id, c.employer_name, c.is_bot, c.is_human_confirmed, c.telegram_invited, c.last_message_at, c.unread_count, c.created_at, c.updated_at, v.title, v.company
            FROM job_chats_v2 c
            JOIN job_vacancies v ON c.vacancy_id = v.id
            ORDER BY c.last_message_at DESC NULLS LAST"#
     )
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
@@ -439,7 +494,7 @@ pub async fn get_chats(
              FROM job_chat_messages WHERE chat_id = $1 ORDER BY created_at ASC"
         )
         .bind(id)
-        .fetch_all(pool.inner())
+        .fetch_all(sqlite_pool)
         .await
         .unwrap_or_default();
 
@@ -470,21 +525,25 @@ pub async fn get_chats(
 pub async fn get_chat_messages(
     _auth: AuthGuard,
     id: i32,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<JobChatMessage>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let messages: Vec<JobChatMessage> = sqlx::query_as(
         "SELECT id, chat_id, hh_message_id, author_type, text, is_auto_response, ai_sentiment, ai_intent, created_at
          FROM job_chat_messages WHERE chat_id = $1 ORDER BY created_at ASC"
     )
     .bind(id)
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
     // Mark as read
     sqlx::query("UPDATE job_chats_v2 SET unread_count = 0 WHERE id = $1")
         .bind(id)
-        .execute(pool.inner())
+        .execute(sqlite_pool)
         .await
         .ok();
 
@@ -498,13 +557,17 @@ pub async fn get_chat_messages(
 #[get("/jobs/tags")]
 pub async fn get_tags(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<JobSearchTag>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let tags: Vec<JobSearchTag> = sqlx::query_as(
         "SELECT id, tag_type, value, is_active, search_count, found_count, applied_count, created_at
          FROM job_search_tags ORDER BY applied_count DESC, found_count DESC"
     )
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
@@ -514,13 +577,17 @@ pub async fn get_tags(
 #[post("/jobs/tags/generate")]
 pub async fn generate_tags(
     _auth: AuthGuard,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<AITagsResponse>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     // Get resume text
     let about: Option<(String,)> = sqlx::query_as(
         "SELECT description FROM portfolio_about ORDER BY id DESC LIMIT 1"
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(sqlite_pool)
     .await
     .unwrap_or(None);
 
@@ -540,28 +607,28 @@ pub async fn generate_tags(
             for tag in &tags.primary_tags {
                 sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('primary', ?)")
                     .bind(tag)
-                    .execute(pool.inner())
+                    .execute(sqlite_pool)
                     .await
                     .ok();
             }
             for tag in &tags.skill_tags {
                 sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('skill', ?)")
                     .bind(tag)
-                    .execute(pool.inner())
+                    .execute(sqlite_pool)
                     .await
                     .ok();
             }
             for tag in &tags.industry_tags {
                 sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('industry', ?)")
                     .bind(tag)
-                    .execute(pool.inner())
+                    .execute(sqlite_pool)
                     .await
                     .ok();
             }
             for tag in &tags.suggested_queries {
                 sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('query', ?)")
                     .bind(tag)
-                    .execute(pool.inner())
+                    .execute(sqlite_pool)
                     .await
                     .ok();
             }
@@ -581,11 +648,15 @@ pub async fn generate_tags(
 pub async fn toggle_tag(
     _auth: AuthGuard,
     id: i32,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<String>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     sqlx::query("UPDATE job_search_tags SET is_active = NOT is_active WHERE id = $1")
         .bind(id)
-        .execute(pool.inner())
+        .execute(sqlite_pool)
         .await
         .ok();
 
@@ -596,11 +667,15 @@ pub async fn toggle_tag(
 pub async fn delete_tag(
     _auth: AuthGuard,
     id: i32,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<String>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     sqlx::query("DELETE FROM job_search_tags WHERE id = $1")
         .bind(id)
-        .execute(pool.inner())
+        .execute(sqlite_pool)
         .await
         .ok();
 
@@ -615,8 +690,12 @@ pub async fn delete_tag(
 pub async fn get_activity_log(
     _auth: AuthGuard,
     limit: Option<i32>,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<ActivityLogEntry>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let limit = limit.unwrap_or(50);
 
     let activities: Vec<(i32, String, String, Option<String>, String, Option<i32>)> = sqlx::query_as(
@@ -626,7 +705,7 @@ pub async fn get_activity_log(
            LIMIT ?"#
     )
     .bind(limit)
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
@@ -637,7 +716,7 @@ pub async fn get_activity_log(
                 "SELECT title, company FROM job_vacancies WHERE id = ?"
             )
             .bind(vid)
-            .fetch_optional(pool.inner())
+            .fetch_optional(sqlite_pool)
             .await
             .unwrap_or(None);
             v.map(|(t, c)| (Some(t), Some(c))).unwrap_or((None, None))
@@ -680,8 +759,12 @@ pub struct DailyStats {
 pub async fn get_daily_stats(
     _auth: AuthGuard,
     days: Option<i32>,
-    pool: &State<SqlitePool>,
+    pool: &State<DbPool>,
 ) -> Json<ApiResponse<Vec<DailyStats>>> {
+    let sqlite_pool = match get_sqlite_pool(pool.inner()) {
+        Some(p) => p,
+        None => return Json(ApiResponse::error("Job search not available (PostgreSQL mode)".to_string())),
+    };
     let days = days.unwrap_or(30);
     let start_date = (chrono::Local::now() - chrono::Duration::days(days as i64)).format("%Y-%m-%d").to_string();
 
@@ -692,7 +775,7 @@ pub async fn get_daily_stats(
            ORDER BY date ASC"#
     )
     .bind(&start_date)
-    .fetch_all(pool.inner())
+    .fetch_all(sqlite_pool)
     .await
     .unwrap_or_default();
 
