@@ -1,0 +1,29 @@
+[package]
+name = "alice-pc-client"
+version = "0.1.0"
+edition = "2021"
+description = "PC client for Alice Smart Home command queue"
+authors = ["BGalin"]
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+dirs = "5"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_Shutdown",
+    "Win32_System_Power",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+] }
+
+[[bin]]
+name = "alice-pc-client"
+path = "src/main.rs"

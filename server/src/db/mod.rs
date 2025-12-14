@@ -1867,6 +1867,55 @@ async fn run_postgres_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    // === Alice Command Queue for PC Client ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS alice_command_queue (
+            id SERIAL PRIMARY KEY,
+            command_type TEXT NOT NULL,
+            command_data JSONB NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            processed_at TIMESTAMPTZ,
+            result TEXT,
+            error TEXT
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_alice_queue_status ON alice_command_queue(status)")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_alice_queue_priority ON alice_command_queue(priority DESC, created_at ASC)")
+        .execute(pool)
+        .await?;
+
+    // === Alice PC Client Registration ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS alice_pc_clients (
+            id SERIAL PRIMARY KEY,
+            client_id TEXT UNIQUE NOT NULL,
+            client_name TEXT NOT NULL,
+            api_key TEXT UNIQUE NOT NULL,
+            is_online BOOLEAN NOT NULL DEFAULT FALSE,
+            last_seen TIMESTAMPTZ,
+            mac_address TEXT,
+            ip_address TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_alice_pc_clients_key ON alice_pc_clients(api_key)")
+        .execute(pool)
+        .await?;
+
     // Additional Postgres tables (Menu, T2, English, etc.) can be added here following same pattern
     // For brevity, I'm including the core tables needed for the system to work
 

@@ -486,6 +486,21 @@ async fn rocket() -> _ {
                 routes::alice::alice_test_notification,
                 routes::alice::alice_admin_telegram,
                 routes::alice::alice_admin_wake_pc,
+                // PC Client management (admin)
+                routes::alice::alice_pc_register,
+                routes::alice::alice_pc_list_clients,
+                routes::alice::alice_pc_delete_client,
+                routes::alice::alice_pc_queue_command,
+                routes::alice::alice_pc_get_queue,
+            ],
+        )
+        // PC Client API routes (authenticated by API key)
+        .mount(
+            "/api",
+            routes![
+                routes::alice::alice_pc_poll_commands,
+                routes::alice::alice_pc_report_result,
+                routes::alice::alice_pc_heartbeat,
             ],
         )
 }

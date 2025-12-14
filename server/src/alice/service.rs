@@ -251,7 +251,7 @@ impl AliceService {
 
         match device_id {
             "pc-control" => {
-                Self::handle_pc_control(&custom_data, capability_type, instance, &value, alice_state).await
+                Self::handle_pc_control(pool, &custom_data, capability_type, instance, &value, alice_state).await
             }
             "telegram-bot" => {
                 Self::handle_telegram_bot(&custom_data, capability_type, instance, &value, telegram_bot, admin_telegram_id).await
@@ -269,8 +269,9 @@ impl AliceService {
         }
     }
 
-    /// Handle PC control
+    /// Handle PC control - queues commands for PC client
     async fn handle_pc_control(
+        pool: &DbPool,
         custom_data: &serde_json::Value,
         _capability_type: &str,
         instance: &str,
@@ -278,17 +279,20 @@ impl AliceService {
         alice_state: &AliceState,
     ) -> Result<ActionResult, Box<dyn std::error::Error + Send + Sync>> {
         let mac = custom_data.get("mac").and_then(|v| v.as_str()).unwrap_or("");
-        let ip = custom_data.get("ip").and_then(|v| v.as_str()).unwrap_or("");
 
         if instance == "on" {
             let turn_on = value.as_bool().unwrap_or(false);
 
             if turn_on {
-                // Wake-on-LAN
+                // Wake-on-LAN - still done directly from server (doesn't need PC to be on)
                 if !mac.is_empty() {
                     match Self::send_wol(mac) {
                         Ok(_) => {
                             alice_state.set_pc_status("pc-control".to_string(), true);
+                            alice_state.add_notification(
+                                "ПК включается по команде Алисы".to_string(),
+                                "info".to_string(),
+                            );
                             return Ok(ActionResult {
                                 status: "DONE".to_string(),
                                 error_code: None,
@@ -311,26 +315,31 @@ impl AliceService {
                     });
                 }
             } else {
-                // Shutdown via SSH or API
-                if !ip.is_empty() {
-                    // For now, we'll just mark as off
-                    // In production, you'd SSH to the machine and run shutdown
-                    alice_state.set_pc_status("pc-control".to_string(), false);
-                    alice_state.add_notification(
-                        "ПК выключается по команде Алисы".to_string(),
-                        "info".to_string(),
-                    );
-                    return Ok(ActionResult {
-                        status: "DONE".to_string(),
-                        error_code: None,
-                        error_message: None,
-                    });
-                } else {
-                    return Ok(ActionResult {
-                        status: "ERROR".to_string(),
-                        error_code: Some("INVALID_VALUE".to_string()),
-                        error_message: Some("IP address not configured".to_string()),
-                    });
+                // Shutdown - queue command for PC client
+                let command_data = serde_json::json!({
+                    "type": "Shutdown"
+                });
+
+                match CommandQueueService::queue_command(pool, "pc_shutdown", command_data, 10).await {
+                    Ok(cmd_id) => {
+                        alice_state.set_pc_status("pc-control".to_string(), false);
+                        alice_state.add_notification(
+                            format!("Команда на выключение ПК отправлена (ID: {})", cmd_id),
+                            "info".to_string(),
+                        );
+                        return Ok(ActionResult {
+                            status: "DONE".to_string(),
+                            error_code: None,
+                            error_message: None,
+                        });
+                    }
+                    Err(e) => {
+                        return Ok(ActionResult {
+                            status: "ERROR".to_string(),
+                            error_code: Some("INTERNAL_ERROR".to_string()),
+                            error_message: Some(format!("Failed to queue command: {}", e)),
+                        });
+                    }
                 }
             }
         }
@@ -668,3 +677,246 @@ pub async fn check_device_online(ip: &str) -> bool {
         }
     }
 }
+
+/// Command Queue Service for PC client
+pub struct CommandQueueService;
+
+impl CommandQueueService {
+    /// Queue a command for PC client
+    pub async fn queue_command(
+        pool: &DbPool,
+        command_type: &str,
+        command_data: serde_json::Value,
+        priority: i32,
+    ) -> Result<i64, sqlx::Error> {
+        let id: i64 = match pool {
+            DbPool::Sqlite(_) => {
+                // SQLite doesn't have this feature
+                return Err(sqlx::Error::Protocol("Command queue requires PostgreSQL".to_string()));
+            }
+            DbPool::Postgres(p) => {
+                let row: (i64,) = sqlx::query_as(
+                    "INSERT INTO alice_command_queue (command_type, command_data, priority) VALUES ($1, $2, $3) RETURNING id"
+                )
+                .bind(command_type)
+                .bind(&command_data)
+                .bind(priority)
+                .fetch_one(p)
+                .await?;
+                row.0
+            }
+        };
+
+        println!("📝 Queued command {} (type: {}, priority: {})", id, command_type, priority);
+        Ok(id)
+    }
+
+    /// Get pending commands for PC client
+    pub async fn get_pending_commands(
+        pool: &DbPool,
+        limit: i64,
+    ) -> Result<Vec<DbQueuedCommand>, sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => {
+                Ok(vec![])
+            }
+            DbPool::Postgres(p) => {
+                let commands = sqlx::query_as::<_, DbQueuedCommand>(
+                    "SELECT id, command_type, command_data, priority, status, created_at, processed_at, result, error
+                     FROM alice_command_queue
+                     WHERE status = 'pending'
+                     ORDER BY priority DESC, created_at ASC
+                     LIMIT $1"
+                )
+                .bind(limit)
+                .fetch_all(p)
+                .await?;
+                Ok(commands)
+            }
+        }
+    }
+
+    /// Mark commands as processing
+    pub async fn mark_as_processing(
+        pool: &DbPool,
+        command_ids: &[i64],
+    ) -> Result<(), sqlx::Error> {
+        if command_ids.is_empty() {
+            return Ok(());
+        }
+
+        match pool {
+            DbPool::Sqlite(_) => Ok(()),
+            DbPool::Postgres(p) => {
+                // Build query for multiple IDs
+                let ids_str: String = command_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+                let query = format!(
+                    "UPDATE alice_command_queue SET status = 'processing' WHERE id IN ({})",
+                    ids_str
+                );
+                sqlx::query(&query).execute(p).await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Mark command as completed
+    pub async fn mark_as_completed(
+        pool: &DbPool,
+        command_id: i64,
+        result: Option<String>,
+    ) -> Result<(), sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(()),
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "UPDATE alice_command_queue SET status = 'completed', processed_at = NOW(), result = $1 WHERE id = $2"
+                )
+                .bind(result)
+                .bind(command_id)
+                .execute(p)
+                .await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Mark command as failed
+    pub async fn mark_as_failed(
+        pool: &DbPool,
+        command_id: i64,
+        error: String,
+    ) -> Result<(), sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(()),
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "UPDATE alice_command_queue SET status = 'failed', processed_at = NOW(), error = $1 WHERE id = $2"
+                )
+                .bind(error)
+                .bind(command_id)
+                .execute(p)
+                .await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Clear old completed/failed commands (cleanup)
+    pub async fn cleanup_old_commands(pool: &DbPool, hours: i32) -> Result<u64, sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(0),
+            DbPool::Postgres(p) => {
+                let result = sqlx::query(
+                    "DELETE FROM alice_command_queue WHERE status IN ('completed', 'failed') AND processed_at < NOW() - $1::interval"
+                )
+                .bind(format!("{} hours", hours))
+                .execute(p)
+                .await?;
+                Ok(result.rows_affected())
+            }
+        }
+    }
+
+    /// Register a new PC client
+    pub async fn register_client(
+        pool: &DbPool,
+        client_name: &str,
+        mac_address: Option<&str>,
+    ) -> Result<(String, String), sqlx::Error> {
+        let client_id = uuid::Uuid::new_v4().to_string();
+        let api_key = format!("pc_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
+
+        match pool {
+            DbPool::Sqlite(_) => {
+                Err(sqlx::Error::Protocol("PC client registration requires PostgreSQL".to_string()))
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "INSERT INTO alice_pc_clients (client_id, client_name, api_key, mac_address) VALUES ($1, $2, $3, $4)"
+                )
+                .bind(&client_id)
+                .bind(client_name)
+                .bind(&api_key)
+                .bind(mac_address)
+                .execute(p)
+                .await?;
+
+                println!("🖥️ Registered new PC client: {} ({})", client_name, client_id);
+                Ok((client_id, api_key))
+            }
+        }
+    }
+
+    /// Validate PC client API key
+    pub async fn validate_client(
+        pool: &DbPool,
+        api_key: &str,
+    ) -> Result<Option<DbPcClient>, sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(None),
+            DbPool::Postgres(p) => {
+                let client = sqlx::query_as::<_, DbPcClient>(
+                    "SELECT id, client_id, client_name, api_key, is_online, last_seen, mac_address, ip_address, created_at
+                     FROM alice_pc_clients WHERE api_key = $1"
+                )
+                .bind(api_key)
+                .fetch_optional(p)
+                .await?;
+                Ok(client)
+            }
+        }
+    }
+
+    /// Update PC client last seen
+    pub async fn update_client_heartbeat(
+        pool: &DbPool,
+        api_key: &str,
+        ip_address: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(()),
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "UPDATE alice_pc_clients SET is_online = TRUE, last_seen = NOW(), ip_address = COALESCE($1, ip_address) WHERE api_key = $2"
+                )
+                .bind(ip_address)
+                .bind(api_key)
+                .execute(p)
+                .await?;
+                Ok(())
+            }
+        }
+    }
+
+    /// Get all registered PC clients
+    pub async fn get_clients(pool: &DbPool) -> Result<Vec<DbPcClient>, sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(vec![]),
+            DbPool::Postgres(p) => {
+                let clients = sqlx::query_as::<_, DbPcClient>(
+                    "SELECT id, client_id, client_name, api_key, is_online, last_seen, mac_address, ip_address, created_at
+                     FROM alice_pc_clients ORDER BY created_at DESC"
+                )
+                .fetch_all(p)
+                .await?;
+                Ok(clients)
+            }
+        }
+    }
+
+    /// Delete a PC client
+    pub async fn delete_client(pool: &DbPool, client_id: &str) -> Result<bool, sqlx::Error> {
+        match pool {
+            DbPool::Sqlite(_) => Ok(false),
+            DbPool::Postgres(p) => {
+                let result = sqlx::query("DELETE FROM alice_pc_clients WHERE client_id = $1")
+                    .bind(client_id)
+                    .execute(p)
+                    .await?;
+                Ok(result.rows_affected() > 0)
+            }
+        }
+    }
+}
+
