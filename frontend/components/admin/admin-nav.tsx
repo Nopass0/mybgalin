@@ -11,6 +11,7 @@ import {
   Link2,
   Settings,
   GraduationCap,
+  Home,
 } from 'lucide-react';
 
 const adminRoutes = [
@@ -43,6 +44,11 @@ const adminRoutes = [
     label: 'English',
     icon: GraduationCap,
     href: '/admin/english',
+  },
+  {
+    label: 'Alice',
+    icon: Home,
+    href: '/admin/alice',
   },
   {
     label: 'Настройки меню',
