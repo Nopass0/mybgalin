@@ -323,3 +323,100 @@ pub struct TelegramMessage {
     pub chat_id: i64,
     pub message: String,
 }
+
+/// Command queue item for PC client
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuedCommand {
+    pub id: i64,
+    pub command_type: String,
+    pub command_data: serde_json::Value,
+    pub priority: i32,
+    pub status: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Database model for queued command
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DbQueuedCommand {
+    pub id: i64,
+    pub command_type: String,
+    pub command_data: serde_json::Value,
+    pub priority: i32,
+    pub status: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub processed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub result: Option<String>,
+    pub error: Option<String>,
+}
+
+/// PC client registration
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DbPcClient {
+    pub id: i64,
+    pub client_id: String,
+    pub client_name: String,
+    pub api_key: String,
+    pub is_online: bool,
+    pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
+    pub mac_address: Option<String>,
+    pub ip_address: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Command types that can be sent to PC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum PcCommandType {
+    /// Turn on PC via Wake-on-LAN
+    WakeOnLan,
+    /// Shutdown the PC
+    Shutdown,
+    /// Restart the PC
+    Restart,
+    /// Lock the PC
+    Lock,
+    /// Open a URL in browser
+    OpenUrl { url: String },
+    /// Run a command
+    RunCommand { command: String, args: Vec<String> },
+    /// Send notification to PC
+    Notification { title: String, message: String },
+    /// Control volume
+    Volume { action: String, value: Option<i32> },
+    /// Take screenshot
+    Screenshot,
+    /// Custom command
+    Custom { name: String, payload: serde_json::Value },
+}
+
+/// Response from PC client after processing command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandResult {
+    pub command_id: i64,
+    pub success: bool,
+    pub result: Option<String>,
+    pub error: Option<String>,
+}
+
+/// PC client API request to get pending commands
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PollCommandsRequest {
+    pub api_key: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub mark_as_processing: bool,
+}
+
+/// PC client registration request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterClientRequest {
+    pub client_name: String,
+    pub mac_address: Option<String>,
+}
+
+/// PC client registration response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterClientResponse {
+    pub client_id: String,
+    pub api_key: String,
+}

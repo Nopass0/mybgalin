@@ -1,6 +1,6 @@
 use crate::alice::{
     models::*,
-    service::{AliceService, AliceState},
+    service::{AliceService, AliceState, CommandQueueService},
 };
 use crate::db::DbPool;
 use crate::guards::AdminSession;
@@ -10,7 +10,7 @@ use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
-use rocket::{get, post, State};
+use rocket::{get, post, delete, State};
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -523,4 +523,251 @@ pub async fn alice_admin_wake_pc(
         }
         _ => Ok(Json(serde_json::json!({"success": false, "error": "Invalid MAC address"}))),
     }
+}
+
+// ================== PC Client API Endpoints ==================
+
+/// PC Client authentication guard
+pub struct PcClientAuth {
+    pub client_id: String,
+    pub client_name: String,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for PcClientAuth {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let pool = request.guard::<&State<DbPool>>().await.unwrap();
+
+        // Get API key from header
+        let api_key = request.headers().get_one("X-API-Key");
+
+        if let Some(key) = api_key {
+            match CommandQueueService::validate_client(pool.inner(), key).await {
+                Ok(Some(client)) => {
+                    // Update heartbeat
+                    let _ = CommandQueueService::update_client_heartbeat(
+                        pool.inner(),
+                        key,
+                        request.client_ip().map(|ip| ip.to_string()).as_deref(),
+                    ).await;
+
+                    return Outcome::Success(PcClientAuth {
+                        client_id: client.client_id,
+                        client_name: client.client_name,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        Outcome::Error((Status::Unauthorized, ()))
+    }
+}
+
+/// Register a new PC client (admin)
+#[post("/alice/pc/register", data = "<request>")]
+pub async fn alice_pc_register(
+    _session: AdminSession,
+    pool: &State<DbPool>,
+    request: Json<RegisterClientRequest>,
+) -> Result<Json<RegisterClientResponse>, Status> {
+    match CommandQueueService::register_client(
+        pool.inner(),
+        &request.client_name,
+        request.mac_address.as_deref(),
+    ).await {
+        Ok((client_id, api_key)) => Ok(Json(RegisterClientResponse {
+            client_id,
+            api_key,
+        })),
+        Err(e) => {
+            eprintln!("Failed to register PC client: {}", e);
+            Err(Status::InternalServerError)
+        }
+    }
+}
+
+/// Get all registered PC clients (admin)
+#[get("/alice/pc/clients")]
+pub async fn alice_pc_list_clients(
+    _session: AdminSession,
+    pool: &State<DbPool>,
+) -> Result<Json<Vec<serde_json::Value>>, Status> {
+    match CommandQueueService::get_clients(pool.inner()).await {
+        Ok(clients) => {
+            let client_json: Vec<serde_json::Value> = clients.into_iter().map(|c| {
+                serde_json::json!({
+                    "client_id": c.client_id,
+                    "client_name": c.client_name,
+                    "is_online": c.is_online,
+                    "last_seen": c.last_seen,
+                    "mac_address": c.mac_address,
+                    "ip_address": c.ip_address,
+                    "created_at": c.created_at,
+                })
+            }).collect();
+            Ok(Json(client_json))
+        }
+        Err(_) => Err(Status::InternalServerError),
+    }
+}
+
+/// Delete a PC client (admin)
+#[delete("/alice/pc/clients/<client_id>")]
+pub async fn alice_pc_delete_client(
+    _session: AdminSession,
+    pool: &State<DbPool>,
+    client_id: &str,
+) -> Result<Json<serde_json::Value>, Status> {
+    match CommandQueueService::delete_client(pool.inner(), client_id).await {
+        Ok(deleted) => Ok(Json(serde_json::json!({"success": deleted}))),
+        Err(_) => Err(Status::InternalServerError),
+    }
+}
+
+/// Queue a command for PC client (admin)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QueueCommandRequest {
+    pub command_type: String,
+    pub command_data: serde_json::Value,
+    #[serde(default)]
+    pub priority: i32,
+}
+
+#[post("/alice/pc/queue", data = "<request>")]
+pub async fn alice_pc_queue_command(
+    _session: AdminSession,
+    pool: &State<DbPool>,
+    request: Json<QueueCommandRequest>,
+) -> Result<Json<serde_json::Value>, Status> {
+    match CommandQueueService::queue_command(
+        pool.inner(),
+        &request.command_type,
+        request.command_data.clone(),
+        request.priority,
+    ).await {
+        Ok(id) => Ok(Json(serde_json::json!({
+            "success": true,
+            "command_id": id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to queue command: {}", e);
+            Err(Status::InternalServerError)
+        }
+    }
+}
+
+/// Get pending commands in queue (admin)
+#[get("/alice/pc/queue?<limit>")]
+pub async fn alice_pc_get_queue(
+    _session: AdminSession,
+    pool: &State<DbPool>,
+    limit: Option<i64>,
+) -> Result<Json<Vec<serde_json::Value>>, Status> {
+    let limit = limit.unwrap_or(50);
+    match CommandQueueService::get_pending_commands(pool.inner(), limit).await {
+        Ok(commands) => {
+            let cmd_json: Vec<serde_json::Value> = commands.into_iter().map(|c| {
+                serde_json::json!({
+                    "id": c.id,
+                    "command_type": c.command_type,
+                    "command_data": c.command_data,
+                    "priority": c.priority,
+                    "status": c.status,
+                    "created_at": c.created_at,
+                })
+            }).collect();
+            Ok(Json(cmd_json))
+        }
+        Err(_) => Err(Status::InternalServerError),
+    }
+}
+
+// ================== PC Client Polling Endpoints ==================
+
+/// Poll for pending commands (PC client)
+#[get("/alice/pc/poll?<mark_processing>")]
+pub async fn alice_pc_poll_commands(
+    auth: PcClientAuth,
+    pool: &State<DbPool>,
+    mark_processing: Option<bool>,
+) -> Result<Json<Vec<serde_json::Value>>, Status> {
+    match CommandQueueService::get_pending_commands(pool.inner(), 10).await {
+        Ok(commands) => {
+            let cmd_ids: Vec<i64> = commands.iter().map(|c| c.id).collect();
+
+            // Mark as processing if requested
+            if mark_processing.unwrap_or(true) && !cmd_ids.is_empty() {
+                let _ = CommandQueueService::mark_as_processing(pool.inner(), &cmd_ids).await;
+            }
+
+            let cmd_json: Vec<serde_json::Value> = commands.into_iter().map(|c| {
+                serde_json::json!({
+                    "id": c.id,
+                    "command_type": c.command_type,
+                    "command_data": c.command_data,
+                    "priority": c.priority,
+                })
+            }).collect();
+
+            println!("🖥️ PC client {} polled {} commands", auth.client_name, cmd_json.len());
+            Ok(Json(cmd_json))
+        }
+        Err(_) => Err(Status::InternalServerError),
+    }
+}
+
+/// Report command result (PC client)
+#[post("/alice/pc/result", data = "<request>")]
+pub async fn alice_pc_report_result(
+    auth: PcClientAuth,
+    pool: &State<DbPool>,
+    request: Json<CommandResult>,
+) -> Result<Json<serde_json::Value>, Status> {
+    if request.success {
+        match CommandQueueService::mark_as_completed(
+            pool.inner(),
+            request.command_id,
+            request.result.clone(),
+        ).await {
+            Ok(_) => {
+                println!("✅ PC client {} completed command {}", auth.client_name, request.command_id);
+                Ok(Json(serde_json::json!({"success": true})))
+            }
+            Err(_) => Err(Status::InternalServerError),
+        }
+    } else {
+        match CommandQueueService::mark_as_failed(
+            pool.inner(),
+            request.command_id,
+            request.error.clone().unwrap_or_else(|| "Unknown error".to_string()),
+        ).await {
+            Ok(_) => {
+                println!("❌ PC client {} failed command {}: {}",
+                    auth.client_name,
+                    request.command_id,
+                    request.error.as_deref().unwrap_or("Unknown"));
+                Ok(Json(serde_json::json!({"success": true})))
+            }
+            Err(_) => Err(Status::InternalServerError),
+        }
+    }
+}
+
+/// Heartbeat endpoint (PC client)
+#[post("/alice/pc/heartbeat")]
+pub async fn alice_pc_heartbeat(
+    auth: PcClientAuth,
+    alice_state: &State<AliceState>,
+) -> Json<serde_json::Value> {
+    // Update PC status in Alice state
+    alice_state.set_pc_status("pc-control".to_string(), true);
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "client_id": auth.client_id,
+        "server_time": chrono::Utc::now().to_rfc3339()
+    }))
 }
