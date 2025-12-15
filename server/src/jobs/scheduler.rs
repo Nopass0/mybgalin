@@ -2,18 +2,18 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use crate::jobs::{HHClient, AIClient};
 use chrono::{Utc, Timelike, Datelike};
 
 #[derive(Clone)]
 pub struct JobScheduler {
     is_running: Arc<RwLock<bool>>,
-    pool: SqlitePool,
+    pool: DbPool,
 }
 
 impl JobScheduler {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self {
             is_running: Arc::new(RwLock::new(false)),
             pool,
@@ -43,32 +43,62 @@ impl JobScheduler {
         let event_type = event_type.to_string();
         let description = description.to_string();
         tokio::spawn(async move {
-            sqlx::query(
-                "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES (?, ?, ?)"
-            )
-            .bind(&event_type)
-            .bind(vacancy_id)
-            .bind(&description)
-            .execute(&pool)
-            .await
-            .ok();
+            match pool {
+                DbPool::Sqlite(p) => {
+                    sqlx::query(
+                        "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES (?, ?, ?)"
+                    )
+                    .bind(&event_type)
+                    .bind(vacancy_id)
+                    .bind(&description)
+                    .execute(&p)
+                    .await
+                    .ok();
+                }
+                DbPool::Postgres(p) => {
+                    sqlx::query(
+                        "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES ($1, $2, $3)"
+                    )
+                    .bind(&event_type)
+                    .bind(vacancy_id)
+                    .bind(&description)
+                    .execute(&p)
+                    .await
+                    .ok();
+                }
+            }
         });
     }
 
     async fn log_activity(&self, event_type: &str, vacancy_id: Option<i32>, description: &str) -> Result<(), String> {
-        sqlx::query(
-            "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES (?, ?, ?)"
-        )
-        .bind(event_type)
-        .bind(vacancy_id)
-        .bind(description)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        match &self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES (?, ?, ?)"
+                )
+                .bind(event_type)
+                .bind(vacancy_id)
+                .bind(description)
+                .execute(p)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "INSERT INTO job_activity_log (event_type, vacancy_id, description) VALUES ($1, $2, $3)"
+                )
+                .bind(event_type)
+                .bind(vacancy_id)
+                .bind(description)
+                .execute(p)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
         Ok(())
     }
 
-    pub fn spawn_scheduler(self) {
+    pub fn start_background_task(self) {
         tokio::spawn(async move {
             println!("🔄 Job scheduler background task started");
 
@@ -135,27 +165,61 @@ impl JobScheduler {
     }
 
     async fn get_search_interval(&self) -> Result<i64, String> {
-        let interval: Option<(i32,)> = sqlx::query_as(
-            "SELECT search_interval_minutes FROM job_search_settings WHERE id = 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let interval: Option<i32> = match &self.pool {
+            DbPool::Sqlite(p) => {
+                let row: Option<(i32,)> = sqlx::query_as(
+                    "SELECT search_interval_minutes FROM job_search_settings WHERE id = 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?;
+                row.map(|(i,)| i)
+            }
+            DbPool::Postgres(p) => {
+                let row: Option<(i32,)> = sqlx::query_as(
+                    "SELECT search_interval_minutes FROM job_search_settings WHERE id = 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?;
+                row.map(|(i,)| i)
+            }
+        };
 
-        Ok(interval.map(|(i,)| i as i64).unwrap_or(60))
+        Ok(interval.map(|i| i as i64).unwrap_or(60))
     }
 
     async fn get_last_search_time(&self) -> Result<Option<i64>, String> {
-        let result: Option<(String,)> = sqlx::query_as(
-            "SELECT found_at FROM job_vacancies ORDER BY found_at DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        match &self.pool {
+            DbPool::Sqlite(p) => {
+                let result: Option<(String,)> = sqlx::query_as(
+                    "SELECT found_at FROM job_vacancies ORDER BY found_at DESC LIMIT 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?;
 
-        if let Some((timestamp,)) = result {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&timestamp) {
-                return Ok(Some(dt.timestamp()));
+                if let Some((timestamp,)) = result {
+                    // Try parsing as RFC3339 (Postgres format string) or standard SQL format
+                    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&timestamp) {
+                        return Ok(Some(dt.timestamp()));
+                    }
+                    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&timestamp, "%Y-%m-%d %H:%M:%S") {
+                         return Ok(Some(dt.and_utc().timestamp()));
+                    }
+                }
+            }
+            DbPool::Postgres(p) => {
+                 let result: Option<(chrono::DateTime<Utc>,)> = sqlx::query_as(
+                    "SELECT found_at FROM job_vacancies ORDER BY found_at DESC LIMIT 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some((dt,)) = result {
+                    return Ok(Some(dt.timestamp()));
+                }
             }
         }
 
@@ -167,24 +231,34 @@ impl JobScheduler {
         self.log_activity("search", None, "🔍 Начинаю поиск вакансий").await.ok();
 
         // Get all settings including new AI fields
-        let settings: Option<(String, String, Option<i64>, Option<String>, Option<String>, Option<String>, bool, Option<bool>, Option<i32>, Option<bool>)> = sqlx::query_as(
-            "SELECT search_text, area_ids, salary_from, experience, schedule, employment, only_with_salary, auto_tags_enabled, min_ai_score, auto_apply_enabled FROM job_search_settings WHERE id = 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let (search_text, area_ids_json, salary_from, experience, schedule, employment, only_with_salary, auto_tags_enabled, min_ai_score, auto_apply_enabled) = match settings {
-            Some(s) => s,
-            None => {
-                println!("⚠️  No search settings configured");
-                return Ok(());
+        let settings: Option<(String, String, Option<i64>, Option<String>, Option<String>, Option<String>, bool, bool, i32, bool)> = match &self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query_as(
+                    "SELECT search_text, area_ids, salary_from, experience, schedule, employment, only_with_salary, auto_tags_enabled, min_ai_score, auto_apply_enabled 
+                     FROM job_search_settings WHERE id = 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query_as(
+                    "SELECT search_text, area_ids, salary_from, experience, schedule, employment, only_with_salary, auto_tags_enabled, min_ai_score, auto_apply_enabled 
+                     FROM job_search_settings WHERE id = 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?
             }
         };
 
-        let min_ai_score = min_ai_score.unwrap_or(50);
-        let auto_apply = auto_apply_enabled.unwrap_or(true);
-        let use_auto_tags = auto_tags_enabled.unwrap_or(true);
+        if settings.is_none() {
+            println!("⚠️ Job search settings not found");
+            return Ok(());
+        }
+
+        let (search_text, area_ids_json, salary_from, experience, schedule, employment, only_with_salary, auto_tags_enabled, min_ai_score, auto_apply_enabled) = settings.unwrap();
+        let use_auto_tags = auto_tags_enabled;
 
         // Get HH token
         let access_token = match self.get_valid_token().await {
@@ -196,12 +270,10 @@ impl JobScheduler {
         };
 
         // Check if we have resume data
-        let has_resume: bool = sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM portfolio_about"
-        )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(false);
+        let has_resume: bool = match &self.pool {
+            DbPool::Sqlite(p) => sqlx::query_scalar("SELECT COUNT(*) > 0 FROM portfolio_about").fetch_one(p).await.unwrap_or(false),
+            DbPool::Postgres(p) => sqlx::query_scalar("SELECT COUNT(*) > 0 FROM portfolio_about").fetch_one(p).await.unwrap_or(false),
+        };
 
         if !has_resume {
             println!("⚠️  No portfolio/resume data found. Please add resume first.");
@@ -227,12 +299,10 @@ impl JobScheduler {
 
         // Get AI-generated tags if enabled
         if use_auto_tags {
-            let active_tags: Vec<(String,)> = sqlx::query_as(
-                "SELECT value FROM job_search_tags WHERE tag_type = 'query' AND is_active = 1"
-            )
-            .fetch_all(&self.pool)
-            .await
-            .unwrap_or_default();
+            let active_tags: Vec<(String,)> = match &self.pool {
+                DbPool::Sqlite(p) => sqlx::query_as("SELECT value FROM job_search_tags WHERE tag_type = 'query' AND is_active = 1").fetch_all(p).await.unwrap_or_default(),
+                DbPool::Postgres(p) => sqlx::query_as("SELECT value FROM job_search_tags WHERE tag_type = 'query' AND is_active = TRUE").fetch_all(p).await.unwrap_or_default(),
+            };
 
             for (tag,) in active_tags {
                 if !search_queries.contains(&tag) {
@@ -248,13 +318,10 @@ impl JobScheduler {
                 for query in tags.suggested_queries {
                     search_queries.push(query.clone());
                     // Save to DB
-                    sqlx::query(
-                        "INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('query', ?)"
-                    )
-                    .bind(&query)
-                    .execute(&self.pool)
-                    .await
-                    .ok();
+                    match &self.pool {
+                        DbPool::Sqlite(p) => { sqlx::query("INSERT OR IGNORE INTO job_search_tags (tag_type, value) VALUES ('query', ?)").bind(&query).execute(p).await.ok(); },
+                        DbPool::Postgres(p) => { sqlx::query("INSERT INTO job_search_tags (tag_type, value) VALUES ('query', $1) ON CONFLICT DO NOTHING").bind(&query).execute(p).await.ok(); },
+                    }
                 }
                 self.log_activity("ai", None, &format!("🏷️ AI сгенерировал {} поисковых запросов", search_queries.len())).await.ok();
             }
@@ -293,13 +360,10 @@ impl JobScheduler {
             println!("🔎 Searching: {}", query);
 
             // Update tag search count
-            sqlx::query(
-                "UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = ?"
-            )
-            .bind(query)
-            .execute(&self.pool)
-            .await
-            .ok();
+            match &self.pool {
+                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = ?").bind(query).execute(p).await.ok(); },
+                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = $1").bind(query).execute(p).await.ok(); },
+            }
 
             // Search vacancies
             let vacancies = match hh_client
@@ -325,14 +389,10 @@ impl JobScheduler {
             total_found += found_count;
 
             // Update tag found count
-            sqlx::query(
-                "UPDATE job_search_tags SET found_count = found_count + ? WHERE tag_type = 'query' AND value = ?"
-            )
-            .bind(found_count as i32)
-            .bind(query)
-            .execute(&self.pool)
-            .await
-            .ok();
+            match &self.pool {
+                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET found_count = found_count + ? WHERE tag_type = 'query' AND value = ?").bind(found_count as i32).bind(query).execute(p).await.ok(); },
+                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET found_count = found_count + $1 WHERE tag_type = 'query' AND value = $2").bind(found_count as i32).bind(query).execute(p).await.ok(); },
+            }
 
             for vacancy in vacancies {
                 let vacancy_id = match vacancy["id"].as_str() {
@@ -341,13 +401,10 @@ impl JobScheduler {
                 };
 
                 // Check if already exists
-                let exists: bool = sqlx::query_scalar(
-                    "SELECT COUNT(*) > 0 FROM job_vacancies WHERE hh_vacancy_id = ?"
-                )
-                .bind(vacancy_id)
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(true);
+                let exists: bool = match &self.pool {
+                    DbPool::Sqlite(p) => sqlx::query_scalar("SELECT COUNT(*) > 0 FROM job_vacancies WHERE hh_vacancy_id = ?").bind(vacancy_id).fetch_one(p).await.unwrap_or(true),
+                    DbPool::Postgres(p) => sqlx::query_scalar("SELECT COUNT(*) > 0 FROM job_vacancies WHERE hh_vacancy_id = $1").bind(vacancy_id).fetch_one(p).await.unwrap_or(true),
+                };
 
                 if exists {
                     continue;
@@ -394,35 +451,31 @@ impl JobScheduler {
                     };
 
                 // Determine status based on evaluation
-                let should_apply = auto_apply &&
+                let should_apply = auto_apply_enabled &&
                     ai_score.unwrap_or(0) >= min_ai_score &&
                     ai_recommendation.as_deref() != Some("skip");
 
                 let status = if should_apply { "found" } else { "skipped" };
 
                 // Save to DB
-                sqlx::query(
-                    "INSERT INTO job_vacancies (hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                )
-                .bind(vacancy_id)
-                .bind(title)
-                .bind(company)
-                .bind(v_salary_from)
-                .bind(v_salary_to)
-                .bind(&salary_currency)
-                .bind(description)
-                .bind(url)
-                .bind(status)
-                .bind(ai_score)
-                .bind(&ai_recommendation)
-                .bind(ai_priority)
-                .bind(&ai_match_reasons)
-                .bind(&ai_concerns)
-                .bind(&ai_salary_assessment)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => {
+                        sqlx::query(
+                            "INSERT INTO job_vacancies (hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        )
+                        .bind(vacancy_id).bind(title).bind(company).bind(v_salary_from).bind(v_salary_to).bind(&salary_currency).bind(description).bind(url).bind(status).bind(ai_score).bind(&ai_recommendation).bind(ai_priority).bind(&ai_match_reasons).bind(&ai_concerns).bind(&ai_salary_assessment)
+                        .execute(p).await.ok();
+                    }
+                    DbPool::Postgres(p) => {
+                        sqlx::query(
+                            "INSERT INTO job_vacancies (hh_vacancy_id, title, company, salary_from, salary_to, salary_currency, description, url, status, ai_score, ai_recommendation, ai_priority, ai_match_reasons, ai_concerns, ai_salary_assessment)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"
+                        )
+                        .bind(vacancy_id).bind(title).bind(company).bind(v_salary_from).bind(v_salary_to).bind(&salary_currency).bind(description).bind(url).bind(status).bind(ai_score).bind(&ai_recommendation).bind(ai_priority).bind(&ai_match_reasons).bind(&ai_concerns).bind(&ai_salary_assessment)
+                        .execute(p).await.ok();
+                    }
+                }
 
                 if !should_apply {
                     println!("⏭️  Skipped {} (score: {}, rec: {:?})", title, ai_score.unwrap_or(0), ai_recommendation);
@@ -456,47 +509,40 @@ impl JobScheduler {
                 println!("✅ Applied to: {} (AI score: {})", title, ai_score.unwrap_or(0));
 
                 // Get vacancy DB id
-                let vacancy_db_id: i32 = sqlx::query_scalar(
-                    "SELECT id FROM job_vacancies WHERE hh_vacancy_id = ?"
-                )
-                .bind(vacancy_id)
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(0);
+                let vacancy_db_id: i32 = match &self.pool {
+                    DbPool::Sqlite(p) => sqlx::query_scalar("SELECT id FROM job_vacancies WHERE hh_vacancy_id = ?").bind(vacancy_id).fetch_one(p).await.unwrap_or(0),
+                    DbPool::Postgres(p) => sqlx::query_scalar("SELECT id FROM job_vacancies WHERE hh_vacancy_id = $1").bind(vacancy_id).fetch_one(p).await.unwrap_or(0),
+                };
 
                 // Update vacancy status
-                sqlx::query(
-                    "UPDATE job_vacancies SET status = 'applied', applied_at = datetime('now')
-                     WHERE id = ?"
-                )
-                .bind(vacancy_db_id)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => { sqlx::query("UPDATE job_vacancies SET status = 'applied', applied_at = datetime('now') WHERE id = ?").bind(vacancy_db_id).execute(p).await.ok(); },
+                    DbPool::Postgres(p) => { sqlx::query("UPDATE job_vacancies SET status = 'applied', applied_at = NOW() WHERE id = $1").bind(vacancy_db_id).execute(p).await.ok(); },
+                }
 
                 // Save response
-                sqlx::query(
-                    "INSERT INTO job_responses (vacancy_id, hh_negotiation_id, cover_letter, status)
-                     VALUES (?, ?, ?, 'sent')"
-                )
-                .bind(vacancy_db_id)
-                .bind(&negotiation_id)
-                .bind(&cover_letter)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => {
+                        sqlx::query("INSERT INTO job_responses (vacancy_id, hh_negotiation_id, cover_letter, status) VALUES (?, ?, ?, 'sent')")
+                        .bind(vacancy_db_id).bind(&negotiation_id).bind(&cover_letter).execute(p).await.ok();
+                    },
+                    DbPool::Postgres(p) => {
+                        sqlx::query("INSERT INTO job_responses (vacancy_id, hh_negotiation_id, cover_letter, status) VALUES ($1, $2, $3, 'sent')")
+                        .bind(vacancy_db_id).bind(&negotiation_id).bind(&cover_letter).execute(p).await.ok();
+                    }
+                }
 
                 // Create chat record
-                sqlx::query(
-                    "INSERT INTO job_chats_v2 (vacancy_id, hh_chat_id, employer_name)
-                     VALUES (?, ?, ?)"
-                )
-                .bind(vacancy_db_id)
-                .bind(&negotiation_id)
-                .bind(company)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => {
+                        sqlx::query("INSERT INTO job_chats_v2 (vacancy_id, hh_chat_id, employer_name) VALUES (?, ?, ?)")
+                        .bind(vacancy_db_id).bind(&negotiation_id).bind(company).execute(p).await.ok();
+                    },
+                    DbPool::Postgres(p) => {
+                        sqlx::query("INSERT INTO job_chats_v2 (vacancy_id, hh_chat_id, employer_name) VALUES ($1, $2, $3)")
+                        .bind(vacancy_db_id).bind(&negotiation_id).bind(company).execute(p).await.ok();
+                    }
+                }
 
                 // Log activity
                 self.log_activity(
@@ -511,37 +557,29 @@ impl JobScheduler {
                         eprintln!("⚠️  Failed to send chat intro: {}", e);
                     } else {
                         // Save intro message
-                        let chat_id: Option<(i32,)> = sqlx::query_as(
-                            "SELECT id FROM job_chats_v2 WHERE hh_chat_id = ?"
-                        )
-                        .bind(&negotiation_id)
-                        .fetch_optional(&self.pool)
-                        .await
-                        .ok()
-                        .flatten();
+                        let chat_id: Option<(i32,)> = match &self.pool {
+                            DbPool::Sqlite(p) => sqlx::query_as("SELECT id FROM job_chats_v2 WHERE hh_chat_id = ?").bind(&negotiation_id).fetch_optional(p).await.ok().flatten(),
+                            DbPool::Postgres(p) => sqlx::query_as("SELECT id FROM job_chats_v2 WHERE hh_chat_id = $1").bind(&negotiation_id).fetch_optional(p).await.ok().flatten(),
+                        };
 
                         if let Some((cid,)) = chat_id {
-                            sqlx::query(
-                                "INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response)
-                                 VALUES (?, 'applicant', ?, 1)"
-                            )
-                            .bind(cid)
-                            .bind(&chat_intro)
-                            .execute(&self.pool)
-                            .await
-                            .ok();
+                            match &self.pool {
+                                DbPool::Sqlite(p) => {
+                                    sqlx::query("INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response) VALUES (?, 'applicant', ?, 1)").bind(cid).bind(&chat_intro).execute(p).await.ok();
+                                },
+                                DbPool::Postgres(p) => {
+                                    sqlx::query("INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response) VALUES ($1, 'applicant', $2, TRUE)").bind(cid).bind(&chat_intro).execute(p).await.ok();
+                                }
+                            }
                         }
                     }
                 }
 
                 // Update tag applied count
-                sqlx::query(
-                    "UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = ?"
-                )
-                .bind(query)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = ?").bind(query).execute(p).await.ok(); },
+                    DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = $1").bind(query).execute(p).await.ok(); },
+                }
 
                 total_applied += 1;
 
@@ -555,20 +593,30 @@ impl JobScheduler {
 
         // Update daily stats
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        sqlx::query(
-            r#"INSERT INTO job_search_stats (date, searches_count, vacancies_found, applications_sent)
-               VALUES (?, 1, ?, ?)
-               ON CONFLICT(date) DO UPDATE SET
-               searches_count = searches_count + 1,
-               vacancies_found = vacancies_found + excluded.vacancies_found,
-               applications_sent = applications_sent + excluded.applications_sent"#
-        )
-        .bind(&today)
-        .bind(total_found as i32)
-        .bind(total_applied)
-        .execute(&self.pool)
-        .await
-        .ok();
+        match &self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    r#"INSERT INTO job_search_stats (date, searches_count, vacancies_found, applications_sent)
+                       VALUES (?, 1, ?, ?)
+                       ON CONFLICT(date) DO UPDATE SET
+                       searches_count = searches_count + 1,
+                       vacancies_found = vacancies_found + excluded.vacancies_found,
+                       applications_sent = applications_sent + excluded.applications_sent"#
+                )
+                .bind(&today).bind(total_found as i32).bind(total_applied).execute(p).await.ok();
+            },
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    r#"INSERT INTO job_search_stats (date, searches_count, vacancies_found, applications_sent)
+                       VALUES ($1, 1, $2, $3)
+                       ON CONFLICT(date) DO UPDATE SET
+                       searches_count = job_search_stats.searches_count + 1,
+                       vacancies_found = job_search_stats.vacancies_found + excluded.vacancies_found,
+                       applications_sent = job_search_stats.applications_sent + excluded.applications_sent"#
+                )
+                .bind(&today).bind(total_found as i32).bind(total_applied).execute(p).await.ok();
+            }
+        }
 
         self.log_activity(
             "search",
@@ -614,14 +662,10 @@ impl JobScheduler {
             };
 
             // Get current status
-            let current: Option<(String, i32)> = sqlx::query_as(
-                "SELECT status, id FROM job_vacancies WHERE hh_vacancy_id = ?"
-            )
-            .bind(vacancy_id)
-            .fetch_optional(&self.pool)
-            .await
-            .ok()
-            .flatten();
+            let current: Option<(String, i32)> = match &self.pool {
+                DbPool::Sqlite(p) => sqlx::query_as("SELECT status, id FROM job_vacancies WHERE hh_vacancy_id = ?").bind(vacancy_id).fetch_optional(p).await.ok().flatten(),
+                DbPool::Postgres(p) => sqlx::query_as("SELECT status, id FROM job_vacancies WHERE hh_vacancy_id = $1").bind(vacancy_id).fetch_optional(p).await.ok().flatten(),
+            };
 
             if let Some((current_status, db_id)) = current {
                 if current_status != new_status {
@@ -639,321 +683,212 @@ impl JobScheduler {
                     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
                     match new_status {
                         "invited" => {
-                            sqlx::query(
-                                "UPDATE job_search_stats SET invitations_received = invitations_received + 1 WHERE date = ?"
-                            )
-                            .bind(&today)
-                            .execute(&self.pool)
-                            .await
-                            .ok();
+                            match &self.pool {
+                                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_stats SET invitations_received = invitations_received + 1 WHERE date = ?").bind(&today).execute(p).await.ok(); },
+                                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_stats SET invitations_received = invitations_received + 1 WHERE date = $1").bind(&today).execute(p).await.ok(); },
+                            }
                         }
                         "rejected" => {
-                            sqlx::query(
-                                "UPDATE job_search_stats SET rejections_received = rejections_received + 1 WHERE date = ?"
-                            )
-                            .bind(&today)
-                            .execute(&self.pool)
-                            .await
-                            .ok();
+                            match &self.pool {
+                                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_stats SET rejections_received = rejections_received + 1 WHERE date = ?").bind(&today).execute(p).await.ok(); },
+                                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_stats SET rejections_received = rejections_received + 1 WHERE date = $1").bind(&today).execute(p).await.ok(); },
+                            }
                         }
                         _ => {}
                     }
                 }
             }
 
-            // Update vacancy status
-            sqlx::query(
-                "UPDATE job_vacancies SET status = ?, updated_at = datetime('now')
-                 WHERE hh_vacancy_id = ? AND status != ?"
-            )
-            .bind(new_status)
-            .bind(vacancy_id)
-            .bind(new_status)
-            .execute(&self.pool)
-            .await
-            .ok();
-
             // Update response status
-            sqlx::query(
-                "UPDATE job_responses SET status = ?, updated_at = datetime('now')
-                 WHERE hh_negotiation_id = ?"
-            )
-            .bind(new_status)
-            .bind(negotiation_id)
-            .execute(&self.pool)
-            .await
-            .ok();
+            match &self.pool {
+                DbPool::Sqlite(p) => {
+                    sqlx::query(
+                        "UPDATE job_vacancies SET status = ?, updated_at = datetime('now') WHERE hh_vacancy_id = ? AND status != ?"
+                    )
+                    .bind(new_status).bind(vacancy_id).bind(new_status).execute(p).await.ok();
+
+                    sqlx::query(
+                        "UPDATE job_responses SET status = ?, updated_at = datetime('now') WHERE hh_negotiation_id = ?"
+                    )
+                    .bind(new_status).bind(negotiation_id).execute(p).await.ok();
+                }
+                DbPool::Postgres(p) => {
+                    sqlx::query(
+                        "UPDATE job_vacancies SET status = $1, updated_at = NOW() WHERE hh_vacancy_id = $2 AND status != $3"
+                    )
+                    .bind(new_status).bind(vacancy_id).bind(new_status).execute(p).await.ok();
+
+                    sqlx::query(
+                        "UPDATE job_responses SET status = $1, updated_at = NOW() WHERE hh_negotiation_id = $2"
+                    )
+                    .bind(new_status).bind(negotiation_id).execute(p).await.ok();
+                }
+            }
         }
 
         Ok(())
     }
 
+
+
     async fn monitor_chats_enhanced(&self) -> Result<(), String> {
-        // Get HH token
+        // ... (Token, AI client setup same as before)
         let access_token = match self.get_valid_token().await {
             Ok(t) => t,
             Err(_) => return Ok(()),
         };
-
         let mut hh_client = HHClient::new();
         hh_client.set_token(access_token);
-
-        // Get AI client
         let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
         let model = std::env::var("AI_MODEL").unwrap_or_else(|_| "google/gemini-2.0-flash-001".to_string());
         let ai_client = AIClient::new(api_key, model);
-
-        // Get resume and contacts
         let resume_text = self.get_resume_text().await?;
         let (telegram, _email) = self.get_contacts().await?;
 
         // Get all active chats
-        let chats: Vec<(i32, String, String, i32, bool)> = sqlx::query_as(
-            r#"SELECT c.id, c.hh_chat_id, v.title, v.id, c.telegram_invited
-               FROM job_chats_v2 c
-               JOIN job_vacancies v ON c.vacancy_id = v.id
-               WHERE v.status IN ('applied', 'viewed', 'invited')"#
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let chats: Vec<(i32, String, String, i32, bool)> = match &self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query_as(
+                    r#"SELECT c.id, c.hh_chat_id, v.title, v.id, c.telegram_invited
+                       FROM job_chats_v2 c
+                       JOIN job_vacancies v ON c.vacancy_id = v.id
+                       WHERE v.status IN ('applied', 'viewed', 'invited')"#
+                ).fetch_all(p).await.map_err(|e| e.to_string())?
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query_as(
+                    r#"SELECT c.id, c.hh_chat_id, v.title, v.id, c.telegram_invited
+                       FROM job_chats_v2 c
+                       JOIN job_vacancies v ON c.vacancy_id = v.id
+                       WHERE v.status IN ('applied', 'viewed', 'invited')"#
+                ).fetch_all(p).await.map_err(|e| e.to_string())?
+            }
+        };
 
         for (chat_id, hh_chat_id, title, vacancy_db_id, telegram_invited) in chats {
-            // Get messages from HH
             let messages = match hh_client.get_messages(&hh_chat_id).await {
-                Ok(m) => m,
-                Err(_) => continue,
+                Ok(m) => m, Err(_) => continue,
             };
-
-            if messages.is_empty() {
-                continue;
-            }
+            if messages.is_empty() { continue; }
 
             // Get last saved message ID
-            let last_saved: Option<(String,)> = sqlx::query_as(
-                "SELECT hh_message_id FROM job_chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1"
-            )
-            .bind(chat_id)
-            .fetch_optional(&self.pool)
-            .await
-            .ok()
-            .flatten();
+            let last_saved: Option<(String,)> = match &self.pool {
+                DbPool::Sqlite(p) => sqlx::query_as("SELECT hh_message_id FROM job_chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1").bind(chat_id).fetch_optional(p).await.ok().flatten(),
+                DbPool::Postgres(p) => sqlx::query_as("SELECT hh_message_id FROM job_chat_messages WHERE chat_id = $1 ORDER BY id DESC LIMIT 1").bind(chat_id).fetch_optional(p).await.ok().flatten(),
+            };
 
-            // Build chat history for context
+            // Build chat history
+             let saved_messages: Vec<(String, String)> = match &self.pool {
+                DbPool::Sqlite(p) => sqlx::query_as("SELECT author_type, text FROM job_chat_messages WHERE chat_id = ? ORDER BY id").bind(chat_id).fetch_all(p).await.unwrap_or_default(),
+                DbPool::Postgres(p) => sqlx::query_as("SELECT author_type, text FROM job_chat_messages WHERE chat_id = $1 ORDER BY id").bind(chat_id).fetch_all(p).await.unwrap_or_default(),
+            };
             let mut chat_history = String::new();
-            let saved_messages: Vec<(String, String)> = sqlx::query_as(
-                "SELECT author_type, text FROM job_chat_messages WHERE chat_id = ? ORDER BY id"
-            )
-            .bind(chat_id)
-            .fetch_all(&self.pool)
-            .await
-            .unwrap_or_default();
+            for (author, text) in &saved_messages { chat_history.push_str(&format!("{}: {}\n", author, text)); }
 
-            for (author, text) in &saved_messages {
-                chat_history.push_str(&format!("{}: {}\n", author, text));
-            }
-
-            // Process new messages
             for message in messages.iter() {
                 let hh_msg_id = message["id"].as_str().map(|s| s.to_string());
                 let message_text = message["text"].as_str().unwrap_or("");
                 let author_type = message["author"]["participant_type"].as_str().unwrap_or("employer");
 
-                // Skip if already saved
                 if let Some(msg_id) = &hh_msg_id {
-                    if last_saved.as_ref().map(|(id,)| id == msg_id).unwrap_or(false) {
-                        continue;
-                    }
-                    // Check if already exists
-                    let exists: bool = sqlx::query_scalar(
-                        "SELECT COUNT(*) > 0 FROM job_chat_messages WHERE hh_message_id = ?"
-                    )
-                    .bind(msg_id)
-                    .fetch_one(&self.pool)
-                    .await
-                    .unwrap_or(true);
-
-                    if exists {
-                        continue;
-                    }
+                    if last_saved.as_ref().map(|(id,)| id == msg_id).unwrap_or(false) { continue; }
+                    let exists: bool = match &self.pool {
+                        DbPool::Sqlite(p) => sqlx::query_scalar("SELECT COUNT(*) > 0 FROM job_chat_messages WHERE hh_message_id = ?").bind(msg_id).fetch_one(p).await.unwrap_or(true),
+                        DbPool::Postgres(p) => sqlx::query_scalar("SELECT COUNT(*) > 0 FROM job_chat_messages WHERE hh_message_id = $1").bind(msg_id).fetch_one(p).await.unwrap_or(true),
+                    };
+                    if exists { continue; }
                 }
 
-                // Skip our own messages
                 if author_type == "applicant" {
-                    // Still save it for history
-                    sqlx::query(
-                        "INSERT INTO job_chat_messages (chat_id, hh_message_id, author_type, text)
-                         VALUES (?, ?, ?, ?)"
-                    )
-                    .bind(chat_id)
-                    .bind(&hh_msg_id)
-                    .bind(author_type)
-                    .bind(message_text)
-                    .execute(&self.pool)
-                    .await
-                    .ok();
+                    match &self.pool {
+                        DbPool::Sqlite(p) => { sqlx::query("INSERT INTO job_chat_messages (chat_id, hh_message_id, author_type, text) VALUES (?, ?, ?, ?)").bind(chat_id).bind(&hh_msg_id).bind(author_type).bind(message_text).execute(p).await.ok(); },
+                        DbPool::Postgres(p) => { sqlx::query("INSERT INTO job_chat_messages (chat_id, hh_message_id, author_type, text) VALUES ($1, $2, $3, $4)").bind(chat_id).bind(&hh_msg_id).bind(author_type).bind(message_text).execute(p).await.ok(); },
+                    };
                     continue;
                 }
 
                 println!("💬 New message in chat for: {}", title);
-
-                // Use AI to analyze the message
                 let analysis = ai_client.analyze_message(message_text, &chat_history).await;
-
                 let (ai_sentiment, ai_intent, is_bot, should_invite_tg) = match analysis {
-                    Ok(a) => (
-                        Some(a.sentiment.clone()),
-                        Some(a.intent.clone()),
-                        a.is_bot,
-                        a.should_invite_telegram && !telegram_invited,
-                    ),
-                    Err(e) => {
-                        eprintln!("⚠️  Message analysis failed: {}", e);
-                        (None, None, AIClient::is_bot_message(message_text), false)
-                    }
+                    Ok(a) => (Some(a.sentiment), Some(a.intent), a.is_bot, a.should_invite_telegram && !telegram_invited),
+                    Err(e) => { eprintln!("⚠️ Message analysis failed: {}", e); (None, None, AIClient::is_bot_message(message_text), false) }
                 };
 
                 // Save message
-                sqlx::query(
-                    "INSERT INTO job_chat_messages (chat_id, hh_message_id, author_type, text, ai_sentiment, ai_intent)
-                     VALUES (?, ?, ?, ?, ?, ?)"
-                )
-                .bind(chat_id)
-                .bind(&hh_msg_id)
-                .bind(author_type)
-                .bind(message_text)
-                .bind(&ai_sentiment)
-                .bind(&ai_intent)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => {
+                        sqlx::query("INSERT INTO job_chat_messages (chat_id, hh_message_id, author_type, text, ai_sentiment, ai_intent) VALUES (?, ?, ?, ?, ?, ?)")
+                        .bind(chat_id).bind(&hh_msg_id).bind(author_type).bind(message_text).bind(&ai_sentiment).bind(&ai_intent).execute(p).await.ok();
+                        sqlx::query("UPDATE job_chats_v2 SET last_message_at = datetime('now'), is_bot = ?, unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?")
+                        .bind(is_bot).bind(chat_id).execute(p).await.ok();
+                    },
+                    DbPool::Postgres(p) => {
+                        sqlx::query("INSERT INTO job_chat_messages (chat_id, hh_message_id, author_type, text, ai_sentiment, ai_intent) VALUES ($1, $2, $3, $4, $5, $6)")
+                        .bind(chat_id).bind(&hh_msg_id).bind(author_type).bind(message_text).bind(&ai_sentiment).bind(&ai_intent).execute(p).await.ok();
+                        sqlx::query("UPDATE job_chats_v2 SET last_message_at = NOW(), is_bot = $1, unread_count = unread_count + 1, updated_at = NOW() WHERE id = $2")
+                        .bind(is_bot).bind(chat_id).execute(p).await.ok();
+                    }
+                }
+                self.log_activity("chat", Some(vacancy_db_id), &format!("💬 Новое сообщение по {}: {} ({:?})", title, &message_text[..50.min(message_text.len())], ai_intent)).await.ok();
 
-                // Update chat
-                sqlx::query(
-                    "UPDATE job_chats_v2 SET last_message_at = datetime('now'), is_bot = ?, unread_count = unread_count + 1, updated_at = datetime('now')
-                     WHERE id = ?"
-                )
-                .bind(is_bot)
-                .bind(chat_id)
-                .execute(&self.pool)
-                .await
-                .ok();
-
-                // Log activity
-                self.log_activity(
-                    "chat",
-                    Some(vacancy_db_id),
-                    &format!("💬 Новое сообщение по {}: {} ({:?})", title, &message_text[..50.min(message_text.len())], ai_intent)
-                ).await.ok();
-
-                // If it's a bot, respond automatically
                 if is_bot {
-                    println!("🤖 Detected bot message, generating response...");
-
                     if let Ok(response) = ai_client.generate_chat_response(message_text, &resume_text, &title).await {
-                        if let Err(e) = hh_client.send_message(&hh_chat_id, &response).await {
-                            eprintln!("⚠️  Failed to send response: {}", e);
-                        } else {
-                            println!("✅ Sent auto-response to bot");
-
-                            // Save our response
-                            sqlx::query(
-                                "INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response)
-                                 VALUES (?, 'applicant', ?, 1)"
-                            )
-                            .bind(chat_id)
-                            .bind(&response)
-                            .execute(&self.pool)
-                            .await
-                            .ok();
-
+                        if hh_client.send_message(&hh_chat_id, &response).await.is_ok() {
+                             match &self.pool {
+                                DbPool::Sqlite(p) => { sqlx::query("INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response) VALUES (?, 'applicant', ?, 1)").bind(chat_id).bind(&response).execute(p).await.ok(); },
+                                DbPool::Postgres(p) => { sqlx::query("INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response) VALUES ($1, 'applicant', $2, TRUE)").bind(chat_id).bind(&response).execute(p).await.ok(); },
+                            };
                             self.log_activity("chat", Some(vacancy_db_id), "🤖 Отправлен автоответ боту").await.ok();
                         }
                     }
-                }
-                // If human and should invite to Telegram
-                else if should_invite_tg {
-                    println!("👤 Human recruiter detected, inviting to Telegram...");
-
+                } else if should_invite_tg {
                     if let Ok(invite) = ai_client.generate_telegram_invite(message_text, &telegram).await {
-                        // Don't send invite immediately with response - send response first
                         if let Ok(response) = ai_client.generate_chat_response(message_text, &resume_text, &title).await {
-                            let full_response = format!("{}\n\n{}", response, invite);
-
-                            if let Err(e) = hh_client.send_message(&hh_chat_id, &full_response).await {
-                                eprintln!("⚠️  Failed to send response with Telegram invite: {}", e);
-                            } else {
-                                // Mark as invited
-                                sqlx::query(
-                                    "UPDATE job_chats_v2 SET telegram_invited = 1, is_human_confirmed = 1 WHERE id = ?"
-                                )
-                                .bind(chat_id)
-                                .execute(&self.pool)
-                                .await
-                                .ok();
-
-                                // Save message
-                                sqlx::query(
-                                    "INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response)
-                                     VALUES (?, 'applicant', ?, 1)"
-                                )
-                                .bind(chat_id)
-                                .bind(&full_response)
-                                .execute(&self.pool)
-                                .await
-                                .ok();
-
-                                // Update daily stats
-                                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                                sqlx::query(
-                                    "UPDATE job_search_stats SET telegram_invites_sent = telegram_invites_sent + 1 WHERE date = ?"
-                                )
-                                .bind(&today)
-                                .execute(&self.pool)
-                                .await
-                                .ok();
-
+                             let full_response = format!("{}\n\n{}", response, invite);
+                             if hh_client.send_message(&hh_chat_id, &full_response).await.is_ok() {
+                                match &self.pool {
+                                    DbPool::Sqlite(p) => {
+                                        sqlx::query("UPDATE job_chats_v2 SET telegram_invited = 1, is_human_confirmed = 1 WHERE id = ?").bind(chat_id).execute(p).await.ok();
+                                        sqlx::query("INSERT INTO job_chat_messages (chat_id, author_type, text, is_auto_response) VALUES (?, 'applicant', ?, 1)").bind(chat_id).bind(&full_response).execute(p).await.ok();
+                                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                                        sqlx::query("UPDATE job_search_stats SET telegram_invites_sent = telegram_invites_sent + 1 WHERE date = ?").bind(&today).execute(p).await.ok();
+                                    },
+                                    DbPool::Postgres(p) => {
+                                        sqlx::query("UPDATE job_chats_v2 SET telegram_invited = TRUE, is_human_confirmed = TRUE WHERE id = $1").bind(chat_id).execute(p).await.ok();
+                                        sqlx::query("INSERT INTO job_chat_messages (chat_type, author_type, text, is_auto_response) VALUES ($1, 'applicant', $2, TRUE)").bind(chat_id).bind(&full_response).execute(p).await.ok();
+                                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                                        sqlx::query("UPDATE job_search_stats SET telegram_invites_sent = telegram_invites_sent + 1 WHERE date = $1").bind(&today).execute(p).await.ok();
+                                    }
+                                }
                                 self.log_activity("invite", Some(vacancy_db_id), "📲 Приглашение в Telegram отправлено").await.ok();
-                                println!("✅ Telegram invite sent");
-                            }
+                             }
                         }
                     }
                 }
-
-                // Update chat history for next iteration
                 chat_history.push_str(&format!("employer: {}\n", message_text));
             }
-
-            // Rate limiting
             sleep(Duration::from_secs(1)).await;
         }
-
         Ok(())
     }
 
     async fn get_resume_text(&self) -> Result<String, String> {
-        let about: Option<(String,)> = sqlx::query_as(
-            "SELECT description FROM portfolio_about ORDER BY id DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let about: Option<(String,)> = match &self.pool {
+            DbPool::Sqlite(p) => sqlx::query_as("SELECT description FROM portfolio_about ORDER BY id DESC LIMIT 1").fetch_optional(p).await.map_err(|e| e.to_string())?,
+            DbPool::Postgres(p) => sqlx::query_as("SELECT description FROM portfolio_about ORDER BY id DESC LIMIT 1").fetch_optional(p).await.map_err(|e| e.to_string())?,
+        };
 
         let about_text = about.map(|(d,)| d).unwrap_or_default();
 
-        let experiences: Vec<(String, String, String)> = sqlx::query_as(
-            "SELECT title, company, description FROM portfolio_experience ORDER BY date_from DESC"
-        )
-        .fetch_all(&self.pool)
-        .await
-        .unwrap_or_default();
+        let experiences: Vec<(String, String, String)> = match &self.pool {
+            DbPool::Sqlite(p) => sqlx::query_as("SELECT title, company, description FROM portfolio_experience ORDER BY date_from DESC").fetch_all(p).await.unwrap_or_default(),
+            DbPool::Postgres(p) => sqlx::query_as("SELECT title, company, description FROM portfolio_experience ORDER BY date_from DESC").fetch_all(p).await.unwrap_or_default(),
+        };
 
-        let skills: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM portfolio_skills"
-        )
-        .fetch_all(&self.pool)
-        .await
-        .unwrap_or_default();
+        let skills: Vec<(String,)> = match &self.pool {
+            DbPool::Sqlite(p) => sqlx::query_as("SELECT name FROM portfolio_skills").fetch_all(p).await.unwrap_or_default(),
+            DbPool::Postgres(p) => sqlx::query_as("SELECT name FROM portfolio_skills").fetch_all(p).await.unwrap_or_default(),
+        };
 
         let mut resume = format!("Обо мне:\n{}\n\n", about_text);
 
@@ -976,19 +911,15 @@ impl JobScheduler {
     }
 
     async fn get_contacts(&self) -> Result<(String, String), String> {
-        let telegram: Option<(String,)> = sqlx::query_as(
-            "SELECT value FROM portfolio_contacts WHERE type = 'telegram' LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
+        let telegram: Option<(String,)> = match &self.pool {
+            DbPool::Sqlite(p) => sqlx::query_as("SELECT value FROM portfolio_contacts WHERE type = 'telegram' LIMIT 1").fetch_optional(p).await.unwrap_or(None),
+            DbPool::Postgres(p) => sqlx::query_as("SELECT value FROM portfolio_contacts WHERE type = 'telegram' LIMIT 1").fetch_optional(p).await.unwrap_or(None),
+        };
 
-        let email: Option<(String,)> = sqlx::query_as(
-            "SELECT value FROM portfolio_contacts WHERE type = 'email' LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or(None);
+        let email: Option<(String,)> = match &self.pool {
+            DbPool::Sqlite(p) => sqlx::query_as("SELECT value FROM portfolio_contacts WHERE type = 'email' LIMIT 1").fetch_optional(p).await.unwrap_or(None),
+            DbPool::Postgres(p) => sqlx::query_as("SELECT value FROM portfolio_contacts WHERE type = 'email' LIMIT 1").fetch_optional(p).await.unwrap_or(None),
+        };
 
         let telegram = telegram.map(|(v,)| v).unwrap_or_else(|| "https://t.me/username".to_string());
         let email = email.map(|(v,)| v).unwrap_or_else(|| "email@example.com".to_string());
@@ -998,12 +929,26 @@ impl JobScheduler {
 
     async fn get_valid_token(&self) -> Result<String, String> {
         // Get latest token
-        let token_row: Option<(i32, String, String, String)> = sqlx::query_as(
-            "SELECT id, access_token, refresh_token, expires_at FROM hh_tokens ORDER BY id DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let token_row: Option<(i32, String, String, String)> = match &self.pool {
+            DbPool::Sqlite(p) => {
+                 sqlx::query_as(
+                    "SELECT id, access_token, refresh_token, expires_at FROM hh_tokens ORDER BY id DESC LIMIT 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?
+            }
+            DbPool::Postgres(p) => {
+                  let row: Option<(i32, String, String, chrono::DateTime<Utc>)> = sqlx::query_as(
+                    "SELECT id, access_token, refresh_token, expires_at FROM hh_tokens ORDER BY id DESC LIMIT 1"
+                )
+                .fetch_optional(p)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                row.map(|(id, access, refresh, expires)| (id, access, refresh, expires.to_rfc3339()))
+            }
+        };
 
         let (_id, access_token, refresh_token, expires_at) = match token_row {
             Some(row) => row,
@@ -1030,15 +975,30 @@ impl JobScheduler {
         let new_expires_at = Utc::now() + chrono::Duration::seconds(expires_in);
 
         // Save new token
-        sqlx::query(
-            "INSERT INTO hh_tokens (access_token, refresh_token, expires_at) VALUES (?, ?, ?)"
-        )
-        .bind(&new_access_token)
-        .bind(&new_refresh_token)
-        .bind(new_expires_at.to_rfc3339())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        match &self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    "INSERT INTO hh_tokens (access_token, refresh_token, expires_at) VALUES (?, ?, ?)"
+                )
+                .bind(&new_access_token)
+                .bind(&new_refresh_token)
+                .bind(new_expires_at.to_rfc3339())
+                .execute(p)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "INSERT INTO hh_tokens (access_token, refresh_token, expires_at) VALUES ($1, $2, $3)"
+                )
+                .bind(&new_access_token)
+                .bind(&new_refresh_token)
+                .bind(new_expires_at)
+                .execute(p)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
 
         println!("✅ HH token refreshed successfully");
         Ok(new_access_token)
@@ -1079,42 +1039,83 @@ impl JobScheduler {
             );
 
             // Check if exists
-            let existing: Option<(i32,)> = sqlx::query_as(
-                "SELECT id FROM anime_auction WHERE title = ? AND year = ?"
-            )
-            .bind(&row.title)
-            .bind(current_year)
-            .fetch_optional(&self.pool)
-            .await
-            .ok()
-            .flatten();
+            let existing: Option<(i32,)> = match &self.pool {
+                DbPool::Sqlite(p) => {
+                    sqlx::query_as("SELECT id FROM anime_auction WHERE title = ? AND year = ?")
+                        .bind(&row.title)
+                        .bind(current_year)
+                        .fetch_optional(p)
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                DbPool::Postgres(p) => {
+                    sqlx::query_as("SELECT id FROM anime_auction WHERE title = $1 AND year = $2")
+                        .bind(&row.title)
+                        .bind(current_year)
+                        .fetch_optional(p)
+                        .await
+                        .ok()
+                        .flatten()
+                }
+            };
 
             if existing.is_some() {
                 // Update existing
-                sqlx::query(
-                    r#"UPDATE anime_auction
-                    SET date = ?, watched = ?, season = ?, episodes = ?,
-                        voice_acting = ?, buyer = ?, chat_rating = ?,
-                        sheikh_rating = ?, streamer_rating = ?, vod_link = ?,
-                        sheets_url = ?, updated_at = datetime('now')
-                    WHERE title = ? AND year = ?"#
-                )
-                .bind(&row.date)
-                .bind(if row.watched { 1 } else { 0 })
-                .bind(&row.season)
-                .bind(&row.episodes)
-                .bind(&row.voice_acting)
-                .bind(&row.buyer)
-                .bind(row.chat_rating)
-                .bind(row.sheikh_rating)
-                .bind(row.streamer_rating)
-                .bind(&row.vod_link)
-                .bind(&sheets_url)
-                .bind(&row.title)
-                .bind(current_year)
-                .execute(&self.pool)
-                .await
-                .ok();
+                match &self.pool {
+                    DbPool::Sqlite(p) => {
+                         sqlx::query(
+                            r#"UPDATE anime_auction
+                            SET date = ?, watched = ?, season = ?, episodes = ?,
+                                voice_acting = ?, buyer = ?, chat_rating = ?,
+                                sheikh_rating = ?, streamer_rating = ?, vod_link = ?,
+                                sheets_url = ?, updated_at = datetime('now')
+                            WHERE title = ? AND year = ?"#
+                        )
+                        .bind(&row.date)
+                        .bind(if row.watched { 1 } else { 0 })
+                        .bind(&row.season)
+                        .bind(&row.episodes)
+                        .bind(&row.voice_acting)
+                        .bind(&row.buyer)
+                        .bind(row.chat_rating)
+                        .bind(row.sheikh_rating)
+                        .bind(row.streamer_rating)
+                        .bind(&row.vod_link)
+                        .bind(&sheets_url)
+                        .bind(&row.title)
+                        .bind(current_year)
+                        .execute(p)
+                        .await
+                        .ok();
+                    }
+                    DbPool::Postgres(p) => {
+                         sqlx::query(
+                            r#"UPDATE anime_auction
+                            SET date = $1, watched = $2, season = $3, episodes = $4,
+                                voice_acting = $5, buyer = $6, chat_rating = $7,
+                                sheikh_rating = $8, streamer_rating = $9, vod_link = $10,
+                                sheets_url = $11, updated_at = NOW()
+                            WHERE title = $12 AND year = $13"#
+                        )
+                        .bind(&row.date)
+                        .bind(row.watched)
+                        .bind(&row.season)
+                        .bind(&row.episodes)
+                        .bind(&row.voice_acting)
+                        .bind(&row.buyer)
+                        .bind(row.chat_rating)
+                        .bind(row.sheikh_rating)
+                        .bind(row.streamer_rating)
+                        .bind(&row.vod_link)
+                        .bind(&sheets_url)
+                        .bind(&row.title)
+                        .bind(current_year)
+                        .execute(p)
+                        .await
+                        .ok();
+                    }
+                }
 
                 total_synced += 1;
             }

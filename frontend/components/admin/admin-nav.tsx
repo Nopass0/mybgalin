@@ -51,6 +51,11 @@ const adminRoutes = [
     href: '/admin/alice',
   },
   {
+    label: 'n8n',
+    icon: Tv,
+    href: '/admin/n8n',
+  },
+  {
     label: 'Настройки меню',
     icon: Settings,
     href: '/admin/menu',

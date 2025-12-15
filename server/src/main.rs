@@ -52,17 +52,11 @@ async fn rocket() -> _ {
     let player_stats_client = cs2::PlayerStatsClient::new(steam_api_key.clone(), faceit_api_key.clone());
     let match_state_manager = cs2::MatchStateManager::new();
 
-    // Initialize job search system (SQLite only for now)
-    let job_scheduler = jobs::MaybeJobScheduler::new(match &pool {
-        db::DbPool::Sqlite(sqlite_pool) => {
-            let scheduler = jobs::JobScheduler::new(sqlite_pool.clone());
-            scheduler.clone().spawn_scheduler();
-            Some(scheduler)
-        }
-        db::DbPool::Postgres(_) => {
-            println!("⚠️  Job scheduler not available with PostgreSQL (SQLite-only feature)");
-            None
-        }
+    // Initialize job search system
+    let job_scheduler = jobs::MaybeJobScheduler::new({
+        let scheduler = jobs::JobScheduler::new(pool.clone());
+        scheduler.clone().start_background_task();
+        Some(scheduler)
     });
 
     // Initialize publish service

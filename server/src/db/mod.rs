@@ -1916,9 +1916,877 @@ async fn run_postgres_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
-    // Additional Postgres tables (Menu, T2, English, etc.) can be added here following same pattern
-    // For brevity, I'm including the core tables needed for the system to work
+    // === Job Search System (Remaining Tables) ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_chats_v2 (
+            id SERIAL PRIMARY KEY,
+            vacancy_id INTEGER NOT NULL REFERENCES job_vacancies(id) ON DELETE CASCADE,
+            hh_chat_id TEXT UNIQUE NOT NULL,
+            employer_name TEXT,
+            is_bot BOOLEAN DEFAULT FALSE,
+            is_human_confirmed BOOLEAN DEFAULT FALSE,
+            telegram_invited BOOLEAN DEFAULT FALSE,
+            last_message_at TIMESTAMPTZ,
+            unread_count INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
 
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_chat_messages (
+            id SERIAL PRIMARY KEY,
+            chat_id INTEGER NOT NULL REFERENCES job_chats_v2(id) ON DELETE CASCADE,
+            hh_message_id TEXT,
+            author_type TEXT NOT NULL,
+            text TEXT NOT NULL,
+            is_auto_response BOOLEAN DEFAULT FALSE,
+            ai_sentiment TEXT,
+            ai_intent TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON job_chat_messages(chat_id)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_responses (
+            id SERIAL PRIMARY KEY,
+            vacancy_id INTEGER NOT NULL REFERENCES job_vacancies(id) ON DELETE CASCADE,
+            hh_negotiation_id TEXT,
+            cover_letter TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'sent',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_responses_vacancy ON job_responses(vacancy_id)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_search_tags (
+            id SERIAL PRIMARY KEY,
+            tag_type TEXT NOT NULL,
+            value TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            search_count INTEGER DEFAULT 0,
+            found_count INTEGER DEFAULT 0,
+            applied_count INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(tag_type, value)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_activity_log (
+            id SERIAL PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            vacancy_id INTEGER REFERENCES job_vacancies(id) ON DELETE SET NULL,
+            description TEXT NOT NULL,
+            metadata TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS job_search_stats (
+            id SERIAL PRIMARY KEY,
+            date TEXT NOT NULL UNIQUE,
+            searches_count INTEGER DEFAULT 0,
+            vacancies_found INTEGER DEFAULT 0,
+            applications_sent INTEGER DEFAULT 0,
+            invitations_received INTEGER DEFAULT 0,
+            rejections_received INTEGER DEFAULT 0,
+            messages_sent INTEGER DEFAULT 0,
+            messages_received INTEGER DEFAULT 0,
+            telegram_invites_sent INTEGER DEFAULT 0,
+            avg_ai_score REAL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === Anime Auction System ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS anime_auction (
+            id SERIAL PRIMARY KEY,
+            date TEXT,
+            title TEXT NOT NULL,
+            watched BOOLEAN DEFAULT FALSE,
+            season TEXT,
+            episodes TEXT,
+            voice_acting TEXT,
+            buyer TEXT,
+            chat_rating REAL,
+            sheikh_rating REAL,
+            streamer_rating REAL,
+            vod_link TEXT,
+            sheets_url TEXT,
+            year INTEGER NOT NULL,
+            shikimori_id INTEGER,
+            shikimori_name TEXT,
+            shikimori_description TEXT,
+            shikimori_cover TEXT,
+            shikimori_score REAL,
+            shikimori_genres TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS anime_sync_progress (
+            id SERIAL PRIMARY KEY,
+            status TEXT NOT NULL,
+            current INTEGER DEFAULT 0,
+            total INTEGER DEFAULT 0,
+            message TEXT,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === CS2 Skin Studio ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS studio_users (
+            id SERIAL PRIMARY KEY,
+            steam_id TEXT UNIQUE NOT NULL,
+            persona_name TEXT NOT NULL,
+            avatar_url TEXT NOT NULL,
+            profile_url TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS studio_sessions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES studio_users(id) ON DELETE CASCADE,
+            token TEXT UNIQUE NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS studio_projects (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES studio_users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'sticker',
+            sticker_type TEXT NOT NULL DEFAULT 'paper',
+            thumbnail TEXT,
+            data TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === File Manager ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS file_folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id TEXT REFERENCES file_folders(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS stored_files (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            folder_id TEXT REFERENCES file_folders(id) ON DELETE SET NULL,
+            mime_type TEXT NOT NULL,
+            size BIGINT NOT NULL,
+            is_public BOOLEAN NOT NULL DEFAULT FALSE,
+            access_code TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === Cloud Sync ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sync_folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            api_key TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sync_files (
+            id TEXT PRIMARY KEY,
+            folder_id TEXT NOT NULL REFERENCES sync_folders(id) ON DELETE CASCADE,
+            path TEXT NOT NULL,
+            name TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            size BIGINT NOT NULL,
+            checksum TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(folder_id, path)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sync_clients (
+            id TEXT PRIMARY KEY,
+            folder_id TEXT NOT NULL REFERENCES sync_folders(id) ON DELETE CASCADE,
+            device_name TEXT NOT NULL,
+            last_sync_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === Link Shortener ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS short_links (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            original_url TEXT NOT NULL,
+            short_code TEXT UNIQUE NOT NULL,
+            external_short_url TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            redirect_to_studio BOOLEAN NOT NULL DEFAULT FALSE,
+            set_studio_flag BOOLEAN NOT NULL DEFAULT FALSE,
+            custom_js TEXT,
+            expires_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS link_clicks (
+            id SERIAL PRIMARY KEY,
+            link_id TEXT NOT NULL REFERENCES short_links(id) ON DELETE CASCADE,
+            ip_address TEXT,
+            user_agent TEXT,
+            referer TEXT,
+            country TEXT,
+            city TEXT,
+            device_type TEXT,
+            browser TEXT,
+            os TEXT,
+            is_bot BOOLEAN DEFAULT FALSE,
+            screen_width INTEGER,
+            screen_height INTEGER,
+            language TEXT,
+            timezone TEXT,
+            clicked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === T2 Sales System ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_stores (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            address TEXT NOT NULL,
+            admin_code TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_employees (
+            id SERIAL PRIMARY KEY,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            code TEXT UNIQUE NOT NULL,
+            is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_employee_stores (
+            id SERIAL PRIMARY KEY,
+            employee_id INTEGER NOT NULL REFERENCES t2_employees(id) ON DELETE CASCADE,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(employee_id, store_id)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_categories (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            icon TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Initial Data: T2 Categories
+    sqlx::query(
+        r#"
+        INSERT INTO t2_categories (id, name, icon) VALUES
+        (1, 'Смартфоны', 'smartphone'),
+        (2, 'Аксессуары', 'headphones'),
+        (3, 'SIM-карты', 'sim-card'),
+        (4, 'Услуги', 'wrench')
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_tags (
+            id SERIAL PRIMARY KEY,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#00bcd4',
+            description TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_products (
+            id SERIAL PRIMARY KEY,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            category_id INTEGER NOT NULL REFERENCES t2_categories(id),
+            name TEXT NOT NULL,
+            brand TEXT,
+            model TEXT,
+            price REAL NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            image_url TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_product_specs (
+            id SERIAL PRIMARY KEY,
+            product_id INTEGER NOT NULL REFERENCES t2_products(id) ON DELETE CASCADE,
+            spec_name TEXT NOT NULL,
+            spec_value TEXT NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_product_tags (
+            id SERIAL PRIMARY KEY,
+            product_id INTEGER NOT NULL REFERENCES t2_products(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES t2_tags(id) ON DELETE CASCADE,
+            UNIQUE(product_id, tag_id)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_tariffs (
+            id SERIAL PRIMARY KEY,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            minutes INTEGER,
+            sms INTEGER,
+            gb INTEGER,
+            unlimited_t2 BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_internet BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_sms BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_calls BOOLEAN NOT NULL DEFAULT FALSE,
+            unlimited_apps TEXT,
+            description TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_services (
+            id SERIAL PRIMARY KEY,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            description TEXT,
+            for_smartphones_only BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_sales (
+            id SERIAL PRIMARY KEY,
+            store_id INTEGER NOT NULL REFERENCES t2_stores(id) ON DELETE CASCADE,
+            employee_id INTEGER NOT NULL REFERENCES t2_employees(id) ON DELETE CASCADE,
+            customer_request TEXT,
+            customer_audio_url TEXT,
+            total_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'completed',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_sale_items (
+            id SERIAL PRIMARY KEY,
+            sale_id INTEGER NOT NULL REFERENCES t2_sales(id) ON DELETE CASCADE,
+            item_type TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            item_name TEXT NOT NULL,
+            item_details TEXT,
+            price REAL NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS t2_sessions (
+            id SERIAL PRIMARY KEY,
+            employee_id INTEGER NOT NULL REFERENCES t2_employees(id) ON DELETE CASCADE,
+            token TEXT UNIQUE NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Initial Data: T2 Store & Employee
+    sqlx::query(
+        r#"
+        INSERT INTO t2_stores (id, name, address, admin_code)
+        VALUES (1, 'Главный офис', 'Администрация', '00000')
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO t2_employees (id, store_id, name, code, is_admin)
+        VALUES (1, 1, 'Администратор', '12345', TRUE)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === English Learning System ===
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_categories (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            name_ru TEXT NOT NULL,
+            description TEXT,
+            icon TEXT,
+            color TEXT DEFAULT '#3b82f6',
+            word_count INTEGER DEFAULT 0,
+            display_order INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Initial Data: English Categories
+    sqlx::query(
+        r#"
+        INSERT INTO english_categories (id, name, name_ru, icon, color, display_order) VALUES
+        (1, 'Basic Vocabulary', 'Базовый словарь', 'book', '#3b82f6', 1),
+        (2, 'Travel', 'Путешествия', 'plane', '#10b981', 2),
+        (3, 'Business', 'Бизнес', 'briefcase', '#8b5cf6', 3),
+        (4, 'Technology', 'Технологии', 'cpu', '#f59e0b', 4),
+        (5, 'Food & Cooking', 'Еда и кулинария', 'utensils', '#ef4444', 5),
+        (6, 'Health & Body', 'Здоровье и тело', 'heart', '#ec4899', 6),
+        (7, 'Nature', 'Природа', 'leaf', '#22c55e', 7),
+        (8, 'Emotions', 'Эмоции', 'smile', '#f97316', 8),
+        (9, 'Phrasal Verbs', 'Фразовые глаголы', 'zap', '#6366f1', 9),
+        (10, 'Idioms', 'Идиомы', 'message-circle', '#14b8a6', 10)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_words (
+            id SERIAL PRIMARY KEY,
+            category_id INTEGER REFERENCES english_categories(id) ON DELETE SET NULL,
+            word TEXT NOT NULL,
+            transcription TEXT,
+            translation TEXT NOT NULL,
+            definition TEXT,
+            part_of_speech TEXT,
+            examples TEXT,
+            synonyms TEXT,
+            antonyms TEXT,
+            audio_url TEXT,
+            image_url TEXT,
+            difficulty INTEGER DEFAULT 1,
+            frequency INTEGER DEFAULT 0,
+            cefr_level TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_word_progress (
+            id SERIAL PRIMARY KEY,
+            word_id INTEGER NOT NULL REFERENCES english_words(id) ON DELETE CASCADE,
+            ease_factor REAL DEFAULT 2.5,
+            interval_days INTEGER DEFAULT 0,
+            repetitions INTEGER DEFAULT 0,
+            next_review TIMESTAMPTZ,
+            last_review TIMESTAMPTZ,
+            correct_count INTEGER DEFAULT 0,
+            incorrect_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'new',
+            mastery_level INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(word_id)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_grammar (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            title_ru TEXT NOT NULL,
+            category TEXT NOT NULL,
+            difficulty INTEGER DEFAULT 1,
+            cefr_level TEXT,
+            explanation TEXT NOT NULL,
+            explanation_ru TEXT NOT NULL,
+            examples TEXT,
+            common_mistakes TEXT,
+            tips TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_grammar_progress (
+            id SERIAL PRIMARY KEY,
+            grammar_id INTEGER NOT NULL REFERENCES english_grammar(id) ON DELETE CASCADE,
+            studied BOOLEAN DEFAULT FALSE,
+            mastery_level INTEGER DEFAULT 0,
+            quiz_score INTEGER,
+            last_studied TIMESTAMPTZ,
+            next_review TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(grammar_id)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_sentences (
+            id SERIAL PRIMARY KEY,
+            sentence TEXT NOT NULL,
+            translation TEXT NOT NULL,
+            audio_url TEXT,
+            difficulty INTEGER DEFAULT 1,
+            category TEXT,
+            grammar_focus TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_quiz_results (
+            id SERIAL PRIMARY KEY,
+            quiz_type TEXT NOT NULL,
+            category_id INTEGER REFERENCES english_categories(id) ON DELETE SET NULL,
+            score INTEGER NOT NULL,
+            total_questions INTEGER NOT NULL,
+            correct_answers INTEGER NOT NULL,
+            time_spent_seconds INTEGER,
+            details TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_daily_stats (
+            id SERIAL PRIMARY KEY,
+            date TEXT NOT NULL UNIQUE,
+            words_learned INTEGER DEFAULT 0,
+            words_reviewed INTEGER DEFAULT 0,
+            new_words_added INTEGER DEFAULT 0,
+            quizzes_completed INTEGER DEFAULT 0,
+            correct_answers INTEGER DEFAULT 0,
+            incorrect_answers INTEGER DEFAULT 0,
+            time_spent_minutes INTEGER DEFAULT 0,
+            streak_days INTEGER DEFAULT 0,
+            xp_earned INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_settings (
+            id SERIAL PRIMARY KEY,
+            daily_goal_words INTEGER DEFAULT 10,
+            daily_goal_minutes INTEGER DEFAULT 15,
+            preferred_difficulty INTEGER DEFAULT 2,
+            show_transcription BOOLEAN DEFAULT TRUE,
+            show_examples BOOLEAN DEFAULT TRUE,
+            auto_play_audio BOOLEAN DEFAULT TRUE,
+            review_notification BOOLEAN DEFAULT TRUE,
+            current_streak INTEGER DEFAULT 0,
+            longest_streak INTEGER DEFAULT 0,
+            total_xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 1,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO english_settings (id) VALUES (1)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_achievements (
+            id SERIAL PRIMARY KEY,
+            achievement_type TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            icon TEXT,
+            xp_reward INTEGER DEFAULT 0,
+            unlocked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Initial Data: English Achievements
+    sqlx::query(
+        r#"
+        INSERT INTO english_achievements (achievement_type, title, description, icon, xp_reward) VALUES
+        ('first_word', 'First Steps', 'Learn your first word', 'star', 10),
+        ('words_10', 'Vocabulary Builder', 'Learn 10 words', 'book-open', 50),
+        ('words_50', 'Word Collector', 'Learn 50 words', 'library', 100),
+        ('words_100', 'Lexicon Master', 'Learn 100 words', 'graduation-cap', 200),
+        ('words_500', 'Dictionary', 'Learn 500 words', 'book', 500),
+        ('streak_3', 'Consistent', '3 day streak', 'flame', 30),
+        ('streak_7', 'Week Warrior', '7 day streak', 'zap', 70),
+        ('streak_30', 'Monthly Master', '30 day streak', 'trophy', 300),
+        ('perfect_quiz', 'Perfect Score', 'Get 100% on a quiz', 'award', 50),
+        ('grammar_5', 'Grammar Guru', 'Master 5 grammar rules', 'check-circle', 100),
+        ('speed_demon', 'Speed Demon', 'Answer 10 questions in under 30 seconds', 'clock', 75)
+        ON CONFLICT (achievement_type) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_word_lists (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            is_public BOOLEAN DEFAULT FALSE,
+            word_ids TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS english_sessions (
+            id SERIAL PRIMARY KEY,
+            session_type TEXT NOT NULL,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ended_at TIMESTAMPTZ,
+            words_practiced INTEGER DEFAULT 0,
+            correct_count INTEGER DEFAULT 0,
+            incorrect_count INTEGER DEFAULT 0,
+            xp_earned INTEGER DEFAULT 0
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // === Menu Settings ===
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS menu_settings (

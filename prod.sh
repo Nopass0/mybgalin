@@ -43,6 +43,31 @@ else
     PACKAGE_MANAGER="npm"
 fi
 
+# Check for Docker
+if ! command -v docker &> /dev/null; then
+    echo -e "${BLUE}📦 Installing Docker...${NC}"
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+    rm get-docker.sh
+    usermod -aG docker $SUDO_USER
+fi
+
+# Check for Docker Compose
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    echo -e "${BLUE}📦 Installing Docker Compose...${NC}"
+    apt-get update
+    apt-get install -y docker-compose-plugin
+fi
+
+# Start Docker services (PostgreSQL + n8n)
+echo -e "${BLUE}🐳 Starting Docker services (PostgreSQL, n8n)...${NC}"
+cd "$(dirname "$0")"
+docker compose up -d
+
+# Wait for PostgreSQL to be ready
+echo -e "${BLUE}⏳ Waiting for PostgreSQL to be ready...${NC}"
+sleep 10
+
 # Build backend
 echo -e "${BLUE}🔨 Building backend...${NC}"
 cd server
@@ -136,6 +161,31 @@ server {
     # Backend API
     location /api/ {
         proxy_pass http://localhost:3001/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # n8n Workflow Automation
+    location /n8n/ {
+        proxy_pass http://localhost:5678/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        client_max_body_size 100M;
+    }
+
+    # n8n Webhooks
+    location /webhook/ {
+        proxy_pass http://localhost:5678/webhook/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

@@ -1,0 +1,26 @@
+<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->
+{
+	cs2_item_type = "CCS2EconNode_StickerKit"
+	CCS2EconNode_StickerKit = 
+	{
+		item_name = "#CSGO_Workshop"
+		description_string = "#CSGO_Workshop_EmptyString"
+		item_rarity = "common"
+		sticker_material_class = "StickerKit_Paper"
+		sticker_material_keys = 
+		{
+			"exposed_param.TextureColorSticker0" = "items/assets/stickers/workshop/example_paper.tga"
+			"exposed_param.TextureWearMaskSticker0" = "items/assets/stickers/workshop/example_paper_wearmask.tga"
+			"exposed_param.g_bAutomaticPBRColorFittingSticker0" = true
+			"exposed_param.g_vWearBiasSticker0.0" = 0.54
+			"exposed_param.g_vWearBiasSticker0.1" = -0.86
+			"exposed_param.g_fWearScratchesSticker0" = 0.6
+			"exposed_param.g_bPaperBackingSticker0" = true
+		}
+		image_inventory = "file://{images}/econ/stickers/workshop/example_paper.png"
+		associate_assets = 
+		[
+			resource_name:"stickers/workshop/example_paper.vmat",
+		]
+	}
+}

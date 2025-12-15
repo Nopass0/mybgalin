@@ -111,6 +111,52 @@ jobs:
               sudo apt-get install -y nginx
             fi
 
+            # Install Docker if not present
+            if ! command -v docker &> /dev/null; then
+              echo "Installing Docker..."
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sudo sh get-docker.sh
+              rm get-docker.sh
+              sudo usermod -aG docker $USER
+            fi
+
+            # Start Docker services (n8n)
+            echo "🐳 Starting Docker services (n8n)..."
+            cd /var/www/bgalin
+            
+            # Create n8n docker-compose for production (using Neon DB, not local postgres)
+            cat > docker-compose.prod.yml << 'DOCKEREOF'
+            version: '3.8'
+            services:
+              n8n:
+                image: n8nio/n8n:latest
+                restart: always
+                ports:
+                  - "5678:5678"
+                environment:
+                  - N8N_HOST=bgalin.ru
+                  - N8N_PORT=5678
+                  - N8N_PROTOCOL=https
+                  - N8N_PATH_PREFIX=/n8n
+                  - NODE_ENV=production
+                  - WEBHOOK_URL=https://bgalin.ru/webhook/
+                  - GENERIC_TIMEZONE=Europe/Moscow
+                  - NODE_FUNCTION_ALLOW_EXTERNAL=axios,zustand,zod,dayjs,lodash
+                  - DB_TYPE=postgresdb
+                  - DB_POSTGRESDB_HOST=${{ secrets.NEON_DB_HOST }}
+                  - DB_POSTGRESDB_PORT=5432
+                  - DB_POSTGRESDB_DATABASE=${{ secrets.NEON_DB_NAME }}
+                  - DB_POSTGRESDB_USER=${{ secrets.NEON_DB_USER }}
+                  - DB_POSTGRESDB_PASSWORD=${{ secrets.NEON_DB_PASSWORD }}
+                  - DB_POSTGRESDB_SSL_ENABLED=true
+                volumes:
+                  - n8n_data:/home/node/.n8n
+            volumes:
+              n8n_data:
+            DOCKEREOF
+
+            docker compose -f docker-compose.prod.yml up -d
+
             # Create/update .env file with secrets from GitHub
             echo "🔐 Updating environment variables..."
             cd server
@@ -133,6 +179,8 @@ jobs:
             ROCKET_ENV=production
             ALICE_CLIENT_ID=${{ secrets.ALICE_CLIENT_ID }}
             ALICE_CLIENT_SECRET=${{ secrets.ALICE_CLIENT_SECRET }}
+            N8N_API_URL=http://localhost:5678
+            N8N_API_KEY=${{ secrets.N8N_API_KEY }}
             ENVEOF
 
             # Ensure data directory exists for database
@@ -242,6 +290,31 @@ jobs:
                 # Alice Smart Home API (at root path)
                 location /alice/ {
                     proxy_pass http://localhost:3001/alice/;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                }
+
+                # n8n Workflow Automation
+                location /n8n/ {
+                    proxy_pass http://localhost:5678/;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade \$http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host \$host;
+                    proxy_cache_bypass \$http_upgrade;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                    proxy_buffering off;
+                    client_max_body_size 100M;
+                }
+
+                # n8n Webhooks
+                location /webhook/ {
+                    proxy_pass http://localhost:5678/webhook/;
                     proxy_http_version 1.1;
                     proxy_set_header Host \$host;
                     proxy_set_header X-Real-IP \$remote_addr;
