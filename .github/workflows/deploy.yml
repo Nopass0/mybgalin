@@ -41,16 +41,19 @@ jobs:
             sudo chown -R $USER:$USER /var/www/bgalin
             cd /var/www/bgalin
 
-            # Clone or update repository using git
+            # Clone or update repository using git with token authentication
             echo "📥 Fetching latest code..."
+            REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            
             if [ -d ".git" ]; then
-              # Repository exists, fetch and reset
+              # Repository exists, update remote URL and fetch
+              git remote set-url origin "$REPO_URL"
               git fetch origin main --depth=1
               git reset --hard origin/main
               git clean -fd
             else
-              # Clone repository
-              git clone --depth=1 https://github.com/${{ github.repository }}.git .
+              # Clone repository with token
+              git clone --depth=1 "$REPO_URL" .
             fi
 
             # Check and install system dependencies
