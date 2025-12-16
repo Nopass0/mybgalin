@@ -29,3 +29,5 @@ temp/
 
 # Node modules
 node_modules/
+sync_storage
+server/sync_storage

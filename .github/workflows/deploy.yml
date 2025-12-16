@@ -23,7 +23,7 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           timeout: 600s
           command_timeout: 60m
-          envs: GITHUB_TOKEN,GITHUB_REPOSITORY
+          envs: GTHUB_TOKEN,GITHUB_REPOSITORY
           script: |
             set -e
 
@@ -44,7 +44,7 @@ jobs:
 
             # Clone or update repository using git with token authentication
             echo "📥 Fetching latest code..."
-            REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            REPO_URL="https://x-access-token:${GTHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
             
             if [ -d ".git" ]; then
               # Repository exists, update remote URL and fetch
