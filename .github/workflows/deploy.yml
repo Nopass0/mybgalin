@@ -44,6 +44,12 @@ jobs:
           tag: latest-build
           overwrite: true
 
+      - name: Upload backend binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binary
+          path: server/target/aarch64-unknown-linux-musl/release/server.gz
+          retention-days: 1
   deploy:
     name: Deploy to Server
     runs-on: ubuntu-latest
@@ -53,20 +59,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Download backend binary
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-binary
-          path: ./backend-binary
+      # - name: Download backend binary
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: backend-binary
+      #     path: ./backend-binary
 
-      - name: Compress binary to release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: latest-build
-          files: ./backend-binary/server.gz
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
+      # - name: Compress binary to release
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     tag_name: latest-build
+      #     files: ./backend-binary/server.gz
+      #     prerelease: true
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
