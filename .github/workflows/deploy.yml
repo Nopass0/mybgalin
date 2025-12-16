@@ -15,8 +15,6 @@ jobs:
 
       - name: Deploy via SSH (git pull)
         uses: appleboy/ssh-action@master
-        env:
-          GH_TOKEN: ${{ secrets.GTHUB_TOKEN }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -25,7 +23,6 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           timeout: 600s
           command_timeout: 60m
-          envs: GH_TOKEN,GITHUB_REPOSITORY
           script: |
             set -e
 
@@ -44,9 +41,18 @@ jobs:
             sudo chown -R $USER:$USER /var/www/bgalin
             cd /var/www/bgalin
 
-            # Clone or update repository using git with token authentication
+            # Setup SSH key for GitHub (using the same key as SSH connection)
+            echo "🔑 Setting up SSH authentication..."
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            
+            # Add GitHub to known hosts
+            ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+            ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+            
+            # Clone or update repository using SSH
             echo "📥 Fetching latest code..."
-            REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            REPO_URL="git@github.com:Nopass0/mybgalin.git"
             
             if [ -d ".git" ]; then
               # Repository exists, update remote URL and fetch
@@ -55,7 +61,7 @@ jobs:
               git reset --hard origin/main
               git clean -fd
             else
-              # Clone repository with token
+              # Clone repository with SSH
               git clone --depth=1 "$REPO_URL" .
             fi
 
