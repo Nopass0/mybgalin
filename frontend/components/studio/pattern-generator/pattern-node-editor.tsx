@@ -2091,7 +2091,7 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
                 onDrag={handleNodeDrag}
                 onDelete={() => deleteNode(node.id)}
                 onPortClick={handlePortClick}
-                onParameterChange={updateParameter}
+                onParameterChange={(paramId, value) => updateParameter(node.id, paramId, value)}
                 getCategoryColor={getCategoryColor}
                 getCategoryHeaderColor={getCategoryHeaderColor}
                 connectingFrom={connectingFrom}
