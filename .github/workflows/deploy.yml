@@ -22,13 +22,13 @@ jobs:
       - name: Build Rust backend for ARM64
         working-directory: ./server
         run: |
-          cross build --release --target aarch64-unknown-linux-gnu
+          cross build --release --target aarch64-unknown-linux-musl
 
       - name: Upload backend binary
         uses: actions/upload-artifact@v4
         with:
           name: backend-binary
-          path: server/target/aarch64-unknown-linux-gnu/release/server
+          path: server/target/aarch64-unknown-linux-musl/release/server
           retention-days: 1
 
   deploy:
@@ -139,17 +139,10 @@ jobs:
             chmod +x server
             cd /var/www/bgalin
 
-            # Start n8n via Docker Compose
-            echo "🐳 Starting n8n..."
-            if command -v docker >/dev/null && sudo docker info >/dev/null 2>&1; then
-              if [ -f "docker-compose.yml" ]; then
-                echo "Found docker-compose.yml, starting n8n..."
-                sudo docker compose up -d n8n
-              else
-                echo "⚠️ docker-compose.yml not found"
-              fi
-            else
-              echo "⚠️ Docker not available (or no sudo access), skipping n8n"
+            # Install and configure n8n via NPM (Docker alternative for LXC)
+            if ! command -v n8n &> /dev/null; then
+               echo "Installing n8n via npm..."
+               sudo npm install -g n8n
             fi
 
             # Create/update .env file
@@ -209,12 +202,34 @@ jobs:
             fi
 
             # Restart services
+            # Restart Services
             echo "♻️ Restarting services..."
-            sudo systemctl daemon-reload
-            sudo systemctl start bgalin-backend.service || sudo systemctl restart bgalin-backend.service
+            
+            # Start/Restart n8n in PM2
+            if ! pm2 list | grep -q "n8n"; then
+               echo "Starting n8n..."
+               pm2 start n8n -- \
+               --start \
+               --tunnel \
+               --env NODE_ENV=production \
+               --env N8N_PORT=5678 \
+               --env N8N_HOST=bgalin.ru \
+               --env WEBHOOK_URL=https://bgalin.ru/webhook/ \
+               --env N8N_PROTOCOL=https \
+               --env N8N_PATH=''
+            else
+               pm2 restart n8n
+            fi
 
+            # Background: Restart Systemd Backend
+            sudo systemctl daemon-reload
+            sudo systemctl restart bgalin-backend.service
+
+            # Frontend PM2
             cd /var/www/bgalin/frontend
-            pm2 delete bgalin-frontend 2>/dev/null || true
+            if pm2 list | grep -q "bgalin-frontend"; then
+              pm2 delete bgalin-frontend 2>/dev/null || true
+            fi
             pm2 start ecosystem.config.js
             pm2 save
 
