@@ -82,25 +82,26 @@ jobs:
               sudo apt-get install -y build-essential pkg-config libssl-dev curl clang lld
             fi
 
+            # Source cargo env first - Rust might already be installed
+            source $HOME/.cargo/env 2>/dev/null || true
+            export PATH="$HOME/.cargo/bin:$PATH"
+            
             # Install Rust if not present
             if ! command -v cargo &> /dev/null; then
               echo "Installing Rust..."
               
-              # Create swap file if not exists (to prevent OOM during Rust install)
-              if [ ! -f /swapfile ] || ! swapon --show | grep -q /swapfile; then
-                echo "Creating swap file..."
-                sudo swapoff /swapfile 2>/dev/null || true
-                sudo rm -f /swapfile
-                sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
-                sudo chmod 600 /swapfile
-                sudo mkswap /swapfile
-                sudo swapon /swapfile
-                grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-              fi
-              
-              # Enable swap if exists but not active
-              if [ -f /swapfile ] && ! swapon --show | grep -q /swapfile; then
-                sudo swapon /swapfile || true
+              # Setup zram swap (more reliable than file swap on cloud VPS)
+              if ! swapon --show | grep -q 'zram\|swap'; then
+                echo "Setting up zram swap..."
+                sudo apt-get install -y zram-tools 2>/dev/null || {
+                  # Manual zram setup if zram-tools not available
+                  sudo modprobe zram num_devices=1 || true
+                  if [ -e /dev/zram0 ]; then
+                    echo "2G" | sudo tee /sys/block/zram0/disksize
+                    sudo mkswap /dev/zram0
+                    sudo swapon -p 100 /dev/zram0
+                  fi
+                }
               fi
               
               curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
