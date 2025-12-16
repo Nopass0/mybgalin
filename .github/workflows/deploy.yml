@@ -229,6 +229,18 @@ jobs:
             source $HOME/.cargo/env 2>/dev/null || true
             export PATH="$HOME/.cargo/bin:$PATH"
 
+            # Setup zram swap before build (to prevent OOM)
+            echo "Setting up memory for build..."
+            if ! swapon --show | grep -q 'zram\|swap'; then
+              echo "Enabling zram swap..."
+              sudo modprobe zram num_devices=1 2>/dev/null || true
+              if [ -e /dev/zram0 ]; then
+                echo "2G" | sudo tee /sys/block/zram0/disksize 2>/dev/null || true
+                sudo mkswap /dev/zram0 2>/dev/null || true
+                sudo swapon -p 100 /dev/zram0 2>/dev/null || true
+              fi
+            fi
+
             # Use sccache if available
             if command -v sccache &> /dev/null; then
               export RUSTC_WRAPPER=sccache
@@ -237,7 +249,9 @@ jobs:
               echo "Using sccache for faster builds..."
             fi
 
-            cargo build --release
+            # Limit parallelism to prevent OOM on low-memory VPS
+            export CARGO_BUILD_JOBS=1
+            cargo build --release -j 1
 
             # Show sccache stats
             if command -v sccache &> /dev/null; then
