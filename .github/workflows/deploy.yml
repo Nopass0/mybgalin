@@ -87,13 +87,15 @@ jobs:
               echo "Installing Rust..."
               
               # Create swap file if not exists (to prevent OOM during Rust install)
-              if [ ! -f /swapfile ]; then
+              if [ ! -f /swapfile ] || ! swapon --show | grep -q /swapfile; then
                 echo "Creating swap file..."
-                sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+                sudo swapoff /swapfile 2>/dev/null || true
+                sudo rm -f /swapfile
+                sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
                 sudo chmod 600 /swapfile
                 sudo mkswap /swapfile
                 sudo swapon /swapfile
-                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+                grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
               fi
               
               # Enable swap if exists but not active
