@@ -129,18 +129,17 @@ jobs:
             cd /var/www/bgalin/server/target/release
             
             # Download compressed binary from GitHub Release
-            wget -q -O server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz" || {
+            wget -q -O bgalin_server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz" || {
               echo "Failed to download binary, trying alternative..."
-              curl -sL -o server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz"
+              curl -sL -o bgalin_server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz"
             }
             
             # Decompress
-            gunzip -f server.gz
-            chmod +x server
+            gunzip -f bgalin_server.gz
+            chmod +x bgalin_server
             echo "🔍 Binary details:"
-            ls -la server
-            file server || echo "file command not found"
-            ldd server || echo "ldd not found or static binary"
+            ls -la bgalin_server
+            file bgalin_server || echo "file command not found"
             cd /var/www/bgalin
 
             # Install and configure n8n via NPM (Docker alternative for LXC)
@@ -151,8 +150,8 @@ jobs:
 
             # Create/update .env file
 
+            # Create/update .env file
             echo "🔐 Updating environment variables..."
-            cd server
             # Create/update .env file (using printf to avoid heredoc issues)
             printf "DATABASE_URL=${{ secrets.DATABASE_URL }}\n" > .env
             printf "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\n" >> .env
@@ -177,8 +176,8 @@ jobs:
 
             # Create data directory
             echo "📁 Creating data directory..."
-            mkdir -p /var/www/bgalin/server/data
-            chmod 755 /var/www/bgalin/server/data
+            mkdir -p /var/www/bgalin/data
+            chmod 755 /var/www/bgalin/data
 
             # Build frontend
             echo "🎨 Building frontend..."
@@ -189,7 +188,7 @@ jobs:
 
             # Setup systemd service
             echo "⚙️ Configuring systemd service..."
-            sudo printf "[Unit]\nDescription=BGalin Backend Service\nAfter=network.target\n\n[Service]\nType=simple\nUser=$USER\nWorkingDirectory=/var/www/bgalin/server\nEnvironmentFile=/var/www/bgalin/server/.env\nExecStart=/var/www/bgalin/server/target/release/server\nRestart=always\nRestartSec=10\nEnvironment=\"RUST_LOG=info\"\n\n[Install]\nWantedBy=multi-user.target\n" | sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null
+            sudo printf "[Unit]\nDescription=BGalin Backend Service\nAfter=network.target\n\n[Service]\nType=simple\nUser=$USER\nWorkingDirectory=/var/www/bgalin\nEnvironmentFile=/var/www/bgalin/.env\nExecStart=/var/www/bgalin/bgalin_server\nRestart=always\nRestartSec=10\nEnvironment=\"RUST_LOG=info\"\n\n[Install]\nWantedBy=multi-user.target\n" | sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null
             sudo systemctl daemon-reload
             sudo systemctl enable bgalin-backend.service
 
