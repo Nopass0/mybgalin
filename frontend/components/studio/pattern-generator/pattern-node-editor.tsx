@@ -1667,7 +1667,7 @@ export function PatternNodeEditor({ onClose, onPatternGenerated }: PatternNodeEd
         }
         case 'transform-distort': {
           const uv = getInput('uv').vector2 || { x, y };
-          const amount = getInput('amount').float ?? Number(params.strength) || 0.1;
+          const amount = getInput('amount').float ?? (Number(params.strength) || 0.1);
           const scale = Number(params.scale) || 5;
 
           const noiseX = perlin(permTable, uv.x * scale, uv.y * scale);
