@@ -181,7 +181,7 @@ jobs:
 
             # Build frontend
             echo "🎨 Building frontend..."
-            cd ../frontend
+            cd frontend
             rm -rf node_modules package-lock.json
             npm install --build-from-source
             NODE_ENV=production npm run build
