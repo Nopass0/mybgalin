@@ -25,7 +25,7 @@ jobs:
       - name: Build with Cross
         run: |
           cd server
-          cross build --release --target aarch64-unknown-linux-musl --features "vendored-openssl"
+          cross build --release --target aarch64-unknown-linux-musl
 
       - name: Compress binary
         run: |
