@@ -6,14 +6,63 @@ on:
       - main
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build Rust backend for ARM64
+        working-directory: ./server
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --target aarch64-unknown-linux-gnu
+
+      - name: Upload backend binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binary
+          path: server/target/aarch64-unknown-linux-gnu/release/server
+          retention-days: 1
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy via SSH (git pull)
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binary
+          path: ./backend-binary
+
+      - name: Copy binary to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "./backend-binary/server"
+          target: "/tmp/"
+
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -28,10 +77,7 @@ jobs:
 
             echo "🚀 Starting deployment..."
 
-            # Free up memory
-            sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null || true
-
-            # Stop services to free memory
+            # Stop services
             sudo systemctl stop bgalin-backend.service || true
             pm2 stop all || true
 
@@ -41,12 +87,10 @@ jobs:
             sudo chown -R $USER:$USER /var/www/bgalin
             cd /var/www/bgalin
 
-            # Setup SSH key for GitHub (using the same key as SSH connection)
+            # Setup SSH key for GitHub
             echo "🔑 Setting up SSH authentication..."
             mkdir -p ~/.ssh
             chmod 700 ~/.ssh
-            
-            # Add GitHub to known hosts
             ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             
@@ -55,145 +99,40 @@ jobs:
             REPO_URL="git@github.com:Nopass0/mybgalin.git"
             
             if [ -d ".git" ]; then
-              # Repository exists, update remote URL and fetch
               git remote set-url origin "$REPO_URL"
               git fetch origin main --depth=1
               git reset --hard origin/main
               git clean -fd
             else
-              # Clone repository with SSH
               git clone --depth=1 "$REPO_URL" .
             fi
 
-            # Check and install system dependencies
+            # Install system dependencies if needed
             echo "📦 Checking system dependencies..."
-
-            # Install git if not present
-            if ! command -v git &> /dev/null; then
-              echo "Installing git..."
-              sudo apt-get update
-              sudo apt-get install -y git
-            fi
-
-            # Install build essentials if not present
-            if ! dpkg -l | grep -q build-essential; then
-              echo "Installing build-essential..."
-              sudo apt-get update
-              sudo apt-get install -y build-essential pkg-config libssl-dev curl clang lld
-            fi
-
-            # Source cargo env first - Rust might already be installed
-            source $HOME/.cargo/env 2>/dev/null || true
-            export PATH="$HOME/.cargo/bin:$PATH"
             
-            # Install Rust if not present
-            if ! command -v cargo &> /dev/null; then
-              echo "Installing Rust..."
-              
-              # Setup zram swap (more reliable than file swap on cloud VPS)
-              if ! swapon --show | grep -q 'zram\|swap'; then
-                echo "Setting up zram swap..."
-                sudo apt-get install -y zram-tools 2>/dev/null || {
-                  # Manual zram setup if zram-tools not available
-                  sudo modprobe zram num_devices=1 || true
-                  if [ -e /dev/zram0 ]; then
-                    echo "2G" | sudo tee /sys/block/zram0/disksize
-                    sudo mkswap /dev/zram0
-                    sudo swapon -p 100 /dev/zram0
-                  fi
-                }
-              fi
-              
-              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-              source $HOME/.cargo/env
-              export PATH="$HOME/.cargo/bin:$PATH"
-            fi
-
-            # Install sccache for faster Rust builds
-            if ! command -v sccache &> /dev/null; then
-              echo "Installing sccache..."
-              source $HOME/.cargo/env 2>/dev/null || true
-              export PATH="$HOME/.cargo/bin:$PATH"
-              cargo install sccache || true
-            fi
-
-            # Install Node.js if not present
             if ! command -v node &> /dev/null; then
               echo "Installing Node.js..."
               curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
               sudo apt-get install -y nodejs
             fi
 
-            # Install Python for native module building
-            if ! command -v python3 &> /dev/null; then
-              echo "Installing Python..."
-              sudo apt-get install -y python3 python3-pip
-            fi
-
-            # Install PM2 if not present
             if ! command -v pm2 &> /dev/null; then
               echo "Installing PM2..."
               sudo npm install -g pm2
             fi
 
-            # Install nginx if not present
             if ! command -v nginx &> /dev/null; then
               echo "Installing nginx..."
               sudo apt-get install -y nginx
             fi
 
-            # Install Docker if not present (optional - may not work in LXC containers)
-            if ! command -v docker &> /dev/null; then
-              echo "Installing Docker..."
-              curl -fsSL https://get.docker.com -o get-docker.sh
-              sudo sh get-docker.sh || true
-              rm -f get-docker.sh
-              sudo usermod -aG docker $USER || true
-            fi
+            # Move pre-built backend binary
+            echo "📦 Installing backend binary..."
+            mkdir -p /var/www/bgalin/server/target/release
+            mv /tmp/backend-binary/server /var/www/bgalin/server/target/release/server
+            chmod +x /var/www/bgalin/server/target/release/server
 
-            # Start Docker services (n8n) - optional, skip if Docker not working
-            echo "🐳 Checking Docker availability..."
-            if docker info &> /dev/null; then
-              echo "Docker is running, starting n8n..."
-              cd /var/www/bgalin
-              
-              # Create n8n docker-compose for production (using Neon DB, not local postgres)
-              cat > docker-compose.prod.yml << 'DOCKEREOF'
-            version: '3.8'
-            services:
-              n8n:
-                image: n8nio/n8n:latest
-                restart: always
-                ports:
-                  - "5678:5678"
-                environment:
-                  - N8N_HOST=bgalin.ru
-                  - N8N_PORT=5678
-                  - N8N_PROTOCOL=https
-                  - N8N_PATH_PREFIX=/n8n
-                  - NODE_ENV=production
-                  - WEBHOOK_URL=https://bgalin.ru/webhook/
-                  - GENERIC_TIMEZONE=Europe/Moscow
-                  - NODE_FUNCTION_ALLOW_EXTERNAL=axios,zustand,zod,dayjs,lodash
-                  - DB_TYPE=postgresdb
-                  - DB_POSTGRESDB_HOST=${{ secrets.NEON_DB_HOST }}
-                  - DB_POSTGRESDB_PORT=5432
-                  - DB_POSTGRESDB_DATABASE=${{ secrets.NEON_DB_NAME }}
-                  - DB_POSTGRESDB_USER=${{ secrets.NEON_DB_USER }}
-                  - DB_POSTGRESDB_PASSWORD=${{ secrets.NEON_DB_PASSWORD }}
-                  - DB_POSTGRESDB_SSL_ENABLED=true
-                volumes:
-                  - n8n_data:/home/node/.n8n
-            volumes:
-              n8n_data:
-            DOCKEREOF
-
-              docker compose -f docker-compose.prod.yml up -d || echo "⚠️ Warning: n8n failed to start, continuing..."
-            else
-              echo "⚠️ Docker not available (LXC container?), skipping n8n..."
-            fi
-
-            # Create/update .env file with secrets from GitHub
+            # Create/update .env file
             echo "🔐 Updating environment variables..."
             cd server
             cat > .env << 'ENVEOF'
@@ -219,59 +158,19 @@ jobs:
             N8N_API_KEY=${{ secrets.N8N_API_KEY }}
             ENVEOF
 
-            # Ensure data directory exists for database
+            # Create data directory
             echo "📁 Creating data directory..."
             mkdir -p /var/www/bgalin/server/data
             chmod 755 /var/www/bgalin/server/data
 
-            # Build backend
-            echo "🔨 Building backend..."
-            source $HOME/.cargo/env 2>/dev/null || true
-            export PATH="$HOME/.cargo/bin:$PATH"
-
-            # Setup zram swap before build (to prevent OOM)
-            echo "Setting up memory for build..."
-            if ! swapon --show | grep -q 'zram\|swap'; then
-              echo "Enabling zram swap..."
-              sudo modprobe zram num_devices=1 2>/dev/null || true
-              if [ -e /dev/zram0 ]; then
-                echo "2G" | sudo tee /sys/block/zram0/disksize 2>/dev/null || true
-                sudo mkswap /dev/zram0 2>/dev/null || true
-                sudo swapon -p 100 /dev/zram0 2>/dev/null || true
-              fi
-            fi
-
-            # Use sccache if available
-            if command -v sccache &> /dev/null; then
-              export RUSTC_WRAPPER=sccache
-              export SCCACHE_DIR=/var/www/.sccache
-              mkdir -p $SCCACHE_DIR
-              echo "Using sccache for faster builds..."
-            fi
-
-            # Limit parallelism to prevent OOM on low-memory VPS
-            export CARGO_BUILD_JOBS=1
-            cargo build --release -j 1
-
-            # Show sccache stats
-            if command -v sccache &> /dev/null; then
-              sccache --show-stats || true
-            fi
-
             # Build frontend
             echo "🎨 Building frontend..."
             cd ../frontend
-
-            # Clean install to ensure native modules are built for the correct architecture
-            echo "📦 Installing frontend dependencies..."
             rm -rf node_modules package-lock.json
-
-            # Install dependencies with proper flags for native modules
             npm install --build-from-source
-
             NODE_ENV=production npm run build
 
-            # Setup/update systemd service
+            # Setup systemd service
             echo "⚙️ Configuring systemd service..."
             sudo bash -c "cat > /etc/systemd/system/bgalin-backend.service << 'EOF'
             [Unit]
@@ -294,7 +193,7 @@ jobs:
             sudo systemctl daemon-reload
             sudo systemctl enable bgalin-backend.service
 
-            # Setup/update nginx config
+            # Setup nginx
             echo "🌐 Configuring nginx..."
             sudo bash -c "cat > /etc/nginx/sites-available/bgalin << 'EOF'
             server {
@@ -314,7 +213,6 @@ jobs:
                 ssl_ciphers HIGH:!aNULL:!MD5;
                 ssl_prefer_server_ciphers on;
 
-                # Frontend
                 location / {
                     proxy_pass http://localhost:3000;
                     proxy_http_version 1.1;
@@ -327,7 +225,6 @@ jobs:
                     proxy_set_header X-Forwarded-Proto \$scheme;
                 }
 
-                # Backend API
                 location /api/ {
                     proxy_pass http://localhost:3001/api/;
                     proxy_http_version 1.1;
@@ -337,7 +234,6 @@ jobs:
                     proxy_set_header X-Forwarded-Proto \$scheme;
                 }
 
-                # Alice Smart Home API (at root path)
                 location /alice/ {
                     proxy_pass http://localhost:3001/alice/;
                     proxy_http_version 1.1;
@@ -347,38 +243,11 @@ jobs:
                     proxy_set_header X-Forwarded-Proto \$scheme;
                 }
 
-                # n8n Workflow Automation
-                location /n8n/ {
-                    proxy_pass http://localhost:5678/;
-                    proxy_http_version 1.1;
-                    proxy_set_header Upgrade \$http_upgrade;
-                    proxy_set_header Connection 'upgrade';
-                    proxy_set_header Host \$host;
-                    proxy_cache_bypass \$http_upgrade;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                    proxy_buffering off;
-                    client_max_body_size 100M;
-                }
+                add_header X-Frame-Options "SAMEORIGIN" always;
+                add_header X-Content-Type-Options "nosniff" always;
+                add_header X-XSS-Protection "1; mode=block" always;
+                add_header Referrer-Policy "no-referrer-when-downgrade" always;
 
-                # n8n Webhooks
-                location /webhook/ {
-                    proxy_pass http://localhost:5678/webhook/;
-                    proxy_http_version 1.1;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                }
-
-                # Security headers
-                add_header X-Frame-Options \"SAMEORIGIN\" always;
-                add_header X-Content-Type-Options \"nosniff\" always;
-                add_header X-XSS-Protection \"1; mode=block\" always;
-                add_header Referrer-Policy \"no-referrer-when-downgrade\" always;
-
-                # Logging
                 access_log /var/log/nginx/bgalin_access.log;
                 error_log /var/log/nginx/bgalin_error.log;
             }
@@ -386,7 +255,7 @@ jobs:
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/
             sudo rm -f /etc/nginx/sites-enabled/default
 
-            # Setup PM2 ecosystem if not exists
+            # Setup PM2 config
             if [ ! -f "/var/www/bgalin/frontend/ecosystem.config.js" ]; then
               echo "📦 Creating PM2 config..."
               cat > /var/www/bgalin/frontend/ecosystem.config.js << 'EOF'
@@ -409,51 +278,26 @@ jobs:
             EOF
             fi
 
-            # Configure sudo for deployment user
-            if [ ! -f "/etc/sudoers.d/bgalin-deploy" ]; then
-              echo "🔐 Configuring sudo..."
-              sudo bash -c "cat > /etc/sudoers.d/bgalin-deploy << 'EOF'
-            $USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bgalin-backend.service
-            $USER ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
-            $USER ALL=(ALL) NOPASSWD: /bin/systemctl is-active bgalin-backend.service
-            $USER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
-            $USER ALL=(ALL) NOPASSWD: /bin/systemctl enable bgalin-backend.service
-            $USER ALL=(ALL) NOPASSWD: /usr/sbin/nginx
-            EOF"
-              sudo chmod 0440 /etc/sudoers.d/bgalin-deploy
-            fi
-
             # Restart services
             echo "♻️ Restarting services..."
-
-            # Start/restart backend
             sudo systemctl daemon-reload
             sudo systemctl start bgalin-backend.service || sudo systemctl restart bgalin-backend.service
 
-            # Start/restart frontend
             cd /var/www/bgalin/frontend
             pm2 delete bgalin-frontend 2>/dev/null || true
             pm2 start ecosystem.config.js
             pm2 save
 
-            # Test and reload nginx
-            echo "🔍 Testing nginx configuration..."
             sudo nginx -t
-
-            echo "♻️ Reloading nginx..."
             sudo systemctl reload nginx
 
-            # Check service status
             echo "✅ Checking service status..."
             sudo systemctl is-active bgalin-backend.service
             pm2 list | grep bgalin-frontend
 
-            echo "📋 Nginx configuration for API:"
-            sudo grep -A 5 "location /api/" /etc/nginx/sites-available/bgalin
-
             echo "🎉 Deployment completed successfully!"
 
-            # Send notification to Telegram
+            # Send Telegram notification
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
               -d chat_id="${{ secrets.ADMIN_TELEGRAM_ID }}" \
               -d text="✅ Deployment to bgalin.ru completed successfully!%0ACommit: ${{ github.event.head_commit.message }}%0AAuthor: ${{ github.actor }}" \
