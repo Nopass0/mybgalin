@@ -6,58 +6,53 @@ on:
       - main
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+  # build:
+  #   runs-on: ubuntu-latest
+  #   
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v3
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+  #     - name: Install cross
+  #       run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build Rust backend for ARM64
-        working-directory: ./server
-        run: |
-          cross build --release --target aarch64-unknown-linux-musl
+  #     - name: Build Rust backend for ARM64
+  #       working-directory: ./server
+  #       run: |
+  #         cross build --release --target aarch64-unknown-linux-musl
 
-      - name: Upload backend binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-binary
-          path: server/target/aarch64-unknown-linux-musl/release/server
-          retention-days: 1
+  #     - name: Upload backend binary
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: backend-binary
+  #         path: server/target/aarch64-unknown-linux-musl/release/server
+  #         retention-days: 1
 
   deploy:
-    needs: build
+    # needs: build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Download backend binary
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-binary
-          path: ./backend-binary
+      # - name: Download backend binary
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: backend-binary
+      #     path: ./backend-binary
 
-      - name: Compress binary with maximum compression
-        run: |
-          gzip -9 ./backend-binary/server
-          ls -la ./backend-binary/
-
-      - name: Upload binary to release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: latest-build
-          files: ./backend-binary/server.gz
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
+      # - name: Compress binary to release
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     tag_name: latest-build
+      #     files: ./backend-binary/server.gz
+      #     prerelease: true
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
@@ -213,13 +208,13 @@ jobs:
                echo "Starting n8n..."
                pm2 start n8n -- \
                --start \
-               --tunnel \
                --env NODE_ENV=production \
                --env N8N_PORT=5678 \
+               --env N8N_LISTEN_ADDRESS=0.0.0.0 \
                --env N8N_HOST=bgalin.ru \
                --env WEBHOOK_URL=https://bgalin.ru/webhook/ \
                --env N8N_PROTOCOL=https \
-               --env N8N_PATH=''
+               --env N8N_PATH=/n8n/
             else
                pm2 restart n8n
             fi

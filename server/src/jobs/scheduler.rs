@@ -361,8 +361,8 @@ impl JobScheduler {
 
             // Update tag search count
             match &self.pool {
-                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = ?").bind(query).execute(p).await.ok(); },
-                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = $1").bind(query).execute(p).await.ok(); },
+                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = ?").bind(query).execute(p).await.map(|_| ()).ok(); },
+                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET search_count = search_count + 1 WHERE tag_type = 'query' AND value = $1").bind(query).execute(p).await.map(|_| ()).ok(); },
             }
 
             // Search vacancies
@@ -390,8 +390,8 @@ impl JobScheduler {
 
             // Update tag found count
             match &self.pool {
-                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET found_count = found_count + ? WHERE tag_type = 'query' AND value = ?").bind(found_count as i32).bind(query).execute(p).await.ok(); },
-                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET found_count = found_count + $1 WHERE tag_type = 'query' AND value = $2").bind(found_count as i32).bind(query).execute(p).await.ok(); },
+                DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET found_count = found_count + ? WHERE tag_type = 'query' AND value = ?").bind(found_count as i32).bind(query).execute(p).await.map(|_| ()).ok(); },
+                DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET found_count = found_count + $1 WHERE tag_type = 'query' AND value = $2").bind(found_count as i32).bind(query).execute(p).await.map(|_| ()).ok(); },
             }
 
             for vacancy in vacancies {
@@ -465,7 +465,7 @@ impl JobScheduler {
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         )
                         .bind(vacancy_id).bind(title).bind(company).bind(v_salary_from).bind(v_salary_to).bind(&salary_currency).bind(description).bind(url).bind(status).bind(ai_score).bind(&ai_recommendation).bind(ai_priority).bind(&ai_match_reasons).bind(&ai_concerns).bind(&ai_salary_assessment)
-                        .execute(p).await.ok();
+                        .execute(p).await.map(|_| ()).ok();
                     }
                     DbPool::Postgres(p) => {
                         sqlx::query(
@@ -473,7 +473,7 @@ impl JobScheduler {
                              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"
                         )
                         .bind(vacancy_id).bind(title).bind(company).bind(v_salary_from).bind(v_salary_to).bind(&salary_currency).bind(description).bind(url).bind(status).bind(ai_score).bind(&ai_recommendation).bind(ai_priority).bind(&ai_match_reasons).bind(&ai_concerns).bind(&ai_salary_assessment)
-                        .execute(p).await.ok();
+                        .execute(p).await.map(|_| ()).ok();
                     }
                 }
 
@@ -516,8 +516,8 @@ impl JobScheduler {
 
                 // Update vacancy status
                 match &self.pool {
-                    DbPool::Sqlite(p) => { sqlx::query("UPDATE job_vacancies SET status = 'applied', applied_at = datetime('now') WHERE id = ?").bind(vacancy_db_id).execute(p).await.ok(); },
-                    DbPool::Postgres(p) => { sqlx::query("UPDATE job_vacancies SET status = 'applied', applied_at = NOW() WHERE id = $1").bind(vacancy_db_id).execute(p).await.ok(); },
+                    DbPool::Sqlite(p) => { sqlx::query("UPDATE job_vacancies SET status = 'applied', applied_at = datetime('now') WHERE id = ?").bind(vacancy_db_id).execute(p).await.map(|_| ()).ok(); },
+                    DbPool::Postgres(p) => { sqlx::query("UPDATE job_vacancies SET status = 'applied', applied_at = NOW() WHERE id = $1").bind(vacancy_db_id).execute(p).await.map(|_| ()).ok(); },
                 }
 
                 // Save response
@@ -577,8 +577,8 @@ impl JobScheduler {
 
                 // Update tag applied count
                 match &self.pool {
-                    DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = ?").bind(query).execute(p).await.ok(); },
-                    DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = $1").bind(query).execute(p).await.ok(); },
+                    DbPool::Sqlite(p) => { sqlx::query("UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = ?").bind(query).execute(p).await.map(|_| ()).ok(); },
+                    DbPool::Postgres(p) => { sqlx::query("UPDATE job_search_tags SET applied_count = applied_count + 1 WHERE tag_type = 'query' AND value = $1").bind(query).execute(p).await.map(|_| ()).ok(); },
                 }
 
                 total_applied += 1;
