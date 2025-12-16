@@ -135,11 +135,12 @@ jobs:
             }
             
             # Decompress
-            # Decompress and move to expected location
             gunzip -f server.gz
             chmod +x server
-            mkdir -p server/target/release
-            mv server server/target/release/
+            echo "🔍 Binary details:"
+            ls -la server
+            file server || echo "file command not found"
+            ldd server || echo "ldd not found or static binary"
             cd /var/www/bgalin
 
             # Install and configure n8n via NPM (Docker alternative for LXC)
@@ -262,12 +263,12 @@ jobs:
 
             # Check n8n status
             echo "Checking n8n status..."
-            for i in {1..10}; do
-              if netstat -tuln | grep -q ":5678"; then
-                echo "n8n is listening on port 5678!"
+            for i in {1..20}; do
+              if curl -s http://localhost:5678 > /dev/null; then
+                echo "n8n is responding!"
                 break
               fi
-              echo "Waiting for n8n to start... ($i/10)"
+              echo "Waiting for n8n to start... ($i/20)"
               sleep 3
             done
 
