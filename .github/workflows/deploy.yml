@@ -139,31 +139,44 @@ jobs:
             chmod +x server
             cd /var/www/bgalin
 
+            # Start n8n via Docker Compose
+            echo "🐳 Starting n8n..."
+            if command -v docker >/dev/null && docker info >/dev/null; then
+              if [ -f "docker-compose.yml" ]; then
+                echo "Found docker-compose.yml, starting n8n..."
+                sudo docker compose up -d n8n
+              else
+                echo "⚠️ docker-compose.yml not found"
+              fi
+            else
+              echo "⚠️ Docker not available, skipping n8n"
+            fi
+
             # Create/update .env file
+
             echo "🔐 Updating environment variables..."
             cd server
-            cat > .env << 'ENVEOF'
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-            ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}
-            STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}
-            STEAM_ID=${{ secrets.STEAM_ID }}
-            FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}
-            GSI_AUTH_TOKEN=${{ secrets.GSI_AUTH_TOKEN }}
-            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
-            AI_MODEL=${{ secrets.AI_MODEL }}
-            HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}
-            HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}
-            HH_REDIRECT_URI=https://bgalin.ru/auth/hh/callback
-            JOB_SEARCH_INTERVAL_HOURS=${{ secrets.JOB_SEARCH_INTERVAL_HOURS }}
-            ROCKET_ADDRESS=0.0.0.0
-            ROCKET_PORT=3001
-            ROCKET_ENV=production
-            ALICE_CLIENT_ID=${{ secrets.ALICE_CLIENT_ID }}
-            ALICE_CLIENT_SECRET=${{ secrets.ALICE_CLIENT_SECRET }}
-            N8N_API_URL=http://localhost:5678
-            N8N_API_KEY=${{ secrets.N8N_API_KEY }}
-            ENVEOF
+            # Create/update .env file (using printf to avoid heredoc issues)
+            printf "DATABASE_URL=${{ secrets.DATABASE_URL }}\n" > .env
+            printf "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\n" >> .env
+            printf "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}\n" >> .env
+            printf "STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}\n" >> .env
+            printf "STEAM_ID=${{ secrets.STEAM_ID }}\n" >> .env
+            printf "FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}\n" >> .env
+            printf "GSI_AUTH_TOKEN=${{ secrets.GSI_AUTH_TOKEN }}\n" >> .env
+            printf "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}\n" >> .env
+            printf "AI_MODEL=${{ secrets.AI_MODEL }}\n" >> .env
+            printf "HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}\n" >> .env
+            printf "HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}\n" >> .env
+            printf "HH_REDIRECT_URI=https://bgalin.ru/auth/hh/callback\n" >> .env
+            printf "JOB_SEARCH_INTERVAL_HOURS=${{ secrets.JOB_SEARCH_INTERVAL_HOURS }}\n" >> .env
+            printf "ROCKET_ADDRESS=0.0.0.0\n" >> .env
+            printf "ROCKET_PORT=3001\n" >> .env
+            printf "ROCKET_ENV=production\n" >> .env
+            printf "ALICE_CLIENT_ID=${{ secrets.ALICE_CLIENT_ID }}\n" >> .env
+            printf "ALICE_CLIENT_SECRET=${{ secrets.ALICE_CLIENT_SECRET }}\n" >> .env
+            printf "N8N_API_URL=http://localhost:5678\n" >> .env
+            printf "N8N_API_KEY=${{ secrets.N8N_API_KEY }}\n" >> .env
 
             # Create data directory
             echo "📁 Creating data directory..."
@@ -179,110 +192,20 @@ jobs:
 
             # Setup systemd service
             echo "⚙️ Configuring systemd service..."
-            sudo bash -c "cat > /etc/systemd/system/bgalin-backend.service << 'EOF'
-            [Unit]
-            Description=BGalin Backend Service
-            After=network.target
-
-            [Service]
-            Type=simple
-            User=$USER
-            WorkingDirectory=/var/www/bgalin/server
-            EnvironmentFile=/var/www/bgalin/server/.env
-            ExecStart=/var/www/bgalin/server/target/release/server
-            Restart=always
-            RestartSec=10
-            Environment=\"RUST_LOG=info\"
-
-            [Install]
-            WantedBy=multi-user.target
-            EOF"
+            sudo printf "[Unit]\nDescription=BGalin Backend Service\nAfter=network.target\n\n[Service]\nType=simple\nUser=$USER\nWorkingDirectory=/var/www/bgalin/server\nEnvironmentFile=/var/www/bgalin/server/.env\nExecStart=/var/www/bgalin/server/target/release/server\nRestart=always\nRestartSec=10\nEnvironment=\"RUST_LOG=info\"\n\n[Install]\nWantedBy=multi-user.target\n" | sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null
             sudo systemctl daemon-reload
             sudo systemctl enable bgalin-backend.service
 
             # Setup nginx
             echo "🌐 Configuring nginx..."
-            sudo bash -c "cat > /etc/nginx/sites-available/bgalin << 'EOF'
-            server {
-                listen 80;
-                server_name bgalin.ru www.bgalin.ru;
-                return 301 https://\$server_name\$request_uri;
-            }
-
-            server {
-                listen 443 ssl http2;
-                server_name bgalin.ru www.bgalin.ru;
-
-                ssl_certificate /var/www/bgalin/bgalin_ru.crt;
-                ssl_certificate_key /var/www/bgalin/private.key;
-
-                ssl_protocols TLSv1.2 TLSv1.3;
-                ssl_ciphers HIGH:!aNULL:!MD5;
-                ssl_prefer_server_ciphers on;
-
-                location / {
-                    proxy_pass http://localhost:3000;
-                    proxy_http_version 1.1;
-                    proxy_set_header Upgrade \$http_upgrade;
-                    proxy_set_header Connection 'upgrade';
-                    proxy_set_header Host \$host;
-                    proxy_cache_bypass \$http_upgrade;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                }
-
-                location /api/ {
-                    proxy_pass http://localhost:3001/api/;
-                    proxy_http_version 1.1;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                }
-
-                location /alice/ {
-                    proxy_pass http://localhost:3001/alice/;
-                    proxy_http_version 1.1;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                }
-
-                add_header X-Frame-Options "SAMEORIGIN" always;
-                add_header X-Content-Type-Options "nosniff" always;
-                add_header X-XSS-Protection "1; mode=block" always;
-                add_header Referrer-Policy "no-referrer-when-downgrade" always;
-
-                access_log /var/log/nginx/bgalin_access.log;
-                error_log /var/log/nginx/bgalin_error.log;
-            }
-            EOF"
+            sudo printf "server {\n    listen 80;\n    server_name bgalin.ru www.bgalin.ru;\n    return 301 https://\$server_name\$request_uri;\n}\n\nserver {\n    listen 443 ssl http2;\n    server_name bgalin.ru www.bgalin.ru;\n\n    ssl_certificate /var/www/bgalin/bgalin_ru.crt;\n    ssl_certificate_key /var/www/bgalin/private.key;\n\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers HIGH:!aNULL:!MD5;\n    ssl_prefer_server_ciphers on;\n\n    location / {\n        proxy_pass http://localhost:3000;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade \$http_upgrade;\n        proxy_set_header Connection 'upgrade';\n        proxy_set_header Host \$host;\n        proxy_cache_bypass \$http_upgrade;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n    }\n\n    location /api/ {\n        proxy_pass http://localhost:3001/api/;\n        proxy_http_version 1.1;\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n    }\n\n    location /alice/ {\n        proxy_pass http://localhost:3001/alice/;\n        proxy_http_version 1.1;\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n    }\n\n    location /n8n/ {\n        proxy_pass http://localhost:5678/;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade \$http_upgrade;\n        proxy_set_header Connection 'upgrade';\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n        proxy_buffering off;\n        chunked_transfer_encoding off;\n        proxy_cache off;\n    }\n\n    location /webhook/ {\n        proxy_pass http://localhost:5678/webhook/;\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n        proxy_buffering off;\n        chunked_transfer_encoding off;\n        proxy_cache off;\n    }\n\n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n    add_header Referrer-Policy \"no-referrer-when-downgrade\" always;\n\n    access_log /var/log/nginx/bgalin_access.log;\n    error_log /var/log/nginx/bgalin_error.log;\n}\n" | sudo tee /etc/nginx/sites-available/bgalin > /dev/null
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/
             sudo rm -f /etc/nginx/sites-enabled/default
 
             # Setup PM2 config
             if [ ! -f "/var/www/bgalin/frontend/ecosystem.config.js" ]; then
               echo "📦 Creating PM2 config..."
-              cat > /var/www/bgalin/frontend/ecosystem.config.js << 'EOF'
-            module.exports = {
-              apps: [{
-                name: 'bgalin-frontend',
-                script: 'node_modules/next/dist/bin/next',
-                args: 'start',
-                cwd: '/var/www/bgalin/frontend',
-                instances: 1,
-                autorestart: true,
-                watch: false,
-                max_memory_restart: '1G',
-                env: {
-                  NODE_ENV: 'production',
-                  PORT: 3000
-                }
-              }]
-            };
-            EOF
+              printf "module.exports = {\n  apps: [{\n    name: 'bgalin-frontend',\n    script: 'node_modules/next/dist/bin/next',\n    args: 'start',\n    cwd: '/var/www/bgalin/frontend',\n    instances: 1,\n    autorestart: true,\n    watch: false,\n    max_memory_restart: '1G',\n    env: {\n      NODE_ENV: 'production',\n      PORT: 3000\n    }\n  }]\n};\n" > /var/www/bgalin/frontend/ecosystem.config.js
             fi
 
             # Restart services
