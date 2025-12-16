@@ -142,21 +142,23 @@ jobs:
               sudo apt-get install -y nginx
             fi
 
-            # Install Docker if not present
+            # Install Docker if not present (optional - may not work in LXC containers)
             if ! command -v docker &> /dev/null; then
               echo "Installing Docker..."
               curl -fsSL https://get.docker.com -o get-docker.sh
-              sudo sh get-docker.sh
-              rm get-docker.sh
-              sudo usermod -aG docker $USER
+              sudo sh get-docker.sh || true
+              rm -f get-docker.sh
+              sudo usermod -aG docker $USER || true
             fi
 
-            # Start Docker services (n8n)
-            echo "🐳 Starting Docker services (n8n)..."
-            cd /var/www/bgalin
-            
-            # Create n8n docker-compose for production (using Neon DB, not local postgres)
-            cat > docker-compose.prod.yml << 'DOCKEREOF'
+            # Start Docker services (n8n) - optional, skip if Docker not working
+            echo "🐳 Checking Docker availability..."
+            if docker info &> /dev/null; then
+              echo "Docker is running, starting n8n..."
+              cd /var/www/bgalin
+              
+              # Create n8n docker-compose for production (using Neon DB, not local postgres)
+              cat > docker-compose.prod.yml << 'DOCKEREOF'
             version: '3.8'
             services:
               n8n:
@@ -186,7 +188,10 @@ jobs:
               n8n_data:
             DOCKEREOF
 
-            docker compose -f docker-compose.prod.yml up -d
+              docker compose -f docker-compose.prod.yml up -d || echo "⚠️ Warning: n8n failed to start, continuing..."
+            else
+              echo "⚠️ Docker not available (LXC container?), skipping n8n..."
+            fi
 
             # Create/update .env file with secrets from GitHub
             echo "🔐 Updating environment variables..."
