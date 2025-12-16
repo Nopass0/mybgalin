@@ -6,53 +6,64 @@ on:
       - main
 
 jobs:
-  # build:
-  #   runs-on: ubuntu-latest
-  #   
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v3
+  build:
+    name: Build Rust backend for ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
 
-  #     - name: Install Rust
-  #       uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-unknown-linux-musl
+          override: true
 
-  #     - name: Install cross
-  #       run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install cross compilation tool
+        run: cargo install cross
 
-  #     - name: Build Rust backend for ARM64
-  #       working-directory: ./server
-  #       run: |
-  #         cross build --release --target aarch64-unknown-linux-musl
+      - name: Build with Cross
+        run: |
+          cd server
+          cross build --release --target aarch64-unknown-linux-musl --features "vendored-openssl"
 
-  #     - name: Upload backend binary
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: backend-binary
-  #         path: server/target/aarch64-unknown-linux-musl/release/server
-  #         retention-days: 1
+      - name: Compress binary
+        run: |
+          cd server/target/aarch64-unknown-linux-musl/release
+          gzip -c server > server.gz
+
+      - name: Upload binary to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: server/target/aarch64-unknown-linux-musl/release/server.gz
+          asset_name: server.gz
+          tag: latest-build
+          overwrite: true
 
   deploy:
-    # needs: build
+    name: Deploy to Server
     runs-on: ubuntu-latest
+    needs: build
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # - name: Download backend binary
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: backend-binary
-      #     path: ./backend-binary
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binary
+          path: ./backend-binary
 
-      # - name: Compress binary to release
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     tag_name: latest-build
-      #     files: ./backend-binary/server.gz
-      #     prerelease: true
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
+      - name: Compress binary to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest-build
+          files: ./backend-binary/server.gz
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
@@ -214,7 +225,9 @@ jobs:
                --env N8N_HOST=bgalin.ru \
                --env WEBHOOK_URL=https://bgalin.ru/webhook/ \
                --env N8N_PROTOCOL=https \
-               --env N8N_PATH=/n8n/
+               --env N8N_PATH=/n8n/ \
+               --env N8N_EDITOR_BASE_URL=https://bgalin.ru/n8n/ \
+               --env N8N_PROXY_HOPS=1
             else
                pm2 restart n8n
             fi
