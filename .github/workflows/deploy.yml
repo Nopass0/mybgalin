@@ -45,16 +45,19 @@ jobs:
           name: backend-binary
           path: ./backend-binary
 
-      - name: Copy binary to server
-        uses: appleboy/scp-action@master
+      - name: Compress binary with maximum compression
+        run: |
+          gzip -9 ./backend-binary/server
+          ls -la ./backend-binary/
+
+      - name: Upload binary to release
+        uses: softprops/action-gh-release@v1
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          source: "./backend-binary/server"
-          target: "/tmp/"
+          tag_name: latest-build
+          files: ./backend-binary/server.gz
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
@@ -120,11 +123,21 @@ jobs:
               sudo apt-get install -y nginx
             fi
 
-            # Move pre-built backend binary
-            echo "📦 Installing backend binary..."
+            # Download pre-built backend binary from GitHub Release
+            echo "📦 Downloading backend binary..."
             mkdir -p /var/www/bgalin/server/target/release
-            mv /tmp/backend-binary/server /var/www/bgalin/server/target/release/server
-            chmod +x /var/www/bgalin/server/target/release/server
+            cd /var/www/bgalin/server/target/release
+            
+            # Download compressed binary from GitHub Release
+            wget -q -O server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz" || {
+              echo "Failed to download binary, trying alternative..."
+              curl -sL -o server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz"
+            }
+            
+            # Decompress
+            gunzip -f server.gz
+            chmod +x server
+            cd /var/www/bgalin
 
             # Create/update .env file
             echo "🔐 Updating environment variables..."
