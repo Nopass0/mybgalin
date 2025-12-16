@@ -85,6 +85,22 @@ jobs:
             # Install Rust if not present
             if ! command -v cargo &> /dev/null; then
               echo "Installing Rust..."
+              
+              # Create swap file if not exists (to prevent OOM during Rust install)
+              if [ ! -f /swapfile ]; then
+                echo "Creating swap file..."
+                sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+                sudo chmod 600 /swapfile
+                sudo mkswap /swapfile
+                sudo swapon /swapfile
+                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              fi
+              
+              # Enable swap if exists but not active
+              if [ -f /swapfile ] && ! swapon --show | grep -q /swapfile; then
+                sudo swapon /swapfile || true
+              fi
+              
               curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
               source $HOME/.cargo/env
               export PATH="$HOME/.cargo/bin:$PATH"
