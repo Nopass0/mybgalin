@@ -46,11 +46,22 @@ jobs:
             sudo systemctl start docker 2>/dev/null || true
             sudo systemctl enable docker 2>/dev/null || true
             
-            # Wait for Docker daemon to be ready
+            # Wait for Docker daemon socket to exist
+            echo "Waiting for Docker socket..."
+            for i in {1..30}; do
+              if [ -S /var/run/docker.sock ]; then
+                echo "✓ Docker socket ready"
+                break
+              fi
+              echo "  Attempt $i/30..."
+              sleep 1
+            done
+            
+            # Wait for Docker daemon to be responsive
             echo "Waiting for Docker daemon..."
             for i in {1..30}; do
               if sudo docker info > /dev/null 2>&1; then
-                echo "✓ Docker daemon ready"
+                echo "✓ Docker daemon responsive"
                 break
               fi
               echo "  Attempt $i/30..."
@@ -140,23 +151,40 @@ jobs:
             ENVEOF
             fi
             
-            # Start docker-compose services (with retry)
+            # Start docker-compose services (with retry and better error handling)
             echo "Starting Docker services..."
-            for attempt in {1..3}; do
-              echo "Attempt $attempt/3..."
+            COMPOSE_SUCCESS=0
+            for attempt in {1..5}; do
+              echo "Attempt $attempt/5..."
+              
+              # Verify docker-compose can connect
+              if ! sudo docker-compose ps > /dev/null 2>&1; then
+                echo "  docker-compose cannot connect, waiting..."
+                sleep 3
+                continue
+              fi
+              
+              # Try to start services
               if sudo docker-compose up -d --force-recreate 2>&1; then
+                COMPOSE_SUCCESS=1
                 echo "✓ Docker services started"
                 break
               fi
-              if [ $attempt -lt 3 ]; then
-                echo "Retrying in 5 seconds..."
+              
+              if [ $attempt -lt 5 ]; then
+                echo "  Retrying in 5 seconds..."
                 sleep 5
-              else
-                echo "❌ Docker compose failed after 3 attempts"
-                sudo docker-compose logs 2>&1 || true
-                exit 1
               fi
             done
+            
+            if [ $COMPOSE_SUCCESS -eq 0 ]; then
+              echo "❌ Docker compose failed after 5 attempts"
+              echo "Troubleshooting info:"
+              sudo docker-compose logs 2>&1 || true
+              sudo docker ps -a 2>&1 || true
+              exit 1
+            fi
+            
             sleep 20
             
             # Check if services started
