@@ -89,9 +89,24 @@ jobs:
             # ============================================
             echo ""
             echo "=== 2. Update Repository ==="
-            cd /var/www/bgalin
-            git fetch origin main
-            git reset --hard origin/main
+            
+            # Ensure deployment directory exists
+            DEPLOY_DIR="/var/www/bgalin"
+            if [ ! -d "$DEPLOY_DIR" ]; then
+              echo "Creating deployment directory: $DEPLOY_DIR"
+              sudo mkdir -p "$DEPLOY_DIR"
+              sudo chown -R $(whoami):$(whoami) "$DEPLOY_DIR"
+            fi
+            
+            cd "$DEPLOY_DIR"
+            
+            # Initialize git if not already a repo
+            if [ ! -d .git ]; then
+              git clone https://github.com/Nopass0/mybgalin.git .
+            else
+              git fetch origin main
+              git reset --hard origin/main
+            fi
             echo "✓ Repository updated"
             
             # ============================================
