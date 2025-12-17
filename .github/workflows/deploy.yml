@@ -24,33 +24,47 @@ jobs:
           script: |
             set -e
             
-            echo "=== Starting Deployment ==="
-            cd /var/www/bgalin
+            echo "=== Deployment Started ==="
             
-            # Update git
-            git fetch origin main 2>&1 || true
-            git reset --hard origin/main 2>&1 || true
-            git status
+            # Ensure Docker is running
+            echo "=== Checking Docker ==="
+            sudo systemctl start docker 2>/dev/null || true
+            sudo systemctl enable docker 2>/dev/null || true
+            docker --version || echo "Docker not found"
             
-            # Start Docker services
-            echo "=== Starting Docker Services ==="
-            if command -v docker-compose &> /dev/null; then
-              docker-compose up -d || echo "Docker compose up failed"
-              sleep 10
-              docker-compose ps || true
-            else
-              echo "Docker Compose not found"
+            # Install docker-compose if needed
+            if ! command -v docker-compose &> /dev/null; then
+              echo "Installing docker-compose..."
+              sudo apt-get update
+              sudo apt-get install -y docker-compose
             fi
+            docker-compose --version
             
-            # Check services
-            echo "=== Checking Services ==="
-            docker ps || echo "Docker not available"
+            # Update repository
+            echo "=== Updating Repository ==="
+            cd /var/www/bgalin
+            git fetch origin main || true
+            git reset --hard origin/main || true
+            git log --oneline -1
             
-            # Check if ports are responding
-            echo "=== Port Status ==="
-            netstat -tuln | grep -E ":(3000|5000|5678|8000)" || echo "Checking with curl instead"
+            # Start services
+            echo "=== Starting Services ==="
+            docker-compose up -d || echo "Docker compose up failed, continuing..."
+            sleep 15
             
-            curl -s http://localhost:5678 | head -c 100 && echo "" || echo "N8N not responding"
-            curl -s http://localhost:3000 | head -c 100 && echo "" || echo "Frontend not responding"
+            # Show status
+            echo "=== Service Status ==="
+            docker-compose ps 2>&1 || true
+            docker ps -a 2>&1 || true
             
-            echo "✅ Deployment script completed"
+            # Test endpoints
+            echo "=== Testing Endpoints ==="
+            for i in {1..5}; do
+              echo "Attempt $i..."
+              curl -s http://localhost:5678 > /dev/null && echo "✅ N8N responding" && break
+              sleep 5
+            done
+            
+            curl -s http://localhost:5678 | head -c 50 || echo "N8N not responding yet"
+            
+            echo "✅ Deployment completed"
