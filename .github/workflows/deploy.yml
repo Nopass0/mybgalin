@@ -154,7 +154,7 @@ jobs:
             fi
             
             # ============================================
-            # 8. START MAIN SERVICES ON PM2
+            # 8. START SERVICES ON PM2
             # ============================================
             echo ""
             echo "=== 8. Start Services on PM2 ==="
@@ -165,14 +165,30 @@ jobs:
             pm2 delete all 2>/dev/null || true
             sleep 2
             
-            # Start backend on PM2 (better memory management)
+            # Find Bun executable
+            BUN_BIN=$(find /home -name "bun" -type f 2>/dev/null | head -1)
+            if [ -z "$BUN_BIN" ]; then
+              BUN_BIN=$(find /root -name "bun" -type f 2>/dev/null | head -1)
+            fi
+            
+            if [ -z "$BUN_BIN" ]; then
+              echo "⚠ Bun not found, using fallback"
+              BUN_BIN="bun"
+            fi
+            
+            echo "Using Bun at: $BUN_BIN"
+            
+            # Start backend on PM2 with full Bun path
             echo "Starting backend on PM2..."
-            pm2 start "bun run src/index.ts" \
+            pm2 start "$BUN_BIN" \
               --name bgalin-backend \
+              --interpreter bash \
+              --args "run src/index.ts" \
               --cwd /var/www/bgalin/server \
               --max-memory-restart 300M \
-              --node-args="--max-old-space-size=256" \
-              2>&1 | tail -3
+              2>&1 | tail -5
+            
+            sleep 3
             
             # Start frontend on PM2
             echo "Starting frontend on PM2..."
@@ -183,9 +199,10 @@ jobs:
             sleep 3
             
             # Show status
-            echo "Services:"
-            pm2 status | grep -E "bgalin-|id|name" || true
-            echo "✓ Services running on PM2"
+            echo ""
+            echo "PM2 Status:"
+            pm2 status
+            echo "✓ Services started"
             if sudo systemctl is-active --quiet bgalin-backend.service; then
               echo "✓ Backend running"
             else
