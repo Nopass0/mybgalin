@@ -12,15 +12,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       
-      - name: Deploy via SSH
+      - name: Deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
-          timeout: 120s
+          timeout: 300s
+          command_timeout: 120s
           script: |
-            cd /var/www/bgalin 2>/dev/null || mkdir -p /var/www/bgalin && cd /var/www/bgalin
-            git pull origin main 2>/dev/null || git clone https://github.com/Nopass0/mybgalin.git .
-            echo "✅ Deployment complete"
+            set -e
+            
+            echo "=== Starting Deployment ==="
+            cd /var/www/bgalin
+            
+            # Update git
+            git fetch origin main 2>&1 || true
+            git reset --hard origin/main 2>&1 || true
+            git status
+            
+            # Start Docker services
+            echo "=== Starting Docker Services ==="
+            if command -v docker-compose &> /dev/null; then
+              docker-compose up -d || echo "Docker compose up failed"
+              sleep 10
+              docker-compose ps || true
+            else
+              echo "Docker Compose not found"
+            fi
+            
+            # Check services
+            echo "=== Checking Services ==="
+            docker ps || echo "Docker not available"
+            
+            # Check if ports are responding
+            echo "=== Port Status ==="
+            netstat -tuln | grep -E ":(3000|5000|5678|8000)" || echo "Checking with curl instead"
+            
+            curl -s http://localhost:5678 | head -c 100 && echo "" || echo "N8N not responding"
+            curl -s http://localhost:3000 | head -c 100 && echo "" || echo "Frontend not responding"
+            
+            echo "✅ Deployment script completed"
