@@ -153,39 +153,46 @@ jobs:
             
             # Start docker-compose services (with retry and better error handling)
             echo "Starting Docker services..."
+            
+            # Extra wait for docker daemon to be fully ready
+            echo "Extra wait for Docker daemon stability..."
+            sleep 10
+            
             COMPOSE_SUCCESS=0
-            for attempt in {1..5}; do
-              echo "Attempt $attempt/5..."
+            for attempt in {1..10}; do
+              echo "Attempt $attempt/10..."
               
-              # Verify docker-compose can connect
-              if ! sudo docker-compose ps > /dev/null 2>&1; then
-                echo "  docker-compose cannot connect, waiting..."
-                sleep 3
-                continue
-              fi
-              
-              # Try to start services
-              if sudo docker-compose up -d --force-recreate 2>&1; then
+              # Try to start services with sudo
+              if sudo -E docker-compose up -d --force-recreate 2>&1; then
                 COMPOSE_SUCCESS=1
                 echo "✓ Docker services started"
                 break
               fi
               
-              if [ $attempt -lt 5 ]; then
-                echo "  Retrying in 5 seconds..."
-                sleep 5
+              echo "  Failed, checking daemon..."
+              sudo docker info 2>&1 | head -3 || echo "  Docker daemon not ready"
+              
+              if [ $attempt -lt 10 ]; then
+                echo "  Retrying in 3 seconds..."
+                sleep 3
               fi
             done
             
             if [ $COMPOSE_SUCCESS -eq 0 ]; then
-              echo "❌ Docker compose failed after 5 attempts"
+              echo "❌ Docker compose failed after 10 attempts"
               echo "Troubleshooting info:"
+              echo "=== Docker Info ==="
+              sudo docker info 2>&1 || true
+              echo "=== Docker Compose Logs ==="
               sudo docker-compose logs 2>&1 || true
+              echo "=== Docker PS ==="
               sudo docker ps -a 2>&1 || true
+              echo "=== Docker Daemon Status ==="
+              sudo systemctl status docker 2>&1 || true
               exit 1
             fi
             
-            sleep 20
+            sleep 15
             
             # Check if services started
             sudo docker-compose ps
