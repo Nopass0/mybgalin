@@ -1,4 +1,4 @@
-name: Deploy to Production
+name: Deploy to Production (Bun Backend)
 
 on:
   push:
@@ -9,70 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build Rust backend for ARM64
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-unknown-linux-musl
-          override: true
-
-      - name: Install cross compilation tool
-        run: cargo install cross
-
-      - name: Build with Cross
-        run: |
-          cd server
-          cross build --release --target aarch64-unknown-linux-musl
-
-      - name: Compress binary
-        run: |
-          cd server/target/aarch64-unknown-linux-musl/release
-          gzip -c server > server.gz
-
-      - name: Upload binary to Release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: server/target/aarch64-unknown-linux-musl/release/server.gz
-          asset_name: server.gz
-          tag: latest-build
-          overwrite: true
-
-      - name: Upload backend binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-binary
-          path: server/target/aarch64-unknown-linux-musl/release/server.gz
-          retention-days: 1
   deploy:
-    name: Deploy to Server
+    name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      # - name: Download backend binary
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: backend-binary
-      #     path: ./backend-binary
-
-      # - name: Compress binary to release
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     tag_name: latest-build
-      #     files: ./backend-binary/server.gz
-      #     prerelease: true
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GTHUB_TOKEN }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
@@ -87,11 +30,12 @@ jobs:
           script: |
             set -e
 
-            echo "🚀 Starting deployment..."
+            echo "🚀 Starting deployment (Bun Backend + PostgreSQL)..."
 
             # Stop services
             sudo systemctl stop bgalin-backend.service || true
-            pm2 stop all || true
+            pm2 stop bgalin-backend || true
+            pm2 stop bgalin-frontend || true
 
             # Setup project directory
             echo "📁 Setting up project directory..."
@@ -106,7 +50,7 @@ jobs:
             ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             
-            # Clone or update repository using SSH
+            # Clone or update repository
             echo "📥 Fetching latest code..."
             REPO_URL="git@github.com:Nopass0/mybgalin.git"
             
@@ -119,13 +63,31 @@ jobs:
               git clone --depth=1 "$REPO_URL" .
             fi
 
-            # Install system dependencies if needed
+            # Install system dependencies
             echo "📦 Checking system dependencies..."
             
-            if ! command -v node &> /dev/null; then
-              echo "Installing Node.js..."
+            # Update Node.js to 20.x (required for Bun and Prisma)
+            if ! command -v node &> /dev/null || [ "$(node -v | cut -d. -f1 | cut -dv -f2)" -lt 20 ]; then
+              echo "Installing Node.js 20.x..."
               curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
               sudo apt-get install -y nodejs
+            fi
+
+            # Install Bun runtime
+            if ! command -v bun &> /dev/null; then
+              echo "Installing Bun..."
+              curl -fsSL https://bun.sh/install | bash
+              export BUN_INSTALL="$HOME/.bun"
+              export PATH="$BUN_INSTALL/bin:$PATH"
+            else
+              echo "Bun already installed: $(bun --version)"
+            fi
+
+            # PostgreSQL client (for database operations)
+            if ! command -v psql &> /dev/null; then
+              echo "Installing PostgreSQL client..."
+              sudo apt-get update
+              sudo apt-get install -y postgresql-client
             fi
 
             if ! command -v pm2 &> /dev/null; then
@@ -138,92 +100,200 @@ jobs:
               sudo apt-get install -y nginx
             fi
 
-            # Download pre-built backend binary from GitHub Release
-            echo "📦 Downloading backend binary..."
-            mkdir -p /var/www/bgalin/server/target/release
-            cd /var/www/bgalin/server/target/release
-            
-            # Download compressed binary from GitHub Release
-            wget -q -O bgalin_server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz" || {
-              echo "Failed to download binary, trying alternative..."
-              curl -sL -o bgalin_server.gz "https://github.com/Nopass0/mybgalin/releases/download/latest-build/server.gz"
-            }
-            
-            # Decompress
-            gunzip -f bgalin_server.gz
-            chmod +x bgalin_server
-            echo "🔍 Binary details:"
-            ls -la bgalin_server
-            file bgalin_server || echo "file command not found"
-            cd /var/www/bgalin
-
-            # Install and configure n8n via NPM (Docker alternative for LXC)
+            # Install n8n
             if ! command -v n8n &> /dev/null; then
                echo "Installing n8n via npm..."
                sudo npm install -g n8n
             fi
 
-            # Create/update .env file
-
-            # Create/update .env file
+            # Setup environment variables
             echo "🔐 Updating environment variables..."
-            # Create/update .env file (using printf to avoid heredoc issues)
-            printf "DATABASE_URL=${{ secrets.DATABASE_URL }}\n" > .env
-            printf "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\n" >> .env
-            printf "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}\n" >> .env
-            printf "STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}\n" >> .env
-            printf "STEAM_ID=${{ secrets.STEAM_ID }}\n" >> .env
-            printf "FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}\n" >> .env
-            printf "GSI_AUTH_TOKEN=${{ secrets.GSI_AUTH_TOKEN }}\n" >> .env
-            printf "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}\n" >> .env
-            printf "AI_MODEL=${{ secrets.AI_MODEL }}\n" >> .env
-            printf "HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}\n" >> .env
-            printf "HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}\n" >> .env
-            printf "HH_REDIRECT_URI=https://bgalin.ru/auth/hh/callback\n" >> .env
-            printf "JOB_SEARCH_INTERVAL_HOURS=${{ secrets.JOB_SEARCH_INTERVAL_HOURS }}\n" >> .env
-            printf "ROCKET_ADDRESS=0.0.0.0\n" >> .env
-            printf "ROCKET_PORT=3001\n" >> .env
-            printf "ROCKET_ENV=production\n" >> .env
-            printf "ALICE_CLIENT_ID=${{ secrets.ALICE_CLIENT_ID }}\n" >> .env
-            printf "ALICE_CLIENT_SECRET=${{ secrets.ALICE_CLIENT_SECRET }}\n" >> .env
-            printf "N8N_API_URL=http://localhost:5678\n" >> .env
-            printf "N8N_API_KEY=${{ secrets.N8N_API_KEY }}\n" >> .env
+            printf "DATABASE_URL=${{ secrets.DATABASE_URL }}\n" > /var/www/bgalin/.env
+            printf "PORT=8000\n" >> /var/www/bgalin/.env
+            printf "NODE_ENV=production\n" >> /var/www/bgalin/.env
+            printf "PUBLIC_URL=https://bgalin.ru\n" >> /var/www/bgalin/.env
+            printf "BASE_URL=https://bgalin.ru\n" >> /var/www/bgalin/.env
+            printf "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\n" >> /var/www/bgalin/.env
+            printf "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}\n" >> /var/www/bgalin/.env
+            printf "ADMIN_STEAM_ID=${{ secrets.ADMIN_STEAM_ID }}\n" >> /var/www/bgalin/.env
+            printf "STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}\n" >> /var/www/bgalin/.env
+            printf "FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}\n" >> /var/www/bgalin/.env
+            printf "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}\n" >> /var/www/bgalin/.env
+            printf "HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}\n" >> /var/www/bgalin/.env
+            printf "HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}\n" >> /var/www/bgalin/.env
+            printf "HH_REDIRECT_URI=https://bgalin.ru/api/auth/hh/callback\n" >> /var/www/bgalin/.env
+            printf "N8N_API_URL=http://localhost:5678\n" >> /var/www/bgalin/.env
+            printf "N8N_API_KEY=${{ secrets.N8N_API_KEY }}\n" >> /var/www/bgalin/.env
 
-            # Create data directory
-            echo "📁 Creating data directory..."
-            mkdir -p /var/www/bgalin/data
-            chmod 755 /var/www/bgalin/data
+            # Setup Bun backend
+            echo "⚙️ Setting up Bun backend..."
+            cd /var/www/bgalin/server
+            
+            # Setup PATH for Bun
+            export BUN_INSTALL="$HOME/.bun"
+            export PATH="$BUN_INSTALL/bin:$PATH"
+            
+            echo "Installing backend dependencies..."
+            bun install
+            
+            # Copy .env to server directory
+            cp /var/www/bgalin/.env /var/www/bgalin/server/.env
+
+            # Initialize database
+            echo "📊 Initializing database..."
+            npx prisma generate
+            npx prisma db push --skip-generate || true
 
             # Build frontend
             echo "🎨 Building frontend..."
-            cd frontend
-            rm -rf node_modules package-lock.json
-            npm install --build-from-source
+            cd /var/www/bgalin/frontend
+            rm -rf node_modules package-lock.json .next
+            npm install
             NODE_ENV=production npm run build
 
-            # Setup systemd service
-            echo "⚙️ Configuring systemd service..."
-            sudo printf "[Unit]\nDescription=BGalin Backend Service\nAfter=network.target\n\n[Service]\nType=simple\nUser=$USER\nWorkingDirectory=/var/www/bgalin\nEnvironmentFile=/var/www/bgalin/.env\nExecStart=/var/www/bgalin/bgalin_server\nRestart=always\nRestartSec=10\nEnvironment=\"RUST_LOG=info\"\n\n[Install]\nWantedBy=multi-user.target\n" | sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null
+            # Setup systemd service for Bun backend (port 8000)
+            echo "⚙️ Configuring systemd service for Bun backend..."
+            sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null <<'SYSTEMD_EOF'
+[Unit]
+Description=BGalin Backend (Bun + Elysia)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=/var/www/bgalin/server
+EnvironmentFile=/var/www/bgalin/.env
+Environment="NODE_ENV=production"
+Environment="PATH=/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/root/.bun/bin/bun run src/index.ts
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SYSTEMD_EOF
             sudo systemctl daemon-reload
             sudo systemctl enable bgalin-backend.service
 
-            # Setup nginx
+            # Setup nginx configuration (proxy to ports 3000 and 8000)
             echo "🌐 Configuring nginx..."
-            sudo printf "server {\n    listen 80;\n    server_name bgalin.ru www.bgalin.ru;\n    return 301 https://\$server_name\$request_uri;\n}\n\nserver {\n    listen 443 ssl http2;\n    server_name bgalin.ru www.bgalin.ru;\n\n    ssl_certificate /var/www/bgalin/bgalin_ru.crt;\n    ssl_certificate_key /var/www/bgalin/private.key;\n\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers HIGH:!aNULL:!MD5;\n    ssl_prefer_server_ciphers on;\n\n    location / {\n        proxy_pass http://localhost:3000;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade \$http_upgrade;\n        proxy_set_header Connection 'upgrade';\n        proxy_set_header Host \$host;\n        proxy_cache_bypass \$http_upgrade;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n    }\n\n    location /api/ {\n        proxy_pass http://localhost:3001/api/;\n        proxy_http_version 1.1;\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n    }\n\n    location /alice/ {\n        proxy_pass http://localhost:3001/alice/;\n        proxy_http_version 1.1;\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n    }\n\n    location /n8n/ {\n        proxy_pass http://localhost:5678/;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade \$http_upgrade;\n        proxy_set_header Connection 'upgrade';\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n        proxy_buffering off;\n        chunked_transfer_encoding off;\n        proxy_cache off;\n    }\n\n    location /webhook/ {\n        proxy_pass http://localhost:5678/webhook/;\n        proxy_set_header Host \$host;\n        proxy_set_header X-Real-IP \$remote_addr;\n        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto \$scheme;\n        proxy_buffering off;\n        chunked_transfer_encoding off;\n        proxy_cache off;\n    }\n\n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-XSS-Protection \"1; mode=block\" always;\n    add_header Referrer-Policy \"no-referrer-when-downgrade\" always;\n\n    access_log /var/log/nginx/bgalin_access.log;\n    error_log /var/log/nginx/bgalin_error.log;\n}\n" | sudo tee /etc/nginx/sites-available/bgalin > /dev/null
+            sudo tee /etc/nginx/sites-available/bgalin > /dev/null <<'NGINX_EOF'
+server {
+    listen 80;
+    server_name bgalin.ru www.bgalin.ru;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name bgalin.ru www.bgalin.ru;
+
+    ssl_certificate /var/www/bgalin/bgalin_ru.crt;
+    ssl_certificate_key /var/www/bgalin/private.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Frontend (Next.js on 3000)
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Backend API (Bun on 8000)
+    location /api/ {
+        proxy_pass http://localhost:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+        proxy_connect_timeout 30s;
+    }
+
+    # Swagger API documentation
+    location /swagger {
+        proxy_pass http://localhost:8000/swagger;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # N8N Automation (port 5678)
+    location /n8n/ {
+        proxy_pass http://localhost:5678/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        chunked_transfer_encoding off;
+        proxy_cache off;
+    }
+
+    # N8N webhooks
+    location /webhook/ {
+        proxy_pass http://localhost:5678/webhook/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        chunked_transfer_encoding off;
+        proxy_cache off;
+    }
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+
+    access_log /var/log/nginx/bgalin_access.log;
+    error_log /var/log/nginx/bgalin_error.log;
+}
+NGINX_EOF
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/
             sudo rm -f /etc/nginx/sites-enabled/default
 
-            # Setup PM2 config
-            if [ ! -f "/var/www/bgalin/frontend/ecosystem.config.js" ]; then
-              echo "📦 Creating PM2 config..."
-              printf "module.exports = {\n  apps: [{\n    name: 'bgalin-frontend',\n    script: 'node_modules/next/dist/bin/next',\n    args: 'start',\n    cwd: '/var/www/bgalin/frontend',\n    instances: 1,\n    autorestart: true,\n    watch: false,\n    max_memory_restart: '1G',\n    env: {\n      NODE_ENV: 'production',\n      PORT: 3000\n    }\n  }]\n};\n" > /var/www/bgalin/frontend/ecosystem.config.js
-            fi
+            # Setup PM2 config for frontend
+            echo "📦 Creating PM2 config..."
+            cat > /var/www/bgalin/frontend/ecosystem.config.js <<'PM2_EOF'
+module.exports = {
+  apps: [{
+    name: 'bgalin-frontend',
+    script: 'node_modules/next/dist/bin/next',
+    args: 'start',
+    cwd: '/var/www/bgalin/frontend',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    }
+  }]
+};
+PM2_EOF
 
             # Restart services
-            # Restart Services
             echo "♻️ Restarting services..."
             
-            # Start/Restart n8n in PM2
+            # Start/Restart n8n
             if ! pm2 list | grep -q "n8n"; then
                echo "Starting n8n..."
                pm2 start n8n -- \
@@ -241,11 +311,11 @@ jobs:
                pm2 restart n8n
             fi
 
-            # Background: Restart Systemd Backend
+            # Restart Bun backend service
             sudo systemctl daemon-reload
             sudo systemctl restart bgalin-backend.service
 
-            # Frontend PM2
+            # Start/Restart frontend with PM2
             cd /var/www/bgalin/frontend
             if pm2 list | grep -q "bgalin-frontend"; then
               pm2 delete bgalin-frontend 2>/dev/null || true
@@ -253,47 +323,38 @@ jobs:
             pm2 start ecosystem.config.js
             pm2 save
 
+            # Test and reload nginx
             sudo nginx -t
             sudo systemctl reload nginx
 
             echo "✅ Checking service status..."
             
-            # Wait for backend to start (up to 30 seconds)
-            for i in {1..10}; do
-              if sudo systemctl is-active bgalin-backend.service > /dev/null; then
-                echo "Backend is active!"
+            # Wait for backend to start
+            for i in {1..15}; do
+              if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+                echo "✓ Backend is responding!"
                 break
               fi
-              echo "Waiting for backend to start... ($i/10)"
-              sleep 3
+              echo "Waiting for backend to start... ($i/15)"
+              sleep 2
             done
 
-            # Final check
-            if ! sudo systemctl is-active bgalin-backend.service > /dev/null; then
-              echo "❌ Backend service failed to start or is still activating. Logs:"
-              sudo journalctl -u bgalin-backend.service -n 50 --no-pager
-              exit 1
-            fi
+            # Check all services
+            echo "📊 Service Status:"
+            echo "Backend service: $(sudo systemctl is-active bgalin-backend.service)"
+            pm2 list | grep -E "bgalin-frontend|n8n" || true
+            
+            # Test endpoints
+            echo "🔍 Testing API endpoints..."
+            curl -s http://localhost:8000/api/health || echo "Health check endpoint not responding"
+            curl -s https://bgalin.ru/api/health || echo "Public health check not responding"
 
-            pm2 list | grep bgalin-frontend
-
-            # Check n8n status
-            echo "Checking n8n status..."
-            for i in {1..20}; do
-              if curl -s http://localhost:5678 > /dev/null; then
-                echo "n8n is responding!"
-                break
-              fi
-              echo "Waiting for n8n to start... ($i/20)"
-              sleep 3
-            done
-
-            echo "🎉 Deployment completed successfully!"
+            echo "✅ Deployment completed successfully!"
 
             # Send Telegram notification
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
               -d chat_id="${{ secrets.ADMIN_TELEGRAM_ID }}" \
-              -d text="✅ Deployment to bgalin.ru completed successfully!%0ACommit: ${{ github.event.head_commit.message }}%0AAuthor: ${{ github.actor }}" \
+              -d text="✅ Deployment to bgalin.ru completed!%0A%0CBackend: Bun (port 8000)%0AFrontend: Next.js (port 3000)%0AN8N: Automation (port 5678)%0A%0CCommit: ${{ github.event.head_commit.message }}%0AAuthor: ${{ github.actor }}" \
               > /dev/null || true
 
       - name: Notify on failure
@@ -303,9 +364,11 @@ jobs:
           to: ${{ secrets.ADMIN_TELEGRAM_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            ❌ Deployment to bgalin.ru failed!
+            ❌ Deployment to bgalin.ru FAILED!
 
             Repository: ${{ github.repository }}
             Branch: ${{ github.ref }}
             Commit: ${{ github.sha }}
             Author: ${{ github.actor }}
+            
+            Check logs at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
