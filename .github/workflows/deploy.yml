@@ -48,8 +48,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
-          timeout: 600s
-          command_timeout: 600s
+          timeout: 900s
+          command_timeout: 900s
           envs: DATABASE_URL
           script: |
             set -e
@@ -141,27 +141,20 @@ jobs:
             echo "[OK] Environment configured"
             
             # ============================================
-            # 4. CLEANUP DOCKER (Fix overlay FS issues)
+            # 4. STOP EXISTING SERVICES
             # ============================================
             echo ""
-            echo "=== 4. Cleanup Docker ==="
+            echo "=== 4. Stop Existing Services ==="
             
             cd /var/www/bgalin
             
-            # Stop all containers
+            # Stop existing containers gracefully
             sudo docker compose down --remove-orphans 2>/dev/null || true
-            sudo docker stop $(sudo docker ps -aq) 2>/dev/null || true
-            sudo docker rm $(sudo docker ps -aq) 2>/dev/null || true
             
-            # Prune Docker system to fix overlay FS issues
-            echo "Cleaning Docker system..."
-            sudo docker system prune -af --volumes 2>/dev/null || true
+            # Clean up old/dangling images only (keep cache)
+            sudo docker image prune -f 2>/dev/null || true
             
-            # Restart Docker daemon to clear any stuck mounts
-            sudo systemctl restart docker 2>/dev/null || sudo service docker restart || true
-            sleep 5
-            
-            echo "[OK] Docker cleaned"
+            echo "[OK] Old services stopped"
             
             # ============================================
             # 5. BUILD AND START SERVICES
@@ -171,13 +164,13 @@ jobs:
             
             cd /var/www/bgalin
             
-            # Enable BuildKit for better builds
+            # Enable BuildKit for better builds with cache
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
             
-            # Build images
+            # Build images (use cache for faster builds)
             echo "Building Docker images..."
-            sudo -E docker compose build --no-cache 2>&1 | tail -30
+            sudo -E docker compose build 2>&1 | tail -50
             
             # Start services
             echo "Starting services..."
