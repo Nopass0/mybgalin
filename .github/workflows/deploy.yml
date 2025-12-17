@@ -128,33 +128,14 @@ jobs:
             echo "✓ Frontend ready"
             
             # ============================================
-            # 6. SETUP BACKEND SERVICE
+            # 6. SETUP BACKEND (Will run on PM2)
             # ============================================
             echo ""
-            echo "=== 6. Setup Backend Service ==="
+            echo "=== 6. Setup Backend ==="
             
-            # Install Bun for bgalin user
-            if [ ! -d /home/bgalin/.bun ]; then
-              echo "Installing Bun for bgalin user..."
-              sudo -u bgalin bash -c 'curl -fsSL https://bun.sh/install | bash' 2>&1 | tail -3
-              sleep 2
-            fi
-            
-            # Fix permissions
-            sudo chown -R bgalin:bgalin /var/www/bgalin/server
-            if [ -d /home/bgalin/.bun ]; then
-              sudo chown -R bgalin:bgalin /home/bgalin/.bun
-              sudo chmod +x /home/bgalin/.bun/bin/bun
-              echo "✓ Bun permissions fixed"
-            else
-              echo "⚠ Bun directory issue"
-            fi
-            
-            # Copy and enable service
-            sudo cp /var/www/bgalin/bgalin-backend.service /etc/systemd/system/
-            sudo systemctl daemon-reload
-            sudo systemctl enable bgalin-backend.service
-            echo "✓ Backend service ready"
+            # Ensure server directory has correct permissions
+            sudo chown -R $USER:$USER /var/www/bgalin/server
+            echo "✓ Backend ready for PM2"
             
             # ============================================
             # 7. TRY DOCKER FOR N8N (OPTIONAL)
@@ -173,14 +154,38 @@ jobs:
             fi
             
             # ============================================
-            # 8. START MAIN SERVICES
+            # 8. START MAIN SERVICES ON PM2
             # ============================================
             echo ""
-            echo "=== 8. Start Main Services ==="
+            echo "=== 8. Start Services on PM2 ==="
             
-            # Start backend
-            sudo systemctl restart bgalin-backend.service
+            cd /var/www/bgalin
+            
+            # Delete old PM2 processes
+            pm2 delete all 2>/dev/null || true
+            sleep 2
+            
+            # Start backend on PM2 (better memory management)
+            echo "Starting backend on PM2..."
+            pm2 start "bun run src/index.ts" \
+              --name bgalin-backend \
+              --cwd /var/www/bgalin/server \
+              --max-memory-restart 300M \
+              --node-args="--max-old-space-size=256" \
+              2>&1 | tail -3
+            
+            # Start frontend on PM2
+            echo "Starting frontend on PM2..."
+            pm2 start ecosystem.config.js 2>&1 | tail -3
+            
+            # Save PM2
+            pm2 save 2>/dev/null || true
             sleep 3
+            
+            # Show status
+            echo "Services:"
+            pm2 status | grep -E "bgalin-|id|name" || true
+            echo "✓ Services running on PM2"
             if sudo systemctl is-active --quiet bgalin-backend.service; then
               echo "✓ Backend running"
             else
