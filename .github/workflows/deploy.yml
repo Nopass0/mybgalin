@@ -127,22 +127,22 @@ jobs:
             ENVEOF
             fi
             
-            # Retry docker-compose with exponential backoff
+            # Retry docker compose with exponential backoff
             cd /var/www/bgalin
-            sudo docker-compose down 2>/dev/null || true
+            sudo docker compose down 2>/dev/null || true
             sleep 2
             
             RETRY=0
             while [ $RETRY -lt 5 ]; do
-              if sudo docker-compose up -d 2>&1; then
+              if sudo docker compose up -d 2>&1; then
                 sleep 10
                 echo "Docker services:"
-                sudo docker-compose ps
+                sudo docker compose ps
                 echo "✓ Docker services running"
                 break
               fi
               RETRY=$((RETRY + 1))
-              echo "⚠ Docker-compose failed, retry $RETRY/5..."
+              echo "⚠ Docker compose failed, retry $RETRY/5..."
               sleep $((RETRY * 2))
             done
             
@@ -249,7 +249,7 @@ jobs:
             pm2 status || echo "⚠ PM2 status failed"
             echo ""
             echo "Docker Services:"
-            sudo docker-compose ps 2>/dev/null || echo "⚠ Docker not available"
+            sudo docker compose ps 2>/dev/null || echo "⚠ Docker not available"
             echo ""
             echo "Access:"
             echo "  • Frontend:  https://bgalin.ru"
@@ -260,4 +260,4 @@ jobs:
             echo "  • pm2 status          - check processes"
             echo "  • pm2 logs backend    - backend logs"
             echo "  • pm2 logs frontend   - frontend logs"
-            echo "  • docker-compose ps   - docker status"
+            echo "  • docker compose ps   - docker status"
