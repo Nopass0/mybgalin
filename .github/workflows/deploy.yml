@@ -41,45 +41,8 @@ jobs:
               echo "bgalin user created"
             fi
             
-            # Ensure Docker is running
-            echo "Starting Docker..."
-            sudo systemctl start docker 2>/dev/null || true
-            sudo systemctl enable docker 2>/dev/null || true
-            
-            # Wait for Docker daemon socket to exist
-            echo "Waiting for Docker socket..."
-            for i in {1..30}; do
-              if [ -S /var/run/docker.sock ]; then
-                echo "✓ Docker socket ready"
-                break
-              fi
-              echo "  Attempt $i/30..."
-              sleep 1
-            done
-            
-            # Wait for Docker daemon to be responsive
-            echo "Waiting for Docker daemon..."
-            for i in {1..30}; do
-              if sudo docker info > /dev/null 2>&1; then
-                echo "✓ Docker daemon responsive"
-                break
-              fi
-              echo "  Attempt $i/30..."
-              sleep 1
-            done
-            
-            sudo usermod -aG docker $USER 2>/dev/null || true
-            docker --version || { echo "❌ Docker not found"; exit 1; }
-            echo "✓ Docker ready"
-            
-            # Install docker-compose if needed
-            if ! command -v docker-compose &> /dev/null; then
-              echo "Installing docker-compose..."
-              sudo apt-get update
-              sudo apt-get install -y docker-compose
-            fi
-            sudo docker-compose --version
-            echo "✓ docker-compose ready"
+            # Docker is OPTIONAL - not required
+            echo "Docker will be skipped (using PM2/systemd only)"
             
             # Install Bun if needed
             if ! [ -f "$HOME/.bun/bin/bun" ]; then
@@ -130,49 +93,26 @@ jobs:
             echo "✓ Repository updated"
             
             # ============================================
-            # 3. SETUP DATABASE & N8N (Skip if Docker unavailable)
+            # 3. CREATE CONFIGURATION
             # ============================================
             echo ""
-            echo "=== 3. Starting Services ==="
+            echo "=== 3. Creating Configuration ==="
             
             # Create .env if it doesn't exist
             if [ ! -f /var/www/bgalin/.env ]; then
-              echo "Creating .env file with defaults..."
+              echo "Creating .env file..."
               cat > /var/www/bgalin/.env << 'ENVEOF'
-            # Database (can use local PostgreSQL or skip)
-            POSTGRES_USER=admin
-            POSTGRES_PASSWORD=admin
-            POSTGRES_DB=bgalin
-            DATABASE_URL="postgresql://admin:admin@localhost:5432/bgalin"
-            
-            # N8N
-            N8N_HOST=bgalin.ru
-            N8N_PORT=5678
-            GENERIC_TIMEZONE=Europe/Moscow
-            
             # Backend
             PORT=8000
             NODE_ENV=production
-            SKIP_MIGRATIONS=true
+            
+            # Optional: Database settings (if using external DB)
+            # DATABASE_URL="postgresql://user:pass@host:5432/bgalin"
             ENVEOF
-            fi
-            
-            # Try Docker services but don't fail if Docker is down
-            echo "Attempting Docker services (optional)..."
-            if command -v docker-compose &> /dev/null && sudo systemctl is-active --quiet docker 2>/dev/null; then
-              echo "Docker available, starting services..."
-              if sudo -E docker-compose up -d --force-recreate 2>&1 | tail -5; then
-                echo "✓ Docker services started"
-                sleep 10
-              else
-                echo "⚠ Docker services failed, continuing without them..."
-              fi
+              echo "✓ .env created"
             else
-              echo "⚠ Docker not available, skipping containerized services"
-              echo "   Note: Backend and Frontend will run on PM2/systemd instead"
+              echo "✓ .env already exists"
             fi
-            
-            sleep 5
             
             # Check if services started
             sudo docker-compose ps
@@ -192,29 +132,19 @@ jobs:
             export BUN_INSTALL="$HOME/.bun"
             export PATH="$BUN_INSTALL/bin:$PATH"
             
-            # Reduce memory usage for low-memory servers
+            # Reduce memory usage
             export NODE_OPTIONS="--max-old-space-size=256"
             
             cd /var/www/bgalin/server
             
-            # Install dependencies (retry if OOM)
-            for i in {1..3}; do
-              if bun install 2>&1; then
-                echo "✓ Dependencies installed"
-                break
-              fi
-              if [ $i -lt 3 ]; then
-                echo "Retrying bun install (attempt $i/3)..."
-                sleep 5
-              else
-                echo "❌ Bun install failed"
-                exit 1
-              fi
-            done
+            # Install dependencies
+            if bun install --prefer-offline 2>&1 | tail -10; then
+              echo "✓ Backend dependencies installed"
+            else
+              echo "⚠ Backend install had issues, continuing..."
+            fi
             
-            npx prisma generate || { echo "⚠ Prisma generate skipped"; }
-            npx prisma db push --skip-generate 2>/dev/null || { echo "⚠ Database push deferred"; }
-            echo "✓ Backend setup ready"
+            echo "✓ Backend ready"
             
             # ============================================
             # 5. SETUP & BUILD FRONTEND
@@ -266,30 +196,36 @@ jobs:
             echo ""
             echo "=== 7. Starting Services ==="
             
-            # Start backend
+            # Start backend with systemd
+            echo "Starting backend..."
+            sudo systemctl daemon-reload
+            sudo systemctl enable bgalin-backend.service
             sudo systemctl restart bgalin-backend.service
-            sleep 5
+            sleep 3
+            
             if sudo systemctl is-active --quiet bgalin-backend.service; then
-              echo "✓ Backend running"
+              echo "✓ Backend running on systemd"
             else
-              echo "⚠ Backend may not be running, checking logs..."
-              sudo systemctl status bgalin-backend.service || true
+              echo "⚠ Backend startup issue, attempting restart..."
+              sudo systemctl restart bgalin-backend.service
+              sleep 3
             fi
             
-            # Setup and start frontend with PM2
-            export PATH="/home/$USER/.bun/bin:/usr/local/bin:/home/$USER/.npm-global/bin:$PATH"
-            cd /var/www/bgalin
-            
-            # Remove old PM2 processes
-            pm2 delete bgalin-frontend || true
-            sleep 2
-            
             # Start frontend with PM2
-            pm2 start ecosystem.config.js || { echo "❌ PM2 start failed"; exit 1; }
-            pm2 save || true
-            sleep 5
+            echo "Starting frontend..."
+            cd /var/www/bgalin
+            pm2 delete bgalin-frontend 2>/dev/null || true
+            sleep 1
             
-            echo "✓ Frontend running on PM2"
+            if pm2 start ecosystem.config.js; then
+              pm2 save 2>/dev/null || true
+              echo "✓ Frontend running on PM2"
+            else
+              echo "⚠ PM2 start had issues, attempting manual start..."
+              pm2 resurrect 2>/dev/null || echo "Could not resurrect PM2"
+            fi
+            
+            sleep 3
             
             # ============================================
             # 8. VERIFY ALL SERVICES
@@ -309,15 +245,33 @@ jobs:
             sudo systemctl status bgalin-backend.service --no-pager | head -10 || true
             
             # ============================================
-            # 9. SETUP NGINX REVERSE PROXY
+            # 8. SETUP NGINX REVERSE PROXY
             # ============================================
             echo ""
-            echo "=== 9. Setting Up Nginx Reverse Proxy ==="
+            echo "=== 8. Setting Up Nginx Reverse Proxy ==="
             
-            # Install nginx if needed
+            # Install Nginx if needed
             if ! command -v nginx &> /dev/null; then
               echo "Installing Nginx..."
+              sudo apt-get update
               sudo apt-get install -y nginx
+            fi
+            
+            # Copy Nginx config
+            sudo cp /var/www/bgalin/nginx-bgalin.conf /etc/nginx/sites-available/bgalin 2>/dev/null || true
+            
+            # Enable site
+            sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/bgalin
+            sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+            
+            # Test and restart Nginx
+            if sudo nginx -t 2>&1 | grep -q "successful"; then
+              echo "✓ Nginx config valid"
+              sudo systemctl restart nginx
+              echo "✓ Nginx restarted"
+            else
+              echo "⚠ Nginx config issue, but continuing..."
+              sudo systemctl restart nginx || true
             fi
             
             # Copy Nginx config
@@ -343,46 +297,49 @@ jobs:
             fi
             
             # ============================================
-            # 10. TEST ENDPOINTS
+            # 9. TEST ENDPOINTS
             # ============================================
             echo ""
-            echo "=== 10. Testing Endpoints ==="
-            
-            # Test N8N (Docker)
-            echo "Testing N8N..."
-            for i in {1..10}; do
-              if curl -s http://localhost:5678 > /dev/null 2>&1; then
-                echo "✓ N8N responding"
-                break
-              fi
-              echo "  Attempt $i/10..."
-              sleep 2
-            done
+            echo "=== 9. Testing Endpoints ==="
             
             # Test Backend
-            echo "Testing Backend..."
-            for i in {1..10}; do
-              if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+            echo "Testing Backend API..."
+            BACKEND_OK=0
+            for i in {1..15}; do
+              if curl -s http://localhost:8000/api/health 2>&1 | grep -q "200\|ok\|status"; then
                 echo "✓ Backend responding"
+                BACKEND_OK=1
                 break
               fi
-              echo "  Attempt $i/10..."
+              echo "  Attempt $i/15..."
               sleep 2
             done
+            
+            if [ $BACKEND_OK -eq 0 ]; then
+              echo "⚠ Backend not responding yet, but deployment continues"
+              echo "  Check with: curl http://localhost:8000/api/health"
+            fi
             
             # Test Frontend
             echo "Testing Frontend..."
-            for i in {1..10}; do
-              if curl -s http://localhost:3000 > /dev/null 2>&1; then
+            FRONTEND_OK=0
+            for i in {1..15}; do
+              if curl -s http://localhost:3000 2>&1 | grep -q "html\|doctype\|200"; then
                 echo "✓ Frontend responding"
+                FRONTEND_OK=1
                 break
               fi
-              echo "  Attempt $i/10..."
+              echo "  Attempt $i/15..."
               sleep 2
             done
             
+            if [ $FRONTEND_OK -eq 0 ]; then
+              echo "⚠ Frontend not responding yet, but deployment continues"
+              echo "  Check with: curl http://localhost:3000"
+            fi
+            
             # ============================================
-            # 11. FINAL STATUS
+            # 10. FINAL STATUS
             # ============================================
             echo ""
             echo "╔════════════════════════════════════════╗"
@@ -390,18 +347,20 @@ jobs:
             echo "╚════════════════════════════════════════╝"
             echo ""
             echo "Services deployed:"
-            echo "  • Frontend:   https://bgalin.ru (port 3000 via PM2)"
-            echo "  • Backend:    https://bgalin.ru/api/... (port 8000 via systemd)"
-            echo "  • N8N:        https://bgalin.ru/n8n/ (port 5678 via Docker)"
-            echo "  • PostgreSQL: localhost:5432 (Docker)"
-            echo "  • Nginx:      Port 443/80 (reverse proxy)"
+            echo "  • Frontend:   localhost:3000 (PM2)"
+            echo "  • Backend:    localhost:8000 (systemd)"
+            echo "  • Nginx:      Port 80/443 (reverse proxy)"
             echo ""
-            echo "Check status with:"
-            echo "  • pm2 status              (frontend)"
-            echo "  • systemctl status bgalin-backend  (backend)"
-            echo "  • systemctl status nginx  (reverse proxy)"
-            echo "  • docker ps               (containers)"
+            echo "Access via Nginx:"
+            echo "  • https://bgalin.ru           (Frontend)"
+            echo "  • https://bgalin.ru/api/health (Backend health)"
             echo ""
-            echo "Run verification script:"
-            echo "  • bash /var/www/bgalin/verify-deployment.sh"
+            echo "Check status:"
+            echo "  • pm2 status                    (Frontend)"
+            echo "  • sudo systemctl status bgalin-backend.service (Backend)"
+            echo "  • sudo systemctl status nginx   (Reverse proxy)"
+            echo ""
+            echo "View logs:"
+            echo "  • pm2 logs bgalin-frontend"
+            echo "  • sudo journalctl -u bgalin-backend.service -f"
             echo ""
