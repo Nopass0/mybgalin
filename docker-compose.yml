@@ -5,10 +5,13 @@ services:
       dockerfile: Dockerfile
     restart: always
     ports:
-      - "8000:3000"
+      - "8000:8000"
     environment:
       - NODE_ENV=production
+      - PORT=8000
       - DATABASE_URL=${DATABASE_URL}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
     mem_limit: 512m
 
   frontend:
