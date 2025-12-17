@@ -7,13 +7,15 @@ Wants=postgresql.service
 Type=simple
 User=bgalin
 WorkingDirectory=/var/www/bgalin/server
-ExecStart=/home/bgalin/.bun/bin/bun run src/index.ts
+# Try multiple Bun paths for flexibility
+ExecStart=/bin/bash -c "exec /home/bgalin/.bun/bin/bun run src/index.ts"
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 Environment="NODE_ENV=production"
 Environment="PORT=8000"
+Environment="PATH=/home/bgalin/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Security
 PrivateTmp=yes

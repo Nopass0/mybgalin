@@ -62,9 +62,10 @@ jobs:
             if ! command -v bun &> /dev/null; then
               echo "Installing Bun..."
               curl -fsSL https://bun.sh/install | bash
-              export PATH="/home/$USER/.bun/bin:$PATH"
             fi
-            bun --version
+            # Set Bun path explicitly
+            export PATH="$HOME/.bun/bin:$PATH"
+            bun --version || { echo "❌ Bun installation failed"; exit 1; }
             echo "✓ Bun ready"
             
             # Install/Update Node.js and PM2 if needed
@@ -140,6 +141,10 @@ jobs:
             # ============================================
             echo ""
             echo "=== 4. Building Backend (Bun) ==="
+            
+            # Ensure PATH includes Bun
+            export PATH="$HOME/.bun/bin:$PATH"
+            
             cd /var/www/bgalin/server
             
             bun install || { echo "❌ Bun install failed"; exit 1; }
