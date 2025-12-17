@@ -62,9 +62,13 @@ jobs:
             if ! command -v bun &> /dev/null; then
               echo "Installing Bun..."
               curl -fsSL https://bun.sh/install | bash
+              # Reload PATH
+              export BUN_INSTALL="$HOME/.bun"
+              export PATH="$BUN_INSTALL/bin:$PATH"
             fi
             # Set Bun path explicitly
-            export PATH="$HOME/.bun/bin:$PATH"
+            export BUN_INSTALL="$HOME/.bun"
+            export PATH="$BUN_INSTALL/bin:$PATH"
             bun --version || { echo "❌ Bun installation failed"; exit 1; }
             echo "✓ Bun ready"
             
@@ -143,7 +147,8 @@ jobs:
             echo "=== 4. Building Backend (Bun) ==="
             
             # Ensure PATH includes Bun
-            export PATH="$HOME/.bun/bin:$PATH"
+            export BUN_INSTALL="$HOME/.bun"
+            export PATH="$BUN_INSTALL/bin:$PATH"
             
             cd /var/www/bgalin/server
             
@@ -180,6 +185,12 @@ jobs:
             
             # Set ownership
             sudo chown bgalin:bgalin /var/www/bgalin/server -R
+            
+            # Install Bun for bgalin user if needed
+            if [ ! -d /home/bgalin/.bun ]; then
+              echo "Installing Bun for bgalin user..."
+              sudo -u bgalin bash -c 'curl -fsSL https://bun.sh/install | bash'
+            fi
             
             echo "✓ Systemd service installed"
             
