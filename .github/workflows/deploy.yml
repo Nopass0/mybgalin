@@ -127,27 +127,32 @@ jobs:
             ENVEOF
             fi
             
-            # Retry docker compose with exponential backoff
+            # Retry docker compose with exponential backoff and timeout
             cd /var/www/bgalin
-            sudo docker compose down 2>/dev/null || true
+            echo "Stopping existing containers..."
+            timeout 10 sudo docker compose down 2>/dev/null || true
             sleep 2
             
             RETRY=0
-            while [ $RETRY -lt 5 ]; do
-              if sudo docker compose up -d 2>&1; then
-                sleep 10
-                echo "Docker services:"
-                sudo docker compose ps
-                echo "✓ Docker services running"
-                break
+            while [ $RETRY -lt 3 ]; do
+              echo "Attempting to start Docker services (attempt $((RETRY + 1))/3)..."
+              if timeout 30 sudo docker compose up -d 2>&1 | head -20; then
+                echo "Waiting for containers to be ready..."
+                sleep 5
+                if timeout 10 sudo docker compose ps 2>&1 | head -20; then
+                  echo "✓ Docker services running"
+                  break
+                fi
               fi
               RETRY=$((RETRY + 1))
-              echo "⚠ Docker compose failed, retry $RETRY/5..."
-              sleep $((RETRY * 2))
+              if [ $RETRY -lt 3 ]; then
+                echo "⚠ Docker compose attempt failed, retrying in 5s..."
+                sleep 5
+              fi
             done
             
-            if [ $RETRY -eq 5 ]; then
-              echo "⚠ Docker services failed to start, but continuing with PM2 deployment..."
+            if [ $RETRY -ge 3 ]; then
+              echo "⚠ Docker services skipped, continuing with PM2 deployment only..."
             fi
             
             # ============================================
