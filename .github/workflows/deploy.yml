@@ -45,9 +45,21 @@ jobs:
             echo "Starting Docker..."
             sudo systemctl start docker 2>/dev/null || true
             sudo systemctl enable docker 2>/dev/null || true
+            
+            # Wait for Docker daemon to be ready
+            echo "Waiting for Docker daemon..."
+            for i in {1..30}; do
+              if sudo docker info > /dev/null 2>&1; then
+                echo "✓ Docker daemon ready"
+                break
+              fi
+              echo "  Attempt $i/30..."
+              sleep 1
+            done
+            
             sudo usermod -aG docker $USER 2>/dev/null || true
             docker --version || { echo "❌ Docker not found"; exit 1; }
-            echo "✓ Docker running"
+            echo "✓ Docker ready"
             
             # Install docker-compose if needed
             if ! command -v docker-compose &> /dev/null; then
@@ -55,7 +67,7 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y docker-compose
             fi
-            docker-compose --version
+            sudo docker-compose --version
             echo "✓ docker-compose ready"
             
             # Install Bun if needed
@@ -128,13 +140,28 @@ jobs:
             ENVEOF
             fi
             
-            # Start docker-compose services
-            docker-compose up -d --force-recreate || { echo "❌ Docker compose failed"; exit 1; }
+            # Start docker-compose services (with retry)
+            echo "Starting Docker services..."
+            for attempt in {1..3}; do
+              echo "Attempt $attempt/3..."
+              if sudo docker-compose up -d --force-recreate 2>&1; then
+                echo "✓ Docker services started"
+                break
+              fi
+              if [ $attempt -lt 3 ]; then
+                echo "Retrying in 5 seconds..."
+                sleep 5
+              else
+                echo "❌ Docker compose failed after 3 attempts"
+                sudo docker-compose logs 2>&1 || true
+                exit 1
+              fi
+            done
             sleep 20
             
             # Check if services started
-            docker-compose ps
-            if ! docker ps | grep -q bgalin_postgres_1; then
+            sudo docker-compose ps
+            if ! sudo docker ps | grep -q bgalin_postgres_1; then
               echo "⚠ PostgreSQL container might not be fully ready, waiting..."
               sleep 10
             fi
@@ -232,7 +259,7 @@ jobs:
             echo "=== 8. Verifying Services ==="
             
             echo "Docker containers:"
-            docker ps --format "table {{.Names}}\t{{.Status}}"
+            sudo docker ps --format "table {{.Names}}\t{{.Status}}"
             
             echo ""
             echo "PM2 processes:"
