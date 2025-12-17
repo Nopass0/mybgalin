@@ -1,0 +1,941 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === Auth ===
+
+model User {
+  id             Int       @id @default(autoincrement())
+  telegram_id    BigInt    @unique
+  username       String?
+  created_at     DateTime  @default(now()) @db.Timestamptz
+
+  otp_codes      OtpCode[]
+  sessions       Session[]
+
+  @@map("users")
+}
+
+model OtpCode {
+  id          Int       @id @default(autoincrement())
+  user_id     Int
+  code        String
+  expires_at  DateTime  @db.Timestamptz
+  used        Boolean   @default(false)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("otp_codes")
+}
+
+model Session {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  token       String   @unique
+  expires_at  DateTime @db.Timestamptz
+  created_at  DateTime @default(now()) @db.Timestamptz
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("sessions")
+}
+
+// === Portfolio ===
+
+model PortfolioAbout {
+  id          Int      @id @default(autoincrement())
+  description String
+  updated_at  DateTime @default(now()) @db.Timestamptz
+
+  @@map("portfolio_about")
+}
+
+model PortfolioExperience {
+  id          Int      @id @default(autoincrement())
+  title       String
+  company     String
+  date_from   String
+  date_to     String?
+  description String
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  @@map("portfolio_experience")
+}
+
+model PortfolioSkill {
+  id          Int      @id @default(autoincrement())
+  name        String
+  category    String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  @@map("portfolio_skills")
+}
+
+model PortfolioContact {
+  id          Int      @id @default(autoincrement())
+  type        String
+  value       String
+  label       String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  @@map("portfolio_contacts")
+}
+
+model PortfolioCase {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  main_image  String
+  website_url String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  images      PortfolioCaseImage[]
+
+  @@map("portfolio_cases")
+}
+
+model PortfolioCaseImage {
+  id          Int      @id @default(autoincrement())
+  case_id     Int
+  image_url   String
+  order_index Int      @default(0)
+  case        PortfolioCase @relation(fields: [case_id], references: [id], onDelete: Cascade)
+
+  @@map("portfolio_case_images")
+}
+
+// === Job Search ===
+
+model JobVacancy {
+  id                  Int       @id @default(autoincrement())
+  hh_vacancy_id       String    @unique
+  title               String
+  company             String
+  salary_from         Int?
+  salary_to           Int?
+  salary_currency     String?
+  description         String?
+  url                 String
+  status              String    @default("found")
+  found_at            DateTime  @default(now()) @db.Timestamptz
+  applied_at          DateTime? @db.Timestamptz
+  updated_at          DateTime  @default(now()) @db.Timestamptz
+
+  ai_score            Int?
+  ai_recommendation   String?
+  ai_priority         Int?
+  ai_match_reasons    String?
+  ai_concerns         String?
+  ai_salary_assessment String?
+
+  responses           JobResponse[]
+  chat                JobChatV2?
+  messages            JobChatMessage[] // Relation for direct access if needed, mainly via chat? No, schema has chat_id
+  activity_log        JobActivityLog[]
+
+  @@map("job_vacancies")
+}
+
+model JobResponse {
+  id                Int       @id @default(autoincrement())
+  vacancy_id        Int
+  hh_negotiation_id String?
+  cover_letter      String
+  status            String    @default("sent")
+  created_at        DateTime  @default(now()) @db.Timestamptz
+  updated_at        DateTime  @default(now()) @db.Timestamptz
+  vacancy           JobVacancy @relation(fields: [vacancy_id], references: [id], onDelete: Cascade)
+
+  @@index([vacancy_id])
+  @@map("job_responses")
+}
+
+model JobChatV2 {
+  id                  Int       @id @default(autoincrement())
+  vacancy_id          Int
+  hh_chat_id          String    @unique
+  employer_name       String?
+  is_bot              Boolean   @default(false)
+  is_human_confirmed  Boolean   @default(false)
+  telegram_invited    Boolean   @default(false)
+  last_message_at     DateTime? @db.Timestamptz
+  unread_count        Int       @default(0)
+  created_at          DateTime  @default(now()) @db.Timestamptz
+  updated_at          DateTime  @default(now()) @db.Timestamptz
+  vacancy             JobVacancy @relation(fields: [vacancy_id], references: [id], onDelete: Cascade)
+  messages            JobChatMessage[]
+
+  @@map("job_chats_v2")
+}
+
+model JobChatMessage {
+  id               Int       @id @default(autoincrement())
+  chat_id          Int
+  hh_message_id    String?
+  author_type      String
+  text             String
+  is_auto_response Boolean   @default(false)
+  ai_sentiment     String?
+  ai_intent        String?
+  created_at       DateTime  @default(now()) @db.Timestamptz
+  chat             JobChatV2 @relation(fields: [chat_id], references: [id], onDelete: Cascade)
+
+  @@index([chat_id])
+  @@map("job_chat_messages")
+}
+
+model JobSearchSettings {
+  id                      Int      @id @default(autoincrement())
+  is_active               Boolean  @default(false)
+  search_text             String?
+  area_ids                String?
+  experience              String?
+  schedule                String?
+  employment              String?
+  salary_from             Int?
+  only_with_salary        Boolean  @default(false)
+  auto_tags_enabled       Boolean  @default(true)
+  search_tags_json        String?
+  min_ai_score            Int      @default(50)
+  auto_apply_enabled      Boolean  @default(true)
+  search_interval_minutes Int      @default(60)
+  updated_at              DateTime @default(now()) @db.Timestamptz
+
+  @@map("job_search_settings")
+}
+
+model HhToken {
+  id            Int      @id @default(autoincrement())
+  access_token  String
+  refresh_token String
+  expires_at    DateTime @db.Timestamptz
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  @@map("hh_tokens")
+}
+
+model JobSearchTag {
+  id            Int      @id @default(autoincrement())
+  tag_type      String
+  value         String
+  is_active     Boolean  @default(true)
+  search_count  Int      @default(0)
+  found_count   Int      @default(0)
+  applied_count Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  @@unique([tag_type, value])
+  @@map("job_search_tags")
+}
+
+model JobActivityLog {
+  id          Int      @id @default(autoincrement())
+  event_type  String
+  vacancy_id  Int?
+  description String
+  metadata    String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+  vacancy     JobVacancy? @relation(fields: [vacancy_id], references: [id], onDelete: SetNull)
+
+  @@map("job_activity_log")
+}
+
+model JobSearchStats {
+  id                      Int      @id @default(autoincrement())
+  date                    String   @unique
+  searches_count          Int      @default(0)
+  vacancies_found         Int      @default(0)
+  applications_sent       Int      @default(0)
+  invitations_received    Int      @default(0)
+  rejections_received     Int      @default(0)
+  messages_sent           Int      @default(0)
+  messages_received       Int      @default(0)
+  telegram_invites_sent   Int      @default(0)
+  avg_ai_score            Float?
+  created_at              DateTime @default(now()) @db.Timestamptz
+
+  @@map("job_search_stats")
+}
+
+// === Alice Smart Home ===
+
+model AliceUser {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  password_hash String
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  tokens        AliceToken[]
+
+  @@map("alice_users")
+}
+
+model AliceToken {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  access_token  String   @unique
+  refresh_token String   @unique
+  expires_at    DateTime @db.Timestamptz
+  created_at    DateTime @default(now()) @db.Timestamptz
+  user          AliceUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("alice_tokens")
+}
+
+model AliceDevice {
+  id           String    @id
+  name         String
+  description  String?
+  room         String?
+  device_type  String
+  capabilities String    // JSON string
+  properties   String?   // JSON string
+  custom_data  String?   // JSON string
+  is_enabled   Boolean   @default(true)
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  updated_at   DateTime  @default(now()) @db.Timestamptz
+
+  states       AliceDeviceState[]
+  logs         AliceCommandLog[]
+
+  @@map("alice_devices")
+}
+
+model AliceDeviceState {
+  id          Int      @id @default(autoincrement())
+  device_id   String
+  state_key   String
+  state_value String
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  device      AliceDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
+
+  @@unique([device_id, state_key])
+  @@map("alice_device_states")
+}
+
+model AliceCommandLog {
+  id           Int      @id @default(autoincrement())
+  device_id    String
+  command_type String
+  command_data String?
+  result       String?
+  success      Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamptz
+  device       AliceDevice @relation(fields: [device_id], references: [id], onDelete: Cascade)
+
+  @@map("alice_command_log")
+}
+
+model AliceCommandQueue {
+  id           Int       @id @default(autoincrement())
+  command_type String
+  command_data Json
+  priority     Int       @default(0)
+  status       String    @default("pending")
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  processed_at DateTime? @db.Timestamptz
+  result       String?
+  error        String?
+
+  @@map("alice_command_queue")
+}
+
+model AlicePcClient {
+  id          Int       @id @default(autoincrement())
+  client_id   String    @unique
+  client_name String
+  api_key     String    @unique
+  is_online   Boolean   @default(false)
+  last_seen   DateTime? @db.Timestamptz
+  mac_address String?
+  ip_address  String?
+  created_at  DateTime  @default(now()) @db.Timestamptz
+
+  @@map("alice_pc_clients")
+}
+
+// === T2 Sales System ===
+
+model T2Store {
+  id          Int       @id @default(autoincrement())
+  name        String
+  address     String
+  admin_code  String    @unique
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @default(now()) @db.Timestamptz
+
+  employees   T2Employee[]
+  products    T2Product[]
+  tariffs     T2Tariff[]
+  services    T2Service[]
+  sales       T2Sale[]
+  tags        T2Tag[]
+  employee_stores T2EmployeeStore[]
+
+  @@map("t2_stores")
+}
+
+model T2Employee {
+  id          Int       @id @default(autoincrement())
+  store_id    Int
+  name        String
+  code        String    @unique
+  is_admin    Boolean   @default(false)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  store       T2Store   @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  sessions    T2Session[]
+  sales       T2Sale[]
+  employee_stores T2EmployeeStore[]
+
+  @@map("t2_employees")
+}
+
+model T2EmployeeStore {
+  id          Int      @id @default(autoincrement())
+  employee_id Int
+  store_id    Int
+  created_at  DateTime @default(now()) @db.Timestamptz
+  employee    T2Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  store       T2Store    @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@unique([employee_id, store_id])
+  @@map("t2_employee_stores")
+}
+
+model T2Session {
+  id          Int      @id @default(autoincrement())
+  employee_id Int
+  token       String   @unique
+  expires_at  DateTime @db.Timestamptz
+  created_at  DateTime @default(now()) @db.Timestamptz
+  employee    T2Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@map("t2_sessions")
+}
+
+model T2Category {
+  id          Int      @id @default(autoincrement())
+  name        String
+  icon        String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+  products    T2Product[]
+
+  @@map("t2_categories")
+}
+
+model T2Tag {
+  id          Int      @id @default(autoincrement())
+  store_id    Int
+  name        String
+  color       String   @default("#00bcd4")
+  description String?
+  priority    Int      @default(0)
+  created_at  DateTime @default(now()) @db.Timestamptz
+  store       T2Store  @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  products    T2ProductTag[]
+
+  @@map("t2_tags")
+}
+
+model T2Product {
+  id          Int      @id @default(autoincrement())
+  store_id    Int
+  category_id Int
+  name        String
+  brand       String?
+  model       String?
+  price       Float
+  quantity    Int      @default(1)
+  image_url   String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  store       T2Store  @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  category    T2Category @relation(fields: [category_id], references: [id])
+  specs       T2ProductSpec[]
+  tags        T2ProductTag[]
+
+  @@map("t2_products")
+}
+
+model T2ProductSpec {
+  id          Int      @id @default(autoincrement())
+  product_id  Int
+  spec_name   String
+  spec_value  String
+  product     T2Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("t2_product_specs")
+}
+
+model T2ProductTag {
+  id          Int      @id @default(autoincrement())
+  product_id  Int
+  tag_id      Int
+  product     T2Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  tag         T2Tag     @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@unique([product_id, tag_id])
+  @@map("t2_product_tags")
+}
+
+model T2Tariff {
+  id                  Int      @id @default(autoincrement())
+  store_id            Int
+  name                String
+  price               Float
+  minutes             Int?
+  sms                 Int?
+  gb                  Int?
+  unlimited_t2        Boolean  @default(false)
+  unlimited_internet  Boolean  @default(false)
+  unlimited_sms       Boolean  @default(false)
+  unlimited_calls     Boolean  @default(false)
+  unlimited_apps      String?
+  description         String?
+  created_at          DateTime @default(now()) @db.Timestamptz
+  updated_at          DateTime @default(now()) @db.Timestamptz
+  store               T2Store  @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@map("t2_tariffs")
+}
+
+model T2Service {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  name                 String
+  price                Float
+  description          String?
+  for_smartphones_only Boolean  @default(false)
+  created_at           DateTime @default(now()) @db.Timestamptz
+  store                T2Store  @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@map("t2_services")
+}
+
+model T2Sale {
+  id                  Int      @id @default(autoincrement())
+  store_id            Int
+  employee_id         Int
+  customer_request    String?
+  customer_audio_url  String?
+  total_amount        Float    @default(0)
+  status              String   @default("completed")
+  created_at          DateTime @default(now()) @db.Timestamptz
+  store               T2Store  @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  employee            T2Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  items               T2SaleItem[]
+
+  @@map("t2_sales")
+}
+
+model T2SaleItem {
+  id          Int      @id @default(autoincrement())
+  sale_id     Int
+  item_type   String
+  item_id     Int
+  item_name   String
+  item_details String?
+  price       Float
+  quantity    Int      @default(1)
+  created_at  DateTime @default(now()) @db.Timestamptz
+  sale        T2Sale   @relation(fields: [sale_id], references: [id], onDelete: Cascade)
+
+  @@map("t2_sale_items")
+}
+
+// === English Learning ===
+
+model EnglishCategory {
+  id            Int      @id @default(autoincrement())
+  name          String
+  name_ru       String
+  description   String?
+  icon          String?
+  color         String?  @default("#3b82f6")
+  word_count    Int      @default(0)
+  display_order Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz
+  words         EnglishWord[]
+  quiz_results  EnglishQuizResult[]
+
+  @@map("english_categories")
+}
+
+model EnglishWord {
+  id             Int      @id @default(autoincrement())
+  category_id    Int?
+  word           String
+  transcription  String?
+  translation    String
+  definition     String?
+  part_of_speech String?
+  examples       String?
+  synonyms       String?
+  antonyms       String?
+  audio_url      String?
+  image_url      String?
+  difficulty     Int      @default(1)
+  frequency      Int      @default(0)
+  cefr_level     String?
+  created_at     DateTime @default(now()) @db.Timestamptz
+  category       EnglishCategory? @relation(fields: [category_id], references: [id])
+  progress       EnglishWordProgress?
+
+  @@map("english_words")
+}
+
+model EnglishWordProgress {
+  id             Int      @id @default(autoincrement())
+  word_id        Int      @unique
+  ease_factor    Float    @default(2.5)
+  interval_days  Int      @default(0)
+  repetitions    Int      @default(0)
+  next_review    DateTime? @db.Timestamptz
+  last_review    DateTime? @db.Timestamptz
+  correct_count  Int      @default(0)
+  incorrect_count Int     @default(0)
+  status         String   @default("new")
+  mastery_level  Int      @default(0)
+  created_at     DateTime @default(now()) @db.Timestamptz
+  updated_at     DateTime @default(now()) @db.Timestamptz
+  word           EnglishWord @relation(fields: [word_id], references: [id], onDelete: Cascade)
+
+  @@map("english_word_progress")
+}
+
+model EnglishGrammar {
+  id              Int      @id @default(autoincrement())
+  title           String
+  title_ru        String
+  category        String
+  difficulty      Int      @default(1)
+  cefr_level      String?
+  explanation     String
+  explanation_ru  String
+  examples        String?
+  common_mistakes String?
+  tips            String?
+  created_at      DateTime @default(now()) @db.Timestamptz
+  progress        EnglishGrammarProgress?
+
+  @@map("english_grammar")
+}
+
+model EnglishGrammarProgress {
+  id            Int      @id @default(autoincrement())
+  grammar_id    Int      @unique
+  studied       Boolean  @default(false)
+  mastery_level Int      @default(0)
+  quiz_score    Int?
+  last_studied  DateTime? @db.Timestamptz
+  next_review   DateTime? @db.Timestamptz
+  created_at    DateTime @default(now()) @db.Timestamptz
+  grammar       EnglishGrammar @relation(fields: [grammar_id], references: [id], onDelete: Cascade)
+
+  @@map("english_grammar_progress")
+}
+
+model EnglishSentence {
+  id            Int      @id @default(autoincrement())
+  sentence      String
+  translation   String
+  audio_url     String?
+  difficulty    Int      @default(1)
+  category      String?
+  grammar_focus String?
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  @@map("english_sentences")
+}
+
+model EnglishQuizResult {
+  id                 Int      @id @default(autoincrement())
+  quiz_type          String
+  category_id        Int?
+  score              Int
+  total_questions    Int
+  correct_answers    Int
+  time_spent_seconds Int?
+  details            String?
+  created_at         DateTime @default(now()) @db.Timestamptz
+  category           EnglishCategory? @relation(fields: [category_id], references: [id])
+
+  @@map("english_quiz_results")
+}
+
+model EnglishDailyStats {
+  id                 Int      @id @default(autoincrement())
+  date               String   @unique
+  words_learned      Int      @default(0)
+  words_reviewed     Int      @default(0)
+  new_words_added    Int      @default(0)
+  quizzes_completed  Int      @default(0)
+  correct_answers    Int      @default(0)
+  incorrect_answers  Int      @default(0)
+  time_spent_minutes Int      @default(0)
+  streak_days        Int      @default(0)
+  xp_earned          Int      @default(0)
+  created_at         DateTime @default(now()) @db.Timestamptz
+
+  @@map("english_daily_stats")
+}
+
+model EnglishSettings {
+  id                   Int      @id @default(autoincrement())
+  daily_goal_words     Int      @default(10)
+  daily_goal_minutes   Int      @default(15)
+  preferred_difficulty Int      @default(2)
+  show_transcription   Boolean  @default(true)
+  show_examples        Boolean  @default(true)
+  auto_play_audio      Boolean  @default(true)
+  review_notification  Boolean  @default(true)
+  current_streak       Int      @default(0)
+  longest_streak       Int      @default(0)
+  total_xp             Int      @default(0)
+  level                Int      @default(1)
+  updated_at           DateTime @default(now()) @db.Timestamptz
+
+  @@map("english_settings")
+}
+
+model EnglishAchievement {
+  id               Int       @id @default(autoincrement())
+  achievement_type String    @unique
+  title            String
+  description      String
+  icon             String?
+  xp_reward        Int       @default(0)
+  unlocked_at      DateTime? @db.Timestamptz
+  created_at       DateTime  @default(now()) @db.Timestamptz
+
+  @@map("english_achievements")
+}
+
+model EnglishWordList {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  is_public   Boolean  @default(false)
+  word_ids    String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  @@map("english_word_lists")
+}
+
+model EnglishSession {
+  id              Int       @id @default(autoincrement())
+  session_type    String
+  started_at      DateTime  @default(now()) @db.Timestamptz
+  ended_at        DateTime? @db.Timestamptz
+  words_practiced Int       @default(0)
+  correct_count   Int       @default(0)
+  incorrect_count Int       @default(0)
+  xp_earned       Int       @default(0)
+
+  @@map("english_sessions")
+}
+
+// === Other Modules ===
+
+model AnimeAuction {
+  id                  Int      @id @default(autoincrement())
+  date                String?
+  title               String
+  watched             Boolean  @default(false)
+  season              String?
+  episodes            String?
+  voice_acting        String?
+  buyer               String?
+  chat_rating         Float?
+  sheikh_rating       Float?
+  streamer_rating     Float?
+  vod_link            String?
+  sheets_url          String?
+  year                Int
+  shikimori_id        Int?
+  shikimori_name      String?
+  shikimori_description String?
+  shikimori_cover     String?
+  shikimori_score     Float?
+  shikimori_genres    String?
+  created_at          DateTime @default(now()) @db.Timestamptz
+  updated_at          DateTime @default(now()) @db.Timestamptz
+
+  @@map("anime_auction")
+}
+
+model AnimeSyncProgress {
+  id          Int       @id @default(autoincrement())
+  status      String
+  current     Int       @default(0)
+  total       Int       @default(0)
+  message     String?
+  started_at  DateTime  @default(now()) @db.Timestamptz
+  finished_at DateTime? @db.Timestamptz
+
+  @@map("anime_sync_progress")
+}
+
+model StudioUser {
+  id          Int      @id @default(autoincrement())
+  steam_id    String   @unique
+  persona_name String
+  avatar_url  String
+  profile_url String
+  created_at  DateTime @default(now()) @db.Timestamptz
+  sessions    StudioSession[]
+  projects    StudioProject[]
+
+  @@map("studio_users")
+}
+
+model StudioSession {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  token      String   @unique
+  expires_at DateTime @db.Timestamptz
+  created_at DateTime @default(now()) @db.Timestamptz
+  user       StudioUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("studio_sessions")
+}
+
+model StudioProject {
+  id           String   @id
+  user_id      Int
+  name         String
+  type         String   @default("sticker")
+  sticker_type String   @default("paper")
+  thumbnail    String?
+  data         String?
+  created_at   DateTime @default(now()) @db.Timestamptz
+  updated_at   DateTime @default(now()) @db.Timestamptz
+  user         StudioUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("studio_projects")
+}
+
+model FileFolder {
+  id          String   @id
+  name        String
+  parent_id   String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  parent      FileFolder? @relation("FolderToFolder", fields: [parent_id], references: [id], onDelete: Cascade)
+  children    FileFolder[] @relation("FolderToFolder")
+  files       StoredFile[]
+
+  @@map("file_folders")
+}
+
+model StoredFile {
+  id          String   @id
+  name        String
+  path        String
+  folder_id   String?
+  mime_type   String
+  size        BigInt
+  is_public   Boolean  @default(false)
+  access_code String?
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  folder      FileFolder? @relation(fields: [folder_id], references: [id])
+
+  @@map("stored_files")
+}
+
+model SyncFolder {
+  id          String   @id
+  name        String
+  api_key     String   @unique
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  files       SyncFile[]
+  clients     SyncClient[]
+
+  @@map("sync_folders")
+}
+
+model SyncFile {
+  id          String   @id
+  folder_id   String
+  path        String
+  name        String
+  mime_type   String
+  size        BigInt
+  checksum    String
+  version     Int      @default(1)
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  folder      SyncFolder @relation(fields: [folder_id], references: [id], onDelete: Cascade)
+
+  @@unique([folder_id, path])
+  @@map("sync_files")
+}
+
+model SyncClient {
+  id          String   @id
+  folder_id   String
+  device_name String
+  last_sync_at DateTime? @db.Timestamptz
+  created_at  DateTime @default(now()) @db.Timestamptz
+  folder      SyncFolder @relation(fields: [folder_id], references: [id], onDelete: Cascade)
+
+  @@map("sync_clients")
+}
+
+model ShortLink {
+  id                 String   @id
+  name               String
+  original_url       String
+  short_code         String   @unique
+  external_short_url String?
+  is_active          Boolean  @default(true)
+  redirect_to_studio Boolean  @default(false)
+  set_studio_flag    Boolean  @default(false)
+  custom_js          String?
+  expires_at         DateTime? @db.Timestamptz
+  created_at         DateTime @default(now()) @db.Timestamptz
+  updated_at         DateTime @default(now()) @db.Timestamptz
+  clicks             LinkClick[]
+
+  @@map("short_links")
+}
+
+model LinkClick {
+  id              Int      @id @default(autoincrement())
+  link_id         String
+  ip_address      String?
+  user_agent      String?
+  referer         String?
+  country         String?
+  city            String?
+  device_type     String?
+  browser         String?
+  os              String?
+  is_bot          Boolean  @default(false)
+  screen_width    Int?
+  screen_height   Int?
+  language        String?
+  timezone        String?
+  clicked_at      DateTime @default(now()) @db.Timestamptz
+  link            ShortLink @relation(fields: [link_id], references: [id], onDelete: Cascade)
+
+  @@map("link_clicks")
+}
+
+model MenuSetting {
+  id            String   @id
+  label         String
+  is_visible    Boolean  @default(true)
+  display_order Int      @default(0)
+  updated_at    DateTime @default(now()) @db.Timestamptz
+
+  @@map("menu_settings")
+}
