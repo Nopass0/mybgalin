@@ -1,0 +1,26 @@
+[Unit]
+Description=BGalin Backend Service (Bun/Elysia)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=bgalin
+WorkingDirectory=/var/www/bgalin/server
+ExecStart=/home/bgalin/.bun/bin/bun run src/index.ts
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment="NODE_ENV=production"
+Environment="PORT=8000"
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/www/bgalin
+
+[Install]
+WantedBy=multi-user.target
