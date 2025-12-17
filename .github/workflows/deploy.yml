@@ -26,6 +26,7 @@ jobs:
             
             echo "╔════════════════════════════════════════╗"
             echo "║    BGalin Deployment Started           ║"
+            echo "║  Backend + Frontend + N8N              ║"
             echo "╚════════════════════════════════════════╝"
             
             # ============================================
@@ -34,9 +35,8 @@ jobs:
             echo ""
             echo "=== 1. Setup Prerequisites ==="
             
-            # Install Bun if needed
+            # Install Bun
             if ! [ -f "$HOME/.bun/bin/bun" ]; then
-              echo "Installing Bun..."
               curl -fsSL https://bun.sh/install | bash
               sleep 2
             fi
@@ -45,7 +45,6 @@ jobs:
             
             # Install Node.js
             if ! command -v node &> /dev/null; then
-              echo "Installing Node.js..."
               curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
               sudo apt-get install -y nodejs
             fi
@@ -53,12 +52,25 @@ jobs:
             
             # Install PM2
             if ! command -v pm2 &> /dev/null; then
-              echo "Installing PM2..."
               sudo npm install -g pm2
               pm2 startup 2>/dev/null || true
-              pm2 save 2>/dev/null || true
             fi
             echo "✓ PM2 ready"
+            
+            # Install Docker
+            if ! command -v docker &> /dev/null; then
+              curl -fsSL https://get.docker.com | sh
+              sudo systemctl start docker
+              sudo systemctl enable docker
+            fi
+            echo "✓ Docker ready"
+            
+            # Install Nginx
+            if ! command -v nginx &> /dev/null; then
+              sudo apt-get update
+              sudo apt-get install -y nginx
+            fi
+            echo "✓ Nginx ready"
             
             # ============================================
             # 2. UPDATE REPOSITORY
@@ -71,69 +83,110 @@ jobs:
             echo "✓ Repository updated"
             
             # ============================================
-            # 3. BUILD FRONTEND
+            # 3. START DOCKER SERVICES (N8N + PostgreSQL)
             # ============================================
             echo ""
-            echo "=== 3. Build Frontend ==="
-            cd /var/www/bgalin/frontend
-            export NODE_OPTIONS="--max-old-space-size=256"
-            npm install --prefer-offline 2>&1 | tail -3
-            npm run build 2>&1 | tail -5 || echo "⚠ Build issues, using dev mode"
-            echo "✓ Frontend ready"
+            echo "=== 3. Start Docker Services (N8N + PostgreSQL) ==="
             
-            # ============================================
-            # 4. BUILD BACKEND
-            # ============================================
-            echo ""
-            echo "=== 4. Build Backend ==="
-            cd /var/www/bgalin/server
-            bun install --prefer-offline 2>&1 | tail -3
-            echo "✓ Backend ready"
-            
-            # ============================================
-            # 5. STOP OLD SERVICES
-            # ============================================
-            echo ""
-            echo "=== 5. Stop Old Services ==="
-            pm2 kill 2>/dev/null || true
-            sleep 2
-            echo "✓ Old services stopped"
-            
-            # ============================================
-            # 6. START BACKEND
-            # ============================================
-            echo ""
-            echo "=== 6. Start Backend ==="
-            cd /var/www/bgalin/server
-            pm2 start "bun" --name backend -- run src/index.ts \
-              --max-memory-restart 300M 2>&1 | tail -3
-            sleep 3
-            echo "Backend status:"
-            pm2 status backend || echo "Backend status check"
-            
-            # ============================================
-            # 7. START FRONTEND
-            # ============================================
-            echo ""
-            echo "=== 7. Start Frontend ==="
-            cd /var/www/bgalin/frontend
-            pm2 start "npm" --name frontend -- start \
-              --max-memory-restart 500M 2>&1 | tail -3
-            sleep 3
-            echo "Frontend status:"
-            pm2 status frontend || echo "Frontend status check"
-            
-            # ============================================
-            # 8. SETUP NGINX
-            # ============================================
-            echo ""
-            echo "=== 8. Setup Nginx ==="
-            if ! command -v nginx &> /dev/null; then
-              sudo apt-get update
-              sudo apt-get install -y nginx
+            # Create .env if missing
+            if [ ! -f /var/www/bgalin/.env ]; then
+              cat > /var/www/bgalin/.env << 'EOF'
+            POSTGRES_USER=admin
+            POSTGRES_PASSWORD=admin
+            POSTGRES_DB=bgalin
+            N8N_HOST=bgalin.ru
+            N8N_PORT=5678
+            NODE_ENV=production
+            EOF
             fi
             
-            sudo cp /var/www/bgalin/nginx-bgalin.conf /etc/nginx/sites-available/bgalin 2>/dev/null || true
+            # Start docker-compose
+            cd /var/www/bgalin
+            sudo docker-compose down 2>/dev/null || true
+            sleep 2
+            sudo docker-compose up -d
+            sleep 10
+            
+            echo "Docker services:"
+            sudo docker-compose ps
+            echo "✓ Docker services running"
+            
+            # ============================================
+            # 4. BUILD FRONTEND
+            # ============================================
+            echo ""
+            echo "=== 4. Build Frontend ==="
+            cd /var/www/bgalin/frontend
+            export NODE_OPTIONS="--max-old-space-size=512"
+            npm install --prefer-offline 2>&1 | tail -3
+            npm run build 2>&1 | tail -10 || echo "⚠ Build issues"
+            echo "✓ Frontend built"
+            
+            # ============================================
+            # 5. BUILD BACKEND
+            # ============================================
+            echo ""
+            echo "=== 5. Build Backend ==="
+            cd /var/www/bgalin/server
+            bun install --prefer-offline 2>&1 | tail -3
+            echo "✓ Backend built"
+            
+            # ============================================
+            # 6. STOP OLD PM2 PROCESSES
+            # ============================================
+            echo ""
+            echo "=== 6. Stop Old Processes ==="
+            pm2 kill 2>/dev/null || true
+            sleep 3
+            echo "✓ Old processes stopped"
+            
+            # ============================================
+            # 7. START BACKEND ON PM2
+            # ============================================
+            echo ""
+            echo "=== 7. Start Backend ==="
+            cd /var/www/bgalin/server
+            pm2 start bun \
+              --name backend \
+              --args "run src/index.ts" \
+              --max-memory-restart 400M \
+              --restart-delay 5000 \
+              --max-restarts 10 2>&1 | tail -5
+            sleep 5
+            echo "Backend:"
+            pm2 status backend || echo "Starting..."
+            
+            # ============================================
+            # 8. START FRONTEND ON PM2
+            # ============================================
+            echo ""
+            echo "=== 8. Start Frontend ==="
+            cd /var/www/bgalin/frontend
+            pm2 start npm \
+              --name frontend \
+              --args "start" \
+              --max-memory-restart 600M \
+              --restart-delay 5000 \
+              --max-restarts 10 2>&1 | tail -5
+            sleep 5
+            echo "Frontend:"
+            pm2 status frontend || echo "Starting..."
+            
+            # ============================================
+            # 9. SAVE PM2 STATE
+            # ============================================
+            echo ""
+            echo "=== 9. Save PM2 State ==="
+            pm2 save 2>/dev/null || true
+            pm2 startup 2>/dev/null || true
+            echo "✓ PM2 state saved"
+            
+            # ============================================
+            # 10. SETUP NGINX
+            # ============================================
+            echo ""
+            echo "=== 10. Setup Nginx ==="
+            sudo cp /var/www/bgalin/nginx-bgalin.conf /etc/nginx/sites-available/bgalin
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/bgalin
             sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
             
@@ -141,30 +194,31 @@ jobs:
               sudo systemctl restart nginx
               echo "✓ Nginx configured"
             else
-              echo "⚠ Nginx config issue"
+              echo "⚠ Nginx issue"
               sudo systemctl restart nginx || true
             fi
             
             # ============================================
-            # 9. SAVE PM2
-            # ============================================
-            echo ""
-            echo "=== 9. Save PM2 State ==="
-            pm2 save 2>/dev/null || true
-            echo "✓ PM2 state saved"
-            
-            # ============================================
-            # 10. SUMMARY
+            # 11. FINAL STATUS
             # ============================================
             echo ""
             echo "╔════════════════════════════════════════╗"
             echo "║  ✅ Deployment Complete               ║"
             echo "╚════════════════════════════════════════╝"
             echo ""
-            echo "PM2 Services:"
+            echo "PM2 Processes:"
             pm2 status
             echo ""
+            echo "Docker Services:"
+            sudo docker-compose ps
+            echo ""
             echo "Access:"
-            echo "  Frontend:  http://localhost:3000"
-            echo "  Backend:   http://localhost:8000"
-            echo "  Nginx:     http://bgalin.ru"
+            echo "  • Frontend:  https://bgalin.ru"
+            echo "  • Backend:   https://bgalin.ru/api/health"
+            echo "  • N8N:       https://bgalin.ru/n8n/"
+            echo ""
+            echo "Manage:"
+            echo "  • pm2 status          - check processes"
+            echo "  • pm2 logs backend    - backend logs"
+            echo "  • pm2 logs frontend   - frontend logs"
+            echo "  • docker-compose ps   - docker status"
