@@ -17,8 +17,11 @@ RUN bunx prisma generate
 # Copy source code
 COPY . .
 
+# Set environment
+ENV PORT=8000
+
 # Expose port
-EXPOSE 3000
+EXPOSE 8000
 
 # Start the server
 CMD ["bun", "run", "src/index.ts"]
