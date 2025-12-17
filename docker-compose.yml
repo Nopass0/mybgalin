@@ -11,6 +11,31 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://admin:admin@postgres:5432/bgalin
+    depends_on:
+      - postgres
+    mem_limit: 512m
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    mem_limit: 768m
+
   n8n:
     image: n8nio/n8n:latest
     restart: always
