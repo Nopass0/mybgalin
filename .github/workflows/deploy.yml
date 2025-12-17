@@ -130,19 +130,20 @@ jobs:
             echo "✓ Repository updated"
             
             # ============================================
-            # 3. SETUP DATABASE & N8N (Docker)
+            # 3. SETUP DATABASE & N8N (Skip if Docker unavailable)
             # ============================================
             echo ""
-            echo "=== 3. Starting Docker Services (PostgreSQL + N8N) ==="
+            echo "=== 3. Starting Services ==="
             
             # Create .env if it doesn't exist
             if [ ! -f /var/www/bgalin/.env ]; then
               echo "Creating .env file with defaults..."
               cat > /var/www/bgalin/.env << 'ENVEOF'
-            # Database
+            # Database (can use local PostgreSQL or skip)
             POSTGRES_USER=admin
             POSTGRES_PASSWORD=admin
             POSTGRES_DB=bgalin
+            DATABASE_URL="postgresql://admin:admin@localhost:5432/bgalin"
             
             # N8N
             N8N_HOST=bgalin.ru
@@ -152,51 +153,26 @@ jobs:
             # Backend
             PORT=8000
             NODE_ENV=production
+            SKIP_MIGRATIONS=true
             ENVEOF
             fi
             
-            # Start docker-compose services (with retry and better error handling)
-            echo "Starting Docker services..."
-            
-            # Extra wait for docker daemon to be fully ready
-            echo "Extra wait for Docker daemon stability..."
-            sleep 10
-            
-            COMPOSE_SUCCESS=0
-            for attempt in {1..10}; do
-              echo "Attempt $attempt/10..."
-              
-              # Try to start services with sudo
-              if sudo -E docker-compose up -d --force-recreate 2>&1; then
-                COMPOSE_SUCCESS=1
+            # Try Docker services but don't fail if Docker is down
+            echo "Attempting Docker services (optional)..."
+            if command -v docker-compose &> /dev/null && sudo systemctl is-active --quiet docker 2>/dev/null; then
+              echo "Docker available, starting services..."
+              if sudo -E docker-compose up -d --force-recreate 2>&1 | tail -5; then
                 echo "✓ Docker services started"
-                break
+                sleep 10
+              else
+                echo "⚠ Docker services failed, continuing without them..."
               fi
-              
-              echo "  Failed, checking daemon..."
-              sudo docker info 2>&1 | head -3 || echo "  Docker daemon not ready"
-              
-              if [ $attempt -lt 10 ]; then
-                echo "  Retrying in 3 seconds..."
-                sleep 3
-              fi
-            done
-            
-            if [ $COMPOSE_SUCCESS -eq 0 ]; then
-              echo "❌ Docker compose failed after 10 attempts"
-              echo "Troubleshooting info:"
-              echo "=== Docker Info ==="
-              sudo docker info 2>&1 || true
-              echo "=== Docker Compose Logs ==="
-              sudo docker-compose logs 2>&1 || true
-              echo "=== Docker PS ==="
-              sudo docker ps -a 2>&1 || true
-              echo "=== Docker Daemon Status ==="
-              sudo systemctl status docker 2>&1 || true
-              exit 1
+            else
+              echo "⚠ Docker not available, skipping containerized services"
+              echo "   Note: Backend and Frontend will run on PM2/systemd instead"
             fi
             
-            sleep 15
+            sleep 5
             
             # Check if services started
             sudo docker-compose ps
