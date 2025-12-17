@@ -1,4 +1,4 @@
-name: Deploy to Production (Bun Backend)
+name: Deploy to Production
 
 on:
   push:
@@ -29,157 +29,91 @@ jobs:
           command_timeout: 60m
           script: |
             set -e
-
-            echo "🚀 Starting deployment (Bun Backend + PostgreSQL)..."
-
+            echo "Starting deployment..."
+            cd /var/www/bgalin || mkdir -p /var/www/bgalin && cd /var/www/bgalin
+            
             # Stop services
-            sudo systemctl stop bgalin-backend.service || true
-            pm2 stop bgalin-backend || true
-            pm2 stop bgalin-frontend || true
-
-            # Setup project directory
-            echo "📁 Setting up project directory..."
-            sudo mkdir -p /var/www/bgalin
-            sudo chown -R $USER:$USER /var/www/bgalin
-            cd /var/www/bgalin
-
-            # Setup SSH key for GitHub
-            echo "🔑 Setting up SSH authentication..."
-            mkdir -p ~/.ssh
-            chmod 700 ~/.ssh
-            ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-            ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+            pm2 stop all 2>/dev/null || true
             
-            # Clone or update repository
-            echo "📥 Fetching latest code..."
-            REPO_URL="git@github.com:Nopass0/mybgalin.git"
-            
+            # Git update
             if [ -d ".git" ]; then
-              git remote set-url origin "$REPO_URL"
               git fetch origin main --depth=1
               git reset --hard origin/main
-              git clean -fd
             else
-              git clone --depth=1 "$REPO_URL" .
+              git clone --depth=1 https://github.com/Nopass0/mybgalin.git .
             fi
-
-            # Install system dependencies
-            echo "📦 Checking system dependencies..."
             
-            # Update Node.js to 20.x (required for Bun and Prisma)
-            if ! command -v node &> /dev/null || [ "$(node -v | cut -d. -f1 | cut -dv -f2)" -lt 20 ]; then
-              echo "Installing Node.js 20.x..."
+            # Install dependencies
+            if ! command -v bun &> /dev/null; then
+              curl -fsSL https://bun.sh/install | bash
+              export PATH="$HOME/.bun/bin:$PATH"
+            fi
+            
+            if ! command -v node &> /dev/null; then
               curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
               sudo apt-get install -y nodejs
             fi
-
-            # Install Bun runtime
-            if ! command -v bun &> /dev/null; then
-              echo "Installing Bun..."
-              curl -fsSL https://bun.sh/install | bash
-              export BUN_INSTALL="$HOME/.bun"
-              export PATH="$BUN_INSTALL/bin:$PATH"
-            else
-              echo "Bun already installed: $(bun --version)"
-            fi
-
-            # PostgreSQL client (for database operations)
-            if ! command -v psql &> /dev/null; then
-              echo "Installing PostgreSQL client..."
-              sudo apt-get update
-              sudo apt-get install -y postgresql-client
-            fi
-
-            if ! command -v pm2 &> /dev/null; then
-              echo "Installing PM2..."
-              sudo npm install -g pm2
-            fi
-
-            if ! command -v nginx &> /dev/null; then
-              echo "Installing nginx..."
-              sudo apt-get install -y nginx
-            fi
-
-            # Install n8n
-            if ! command -v n8n &> /dev/null; then
-               echo "Installing n8n via npm..."
-               sudo npm install -g n8n
-            fi
-
-            # Setup environment variables
-            echo "🔐 Updating environment variables..."
-            printf "DATABASE_URL=${{ secrets.DATABASE_URL }}\n" > /var/www/bgalin/.env
-            printf "PORT=8000\n" >> /var/www/bgalin/.env
-            printf "NODE_ENV=production\n" >> /var/www/bgalin/.env
-            printf "PUBLIC_URL=https://bgalin.ru\n" >> /var/www/bgalin/.env
-            printf "BASE_URL=https://bgalin.ru\n" >> /var/www/bgalin/.env
-            printf "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}\n" >> /var/www/bgalin/.env
-            printf "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}\n" >> /var/www/bgalin/.env
-            printf "ADMIN_STEAM_ID=${{ secrets.ADMIN_STEAM_ID }}\n" >> /var/www/bgalin/.env
-            printf "STEAM_API_KEY=${{ secrets.STEAM_API_KEY }}\n" >> /var/www/bgalin/.env
-            printf "FACEIT_API_KEY=${{ secrets.FACEIT_API_KEY }}\n" >> /var/www/bgalin/.env
-            printf "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}\n" >> /var/www/bgalin/.env
-            printf "HH_CLIENT_ID=${{ secrets.HH_CLIENT_ID }}\n" >> /var/www/bgalin/.env
-            printf "HH_CLIENT_SECRET=${{ secrets.HH_CLIENT_SECRET }}\n" >> /var/www/bgalin/.env
-            printf "HH_REDIRECT_URI=https://bgalin.ru/api/auth/hh/callback\n" >> /var/www/bgalin/.env
-            printf "N8N_API_URL=http://localhost:5678\n" >> /var/www/bgalin/.env
-            printf "N8N_API_KEY=${{ secrets.N8N_API_KEY }}\n" >> /var/www/bgalin/.env
-
-            # Setup Bun backend
-            echo "⚙️ Setting up Bun backend..."
-            cd /var/www/bgalin/server
             
-            # Setup PATH for Bun
-            export BUN_INSTALL="$HOME/.bun"
-            export PATH="$BUN_INSTALL/bin:$PATH"
-            
-            echo "Installing backend dependencies..."
+            # Setup backend
+            echo "Setting up backend..."
+            cd server
+            export PATH="$HOME/.bun/bin:$PATH"
             bun install
-            
-            # Copy .env to server directory
-            cp /var/www/bgalin/.env /var/www/bgalin/server/.env
-
-            # Initialize database
-            echo "📊 Initializing database..."
-            npx prisma generate
+            cp ../.env .env 2>/dev/null || true
+            npx prisma generate || true
             npx prisma db push --skip-generate || true
-
-            # Build frontend
-            echo "🎨 Building frontend..."
-            cd /var/www/bgalin/frontend
-            rm -rf node_modules package-lock.json .next
+            
+            # Setup frontend
+            echo "Setting up frontend..."
+            cd ../frontend
             npm install
             NODE_ENV=production npm run build
-
-            # Setup systemd service for Bun backend (port 8000)
-            echo "⚙️ Configuring systemd service for Bun backend..."
-            sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null <<'SYSTEMD_EOF'
+            
+            # Setup systemd service for backend
+            echo "Configuring services..."
+            sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null << 'EOF'
 [Unit]
-Description=BGalin Backend (Bun + Elysia)
-After=network.target postgresql.service
+Description=BGalin Backend
+After=network.target
 
 [Service]
 Type=simple
 User=$USER
 WorkingDirectory=/var/www/bgalin/server
 EnvironmentFile=/var/www/bgalin/.env
-Environment="NODE_ENV=production"
-Environment="PATH=/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/root/.bun/bin/bun run src/index.ts
+Environment="PATH=$HOME/.bun/bin:/usr/bin:/bin"
+ExecStart=$HOME/.bun/bin/bun run src/index.ts
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-SYSTEMD_EOF
+EOF
+            
             sudo systemctl daemon-reload
             sudo systemctl enable bgalin-backend.service
-
-            # Setup nginx configuration (proxy to ports 3000 and 8000)
-            echo "🌐 Configuring nginx..."
-            sudo tee /etc/nginx/sites-available/bgalin > /dev/null <<'NGINX_EOF'
+            sudo systemctl restart bgalin-backend.service
+            
+            # Setup frontend PM2
+            cd /var/www/bgalin/frontend
+            cat > ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [{
+    name: 'bgalin-frontend',
+    script: 'node_modules/next/dist/bin/next',
+    args: 'start',
+    instances: 1,
+    autorestart: true,
+    env: { NODE_ENV: 'production', PORT: 3000 }
+  }]
+};
+EOF
+            pm2 start ecosystem.config.js
+            pm2 save
+            
+            # Setup nginx
+            echo "Configuring nginx..."
+            sudo tee /etc/nginx/sites-available/bgalin > /dev/null << 'EOF'
 server {
     listen 80;
     server_name bgalin.ru www.bgalin.ru;
@@ -196,20 +130,14 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
-    # Frontend (Next.js on 3000)
     location / {
         proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Backend API (Bun on 8000)
     location /api/ {
         proxy_pass http://localhost:8000/api/;
         proxy_http_version 1.1;
@@ -217,145 +145,56 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 30s;
-        proxy_connect_timeout 30s;
     }
 
-    # Swagger API documentation
     location /swagger {
         proxy_pass http://localhost:8000/swagger;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
     }
 
-    # N8N Automation (port 5678)
     location /n8n/ {
         proxy_pass http://localhost:5678/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;
-        chunked_transfer_encoding off;
-        proxy_cache off;
     }
-
-    # N8N webhooks
-    location /webhook/ {
-        proxy_pass http://localhost:5678/webhook/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;
-        chunked_transfer_encoding off;
-        proxy_cache off;
-    }
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-
-    access_log /var/log/nginx/bgalin_access.log;
-    error_log /var/log/nginx/bgalin_error.log;
 }
-NGINX_EOF
+EOF
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/
             sudo rm -f /etc/nginx/sites-enabled/default
-
-            # Setup PM2 config for frontend
-            echo "📦 Creating PM2 config..."
-            cat > /var/www/bgalin/frontend/ecosystem.config.js <<'PM2_EOF'
-module.exports = {
-  apps: [{
-    name: 'bgalin-frontend',
-    script: 'node_modules/next/dist/bin/next',
-    args: 'start',
-    cwd: '/var/www/bgalin/frontend',
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3000
-    }
-  }]
-};
-PM2_EOF
-
-            # Restart services
-            echo "♻️ Restarting services..."
-            
-            # Start/Restart n8n
-            if ! pm2 list | grep -q "n8n"; then
-               echo "Starting n8n..."
-               pm2 start n8n -- \
-               --start \
-               --env NODE_ENV=production \
-               --env N8N_PORT=5678 \
-               --env N8N_LISTEN_ADDRESS=0.0.0.0 \
-               --env N8N_HOST=bgalin.ru \
-               --env WEBHOOK_URL=https://bgalin.ru/webhook/ \
-               --env N8N_PROTOCOL=https \
-               --env N8N_PATH=/n8n/ \
-               --env N8N_EDITOR_BASE_URL=https://bgalin.ru/n8n/ \
-               --env N8N_PROXY_HOPS=1
-            else
-               pm2 restart n8n
-            fi
-
-            # Restart Bun backend service
-            sudo systemctl daemon-reload
-            sudo systemctl restart bgalin-backend.service
-
-            # Start/Restart frontend with PM2
-            cd /var/www/bgalin/frontend
-            if pm2 list | grep -q "bgalin-frontend"; then
-              pm2 delete bgalin-frontend 2>/dev/null || true
-            fi
-            pm2 start ecosystem.config.js
-            pm2 save
-
-            # Test and reload nginx
             sudo nginx -t
             sudo systemctl reload nginx
-
-            echo "✅ Checking service status..."
             
-            # Wait for backend to start
-            for i in {1..15}; do
+            # N8N setup
+            if ! pm2 list | grep -q "n8n"; then
+              pm2 start n8n -- --start --port 5678 --listening_address 0.0.0.0
+            else
+              pm2 restart n8n
+            fi
+            
+            # Wait for services
+            sleep 5
+            
+            # Verify services
+            echo "Verifying services..."
+            for i in {1..10}; do
               if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
-                echo "✓ Backend is responding!"
+                echo "Backend is responding!"
                 break
               fi
-              echo "Waiting for backend to start... ($i/15)"
+              echo "Waiting for backend... ($i/10)"
               sleep 2
             done
-
-            # Check all services
-            echo "📊 Service Status:"
-            echo "Backend service: $(sudo systemctl is-active bgalin-backend.service)"
-            pm2 list | grep -E "bgalin-frontend|n8n" || true
             
-            # Test endpoints
-            echo "🔍 Testing API endpoints..."
-            curl -s http://localhost:8000/api/health || echo "Health check endpoint not responding"
-            curl -s https://bgalin.ru/api/health || echo "Public health check not responding"
-
-            echo "✅ Deployment completed successfully!"
-
+            pm2 status
+            echo "Deployment complete!"
+            
             # Send Telegram notification
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
               -d chat_id="${{ secrets.ADMIN_TELEGRAM_ID }}" \
-              -d text="✅ Deployment to bgalin.ru completed!%0A%0CBackend: Bun (port 8000)%0AFrontend: Next.js (port 3000)%0AN8N: Automation (port 5678)%0A%0CCommit: ${{ github.event.head_commit.message }}%0AAuthor: ${{ github.actor }}" \
-              > /dev/null || true
+              -d text="✅ Deployment complete! Backend: port 8000, Frontend: port 3000, N8N: /n8n/" \
+              2>/dev/null || true
 
       - name: Notify on failure
         if: failure()
@@ -363,12 +202,4 @@ PM2_EOF
         with:
           to: ${{ secrets.ADMIN_TELEGRAM_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            ❌ Deployment to bgalin.ru FAILED!
-
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            
-            Check logs at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          message: "❌ Deployment failed! Check: https://github.com/Nopass0/mybgalin/actions"
