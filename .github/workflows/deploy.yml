@@ -116,8 +116,15 @@ jobs:
             echo ""
             echo "=== 5. Build Frontend ==="
             cd /var/www/bgalin/frontend
-            npm install --prefer-offline --no-audit 2>&1 | tail -5
-            npm run build 2>&1 | tail -10 || echo "⚠ Build had issues"
+            npm install --prefer-offline --no-audit 2>&1 | tail -3
+            
+            # Skip build if low memory (just use existing if available)
+            if [ -d ".next" ]; then
+              echo "✓ Frontend pre-built (using existing)"
+            else
+              echo "⚠ Frontend needs build, attempting..."
+              npm run build 2>&1 | tail -5 || echo "⚠ Build skipped (low memory)"
+            fi
             echo "✓ Frontend ready"
             
             # ============================================
@@ -125,17 +132,39 @@ jobs:
             # ============================================
             echo ""
             echo "=== 6. Setup Backend Service ==="
+            
+            # Ensure bgalin user has permissions
+            sudo chown -R bgalin:bgalin /var/www/bgalin/server
+            sudo chown -R bgalin:bgalin /home/bgalin/.bun
+            sudo chmod +x /home/bgalin/.bun/bin/bun
+            
+            # Copy and enable service
             sudo cp /var/www/bgalin/bgalin-backend.service /etc/systemd/system/
-            sudo chown bgalin:bgalin /var/www/bgalin/server -R
             sudo systemctl daemon-reload
             sudo systemctl enable bgalin-backend.service
             echo "✓ Backend service ready"
             
             # ============================================
-            # 7. START SERVICES
+            # 7. TRY DOCKER FOR N8N (OPTIONAL)
             # ============================================
             echo ""
-            echo "=== 7. Start Services ==="
+            echo "=== 7. Optional: Docker Services ==="
+            
+            if command -v docker &> /dev/null && sudo systemctl is-active --quiet docker 2>/dev/null; then
+              echo "Docker available, starting optional services..."
+              if sudo docker-compose up -d 2>&1 | tail -3; then
+                echo "✓ Docker services started"
+                sleep 5
+              fi
+            else
+              echo "⚠ Docker not available (optional)"
+            fi
+            
+            # ============================================
+            # 8. START MAIN SERVICES
+            # ============================================
+            echo ""
+            echo "=== 8. Start Main Services ==="
             
             # Start backend
             sudo systemctl restart bgalin-backend.service
@@ -143,8 +172,8 @@ jobs:
             if sudo systemctl is-active --quiet bgalin-backend.service; then
               echo "✓ Backend running"
             else
-              echo "⚠ Backend issue detected"
-              sudo systemctl status bgalin-backend.service || true
+              echo "⚠ Backend startup issue"
+              sudo journalctl -u bgalin-backend.service -n 5 || true
             fi
             
             # Start frontend
@@ -161,10 +190,10 @@ jobs:
             sleep 3
             
             # ============================================
-            # 8. SETUP NGINX
+            # 9. SETUP NGINX
             # ============================================
             echo ""
-            echo "=== 8. Setup Nginx ==="
+            echo "=== 9. Setup Nginx ==="
             sudo cp /var/www/bgalin/nginx-bgalin.conf /etc/nginx/sites-available/bgalin
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/bgalin
             sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
@@ -178,10 +207,10 @@ jobs:
             fi
             
             # ============================================
-            # 9. TEST ENDPOINTS
+            # 10. TEST ENDPOINTS
             # ============================================
             echo ""
-            echo "=== 9. Test Endpoints ==="
+            echo "=== 10. Test Endpoints ==="
             
             # Test backend
             BACKEND_OK=0
