@@ -59,9 +59,16 @@ fi
 
 if command -v bun &> /dev/null; then
     VERSION=$(bun --version)
-    check_pass "Bun installed: $VERSION"
+    check_pass "Bun installed (current user): $VERSION"
 else
-    check_fail "Bun not installed"
+    check_warn "Bun not in PATH (current user)"
+fi
+
+# Check if Bun is installed for bgalin user
+if [ -d /home/bgalin/.bun ]; then
+    check_pass "Bun installed for bgalin user"
+else
+    check_warn "Bun may not be installed for bgalin user"
 fi
 
 if command -v node &> /dev/null; then
