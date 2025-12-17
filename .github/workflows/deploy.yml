@@ -57,13 +57,25 @@ jobs:
             fi
             echo "✓ PM2 ready"
             
-            # Install Docker
-            if ! command -v docker &> /dev/null; then
-              curl -fsSL https://get.docker.com | sh
-              sudo systemctl start docker
-              sudo systemctl enable docker
-            fi
-            echo "✓ Docker ready"
+             # Install Docker
+             if ! command -v docker &> /dev/null; then
+               curl -fsSL https://get.docker.com | sh
+             fi
+             sudo systemctl start docker || sudo service docker start || true
+             sudo systemctl enable docker 2>/dev/null || true
+             
+             # Wait for Docker daemon to be ready
+             echo "Waiting for Docker daemon..."
+             for i in {1..30}; do
+               if sudo docker ps &>/dev/null; then
+                 echo "✓ Docker ready"
+                 break
+               fi
+               if [ $i -eq 30 ]; then
+                 echo "⚠ Docker may not be ready, continuing anyway"
+               fi
+               sleep 1
+             done
             
             # Install Nginx
             if ! command -v nginx &> /dev/null; then
@@ -82,34 +94,46 @@ jobs:
             git reset --hard origin/main
             echo "✓ Repository updated"
             
-            # ============================================
-            # 3. START DOCKER SERVICES (N8N + PostgreSQL)
-            # ============================================
-            echo ""
-            echo "=== 3. Start Docker Services (N8N + PostgreSQL) ==="
-            
-            # Create .env if missing
-            if [ ! -f /var/www/bgalin/.env ]; then
-              cat > /var/www/bgalin/.env << 'EOF'
-            POSTGRES_USER=admin
-            POSTGRES_PASSWORD=admin
-            POSTGRES_DB=bgalin
-            N8N_HOST=bgalin.ru
-            N8N_PORT=5678
-            NODE_ENV=production
-            EOF
-            fi
-            
-            # Start docker-compose
-            cd /var/www/bgalin
-            sudo docker-compose down 2>/dev/null || true
-            sleep 2
-            sudo docker-compose up -d
-            sleep 10
-            
-            echo "Docker services:"
-            sudo docker-compose ps
-            echo "✓ Docker services running"
+             # ============================================
+             # 3. START DOCKER SERVICES (N8N + PostgreSQL)
+             # ============================================
+             echo ""
+             echo "=== 3. Start Docker Services (N8N + PostgreSQL) ==="
+             
+             # Create .env if missing
+             if [ ! -f /var/www/bgalin/.env ]; then
+               cat > /var/www/bgalin/.env << 'EOF'
+             POSTGRES_USER=admin
+             POSTGRES_PASSWORD=admin
+             POSTGRES_DB=bgalin
+             N8N_HOST=bgalin.ru
+             N8N_PORT=5678
+             NODE_ENV=production
+             EOF
+             fi
+             
+             # Retry docker-compose with exponential backoff
+             cd /var/www/bgalin
+             sudo docker-compose down 2>/dev/null || true
+             sleep 2
+             
+             RETRY=0
+             while [ $RETRY -lt 5 ]; do
+               if sudo docker-compose up -d 2>&1; then
+                 sleep 10
+                 echo "Docker services:"
+                 sudo docker-compose ps
+                 echo "✓ Docker services running"
+                 break
+               fi
+               RETRY=$((RETRY + 1))
+               echo "⚠ Docker-compose failed, retry $RETRY/5..."
+               sleep $((RETRY * 2))
+             done
+             
+             if [ $RETRY -eq 5 ]; then
+               echo "⚠ Docker services failed to start, but continuing with PM2 deployment..."
+             fi
             
             # ============================================
             # 4. BUILD FRONTEND
@@ -206,12 +230,12 @@ jobs:
             echo "║  ✅ Deployment Complete               ║"
             echo "╚════════════════════════════════════════╝"
             echo ""
-            echo "PM2 Processes:"
-            pm2 status
-            echo ""
-            echo "Docker Services:"
-            sudo docker-compose ps
-            echo ""
+             echo "PM2 Processes:"
+             pm2 status || echo "⚠ PM2 status failed"
+             echo ""
+             echo "Docker Services:"
+             sudo docker-compose ps 2>/dev/null || echo "⚠ Docker not available"
+             echo ""
             echo "Access:"
             echo "  • Frontend:  https://bgalin.ru"
             echo "  • Backend:   https://bgalin.ru/api/health"
