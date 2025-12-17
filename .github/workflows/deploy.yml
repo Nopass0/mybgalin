@@ -10,46 +10,50 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: SSH Connection Test
+        run: |
+          echo "Host: ${{ secrets.SERVER_HOST }}"
+          echo "Port: ${{ secrets.SERVER_PORT }}"
+          echo "User: ${{ secrets.SERVER_USER }}"
+      
       - name: Deploy
         uses: appleboy/ssh-action@master
+        env:
+          SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
+          timeout: 120s
+          command_timeout: 30m
+          script_stop: true
           script: |
-            cd /var/www/bgalin
-            git fetch origin main
-            git reset --hard origin/main
+            set -e
+            pwd
+            ls -la
+            echo "Starting deployment..."
             
-            # Start Docker services (PostgreSQL + N8N)
-            docker-compose up -d
-            
-            # Install Bun if not present
-            if ! command -v bun &> /dev/null; then
-              curl -fsSL https://bun.sh/install | bash
-              export PATH="$HOME/.bun/bin:$PATH"
+            if [ -d "/var/www/bgalin" ]; then
+              cd /var/www/bgalin
+              echo "Entering /var/www/bgalin"
+            else
+              echo "Creating /var/www/bgalin"
+              mkdir -p /var/www/bgalin
+              cd /var/www/bgalin
             fi
             
-            export PATH="$HOME/.bun/bin:$PATH"
+            if [ -d ".git" ]; then
+              echo "Updating existing repo..."
+              git fetch origin main 2>&1 || true
+              git reset --hard origin/main 2>&1 || true
+            else
+              echo "Cloning repo..."
+              git clone https://github.com/Nopass0/mybgalin.git . 2>&1 || true
+            fi
             
-            # Setup backend
-            cd server
-            bun install
-            npx prisma generate
-            npx prisma db push --skip-generate || true
+            echo "Git update done"
+            ls -la
             
-            # Setup frontend
-            cd ../frontend
-            npm install
-            npm run build
-            
-            # Restart services
-            cd /var/www/bgalin
-            pm2 restart all || true
-            
-            # Check services
-            pm2 list || true
-            docker ps || true
-            
-            echo "✅ Deployment complete"
+            echo "Deployment complete"
