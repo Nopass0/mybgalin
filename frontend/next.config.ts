@@ -6,6 +6,8 @@ import type { NextConfig } from "next";
  * - Rewrites: Proxy /api/* to backend (dev only, production uses nginx)
  */
 const nextConfig: NextConfig = {
+  // Enable standalone output for Docker
+  output: 'standalone',
   images: {
     remotePatterns: [
       {
