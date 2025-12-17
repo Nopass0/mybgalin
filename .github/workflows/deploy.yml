@@ -22,24 +22,34 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             
+            # Start Docker services (PostgreSQL + N8N)
+            docker-compose up -d
+            
+            # Install Bun if not present
             if ! command -v bun &> /dev/null; then
               curl -fsSL https://bun.sh/install | bash
               export PATH="$HOME/.bun/bin:$PATH"
             fi
             
-            cd server
             export PATH="$HOME/.bun/bin:$PATH"
+            
+            # Setup backend
+            cd server
             bun install
             npx prisma generate
             npx prisma db push --skip-generate || true
             
+            # Setup frontend
             cd ../frontend
             npm install
             npm run build
             
+            # Restart services
             cd /var/www/bgalin
-            pm2 restart all
-            sudo systemctl restart bgalin-backend.service 2>/dev/null || true
-            sudo systemctl reload nginx 2>/dev/null || true
+            pm2 restart all || true
             
-            echo "Deployment done"
+            # Check services
+            pm2 list || true
+            docker ps || true
+            
+            echo "✅ Deployment complete"
