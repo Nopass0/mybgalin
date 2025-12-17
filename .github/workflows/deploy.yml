@@ -7,53 +7,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
       
-      - name: SSH Connection Test
-        run: |
-          echo "Host: ${{ secrets.SERVER_HOST }}"
-          echo "Port: ${{ secrets.SERVER_PORT }}"
-          echo "User: ${{ secrets.SERVER_USER }}"
-      
-      - name: Deploy
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@master
-        env:
-          SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          port: ${{ secrets.SERVER_PORT }}
+          port: 22
           timeout: 120s
-          command_timeout: 30m
-          script_stop: true
           script: |
-            set -e
-            pwd
-            ls -la
-            echo "Starting deployment..."
-            
-            if [ -d "/var/www/bgalin" ]; then
-              cd /var/www/bgalin
-              echo "Entering /var/www/bgalin"
-            else
-              echo "Creating /var/www/bgalin"
-              mkdir -p /var/www/bgalin
-              cd /var/www/bgalin
-            fi
-            
-            if [ -d ".git" ]; then
-              echo "Updating existing repo..."
-              git fetch origin main 2>&1 || true
-              git reset --hard origin/main 2>&1 || true
-            else
-              echo "Cloning repo..."
-              git clone https://github.com/Nopass0/mybgalin.git . 2>&1 || true
-            fi
-            
-            echo "Git update done"
-            ls -la
-            
-            echo "Deployment complete"
+            cd /var/www/bgalin 2>/dev/null || mkdir -p /var/www/bgalin && cd /var/www/bgalin
+            git pull origin main 2>/dev/null || git clone https://github.com/Nopass0/mybgalin.git .
+            echo "✅ Deployment complete"
