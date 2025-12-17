@@ -1,205 +1,45 @@
-name: Deploy to Production
+name: Deploy
 
 on:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: write
+    branches: [main]
 
 jobs:
   deploy:
-    name: Deploy to Production
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Deploy via SSH
+      - uses: actions/checkout@v3
+      
+      - name: Deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-          timeout: 600s
-          command_timeout: 60m
           script: |
-            set -e
-            echo "Starting deployment..."
-            cd /var/www/bgalin || mkdir -p /var/www/bgalin && cd /var/www/bgalin
+            cd /var/www/bgalin
+            git fetch origin main
+            git reset --hard origin/main
             
-            # Stop services
-            pm2 stop all 2>/dev/null || true
-            
-            # Git update
-            if [ -d ".git" ]; then
-              git fetch origin main --depth=1
-              git reset --hard origin/main
-            else
-              git clone --depth=1 https://github.com/Nopass0/mybgalin.git .
-            fi
-            
-            # Install dependencies
             if ! command -v bun &> /dev/null; then
               curl -fsSL https://bun.sh/install | bash
               export PATH="$HOME/.bun/bin:$PATH"
             fi
             
-            if ! command -v node &> /dev/null; then
-              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-              sudo apt-get install -y nodejs
-            fi
-            
-            # Setup backend
-            echo "Setting up backend..."
             cd server
             export PATH="$HOME/.bun/bin:$PATH"
             bun install
-            cp ../.env .env 2>/dev/null || true
-            npx prisma generate || true
+            npx prisma generate
             npx prisma db push --skip-generate || true
             
-            # Setup frontend
-            echo "Setting up frontend..."
             cd ../frontend
             npm install
-            NODE_ENV=production npm run build
+            npm run build
             
-            # Setup systemd service for backend
-            echo "Configuring services..."
-            sudo tee /etc/systemd/system/bgalin-backend.service > /dev/null << 'EOF'
-[Unit]
-Description=BGalin Backend
-After=network.target
-
-[Service]
-Type=simple
-User=$USER
-WorkingDirectory=/var/www/bgalin/server
-EnvironmentFile=/var/www/bgalin/.env
-Environment="PATH=$HOME/.bun/bin:/usr/bin:/bin"
-ExecStart=$HOME/.bun/bin/bun run src/index.ts
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
+            cd /var/www/bgalin
+            pm2 restart all
+            sudo systemctl restart bgalin-backend.service 2>/dev/null || true
+            sudo systemctl reload nginx 2>/dev/null || true
             
-            sudo systemctl daemon-reload
-            sudo systemctl enable bgalin-backend.service
-            sudo systemctl restart bgalin-backend.service
-            
-            # Setup frontend PM2
-            cd /var/www/bgalin/frontend
-            cat > ecosystem.config.js << 'EOF'
-module.exports = {
-  apps: [{
-    name: 'bgalin-frontend',
-    script: 'node_modules/next/dist/bin/next',
-    args: 'start',
-    instances: 1,
-    autorestart: true,
-    env: { NODE_ENV: 'production', PORT: 3000 }
-  }]
-};
-EOF
-            pm2 start ecosystem.config.js
-            pm2 save
-            
-            # Setup nginx
-            echo "Configuring nginx..."
-            sudo tee /etc/nginx/sites-available/bgalin > /dev/null << 'EOF'
-server {
-    listen 80;
-    server_name bgalin.ru www.bgalin.ru;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name bgalin.ru www.bgalin.ru;
-
-    ssl_certificate /var/www/bgalin/bgalin_ru.crt;
-    ssl_certificate_key /var/www/bgalin/private.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/ {
-        proxy_pass http://localhost:8000/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /swagger {
-        proxy_pass http://localhost:8000/swagger;
-    }
-
-    location /n8n/ {
-        proxy_pass http://localhost:5678/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_buffering off;
-    }
-}
-EOF
-            sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/
-            sudo rm -f /etc/nginx/sites-enabled/default
-            sudo nginx -t
-            sudo systemctl reload nginx
-            
-            # N8N setup
-            if ! pm2 list | grep -q "n8n"; then
-              pm2 start n8n -- --start --port 5678 --listening_address 0.0.0.0
-            else
-              pm2 restart n8n
-            fi
-            
-            # Wait for services
-            sleep 5
-            
-            # Verify services
-            echo "Verifying services..."
-            for i in {1..10}; do
-              if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
-                echo "Backend is responding!"
-                break
-              fi
-              echo "Waiting for backend... ($i/10)"
-              sleep 2
-            done
-            
-            pm2 status
-            echo "Deployment complete!"
-            
-            # Send Telegram notification
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-              -d chat_id="${{ secrets.ADMIN_TELEGRAM_ID }}" \
-              -d text="✅ Deployment complete! Backend: port 8000, Frontend: port 3000, N8N: /n8n/" \
-              2>/dev/null || true
-
-      - name: Notify on failure
-        if: failure()
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.ADMIN_TELEGRAM_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: "❌ Deployment failed! Check: https://github.com/Nopass0/mybgalin/actions"
+            echo "Deployment done"
