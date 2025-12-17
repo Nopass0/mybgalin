@@ -82,18 +82,23 @@ jobs:
             echo "✓ docker-compose ready"
             
             # Install Bun if needed
-            if ! command -v bun &> /dev/null; then
+            if ! [ -f "$HOME/.bun/bin/bun" ]; then
               echo "Installing Bun..."
               curl -fsSL https://bun.sh/install | bash
-              # Reload PATH
-              export BUN_INSTALL="$HOME/.bun"
-              export PATH="$BUN_INSTALL/bin:$PATH"
+              sleep 2
             fi
+            
             # Set Bun path explicitly
             export BUN_INSTALL="$HOME/.bun"
             export PATH="$BUN_INSTALL/bin:$PATH"
-            bun --version || { echo "❌ Bun installation failed"; exit 1; }
-            echo "✓ Bun ready"
+            
+            # Verify Bun binary exists (don't run it due to memory constraints)
+            if [ -f "$BUN_INSTALL/bin/bun" ]; then
+              echo "✓ Bun installed"
+            else
+              echo "❌ Bun installation failed"
+              exit 1
+            fi
             
             # Install/Update Node.js and PM2 if needed
             if ! command -v node &> /dev/null; then
