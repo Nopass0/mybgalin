@@ -133,10 +133,22 @@ jobs:
             echo ""
             echo "=== 6. Setup Backend Service ==="
             
-            # Ensure bgalin user has permissions
+            # Install Bun for bgalin user
+            if [ ! -d /home/bgalin/.bun ]; then
+              echo "Installing Bun for bgalin user..."
+              sudo -u bgalin bash -c 'curl -fsSL https://bun.sh/install | bash' 2>&1 | tail -3
+              sleep 2
+            fi
+            
+            # Fix permissions
             sudo chown -R bgalin:bgalin /var/www/bgalin/server
-            sudo chown -R bgalin:bgalin /home/bgalin/.bun
-            sudo chmod +x /home/bgalin/.bun/bin/bun
+            if [ -d /home/bgalin/.bun ]; then
+              sudo chown -R bgalin:bgalin /home/bgalin/.bun
+              sudo chmod +x /home/bgalin/.bun/bin/bun
+              echo "✓ Bun permissions fixed"
+            else
+              echo "⚠ Bun directory issue"
+            fi
             
             # Copy and enable service
             sudo cp /var/www/bgalin/bgalin-backend.service /etc/systemd/system/
