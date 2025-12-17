@@ -1,16 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
-      POSTGRES_DB: ${POSTGRES_DB:-bgalin}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   backend:
     build:
       context: ./server
@@ -20,9 +8,7 @@ services:
       - "8000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://admin:admin@postgres:5432/bgalin
-    depends_on:
-      - postgres
+      - DATABASE_URL=${DATABASE_URL}
     mem_limit: 512m
 
   frontend:
@@ -34,27 +20,26 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://bgalin.ru/api
     mem_limit: 768m
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.70.1
     restart: always
     ports:
       - "5678:5678"
     environment:
-      - N8N_HOST=${N8N_HOST:-bgalin.ru}
+      - N8N_HOST=bgalin.ru
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
-      - N8N_PATH_PREFIX=/n8n
+      - N8N_PATH=/n8n/
+      - N8N_EDITOR_BASE_URL=https://bgalin.ru/n8n/
+      - WEBHOOK_URL=https://bgalin.ru/n8n/
       - NODE_ENV=production
-      - WEBHOOK_URL=https://${N8N_HOST:-bgalin.ru}/webhook/
-      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Europe/Moscow}
-      - NODE_FUNCTION_ALLOW_EXTERNAL=axios,zustand,zod,dayjs,lodash
+      - GENERIC_TIMEZONE=Europe/Moscow
+      - N8N_SECURE_COOKIE=true
     volumes:
       - n8n_data:/home/node/.n8n
-    depends_on:
-      - postgres
 
 volumes:
-  postgres_data:
   n8n_data:

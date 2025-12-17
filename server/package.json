@@ -4,12 +4,13 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "prisma:generate": "npx prisma generate",
-    "prisma:push": "npx prisma db push"
+    "prisma:generate": "bunx prisma generate",
+    "prisma:push": "bunx prisma db push"
   },
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "prisma": "^5.7.0"
   },
   "peerDependencies": {
     "typescript": "^5"
