@@ -1,23 +1,24 @@
 # Исправление 404 ошибки на /api endpoints
 
 ## Проблема
-Nginx неправильно проксирует запросы к API - отправляет `/auth/request-otp` вместо `/api/auth/request-otp`
+Nginx неправильно проксирует запросы к API – в текущей конфигурации указано порт **3001**, тогда как Bun‑сервер слушает **порт 8000** (см. `bgalin-backend.service`).
 
 ## Решение
 
 Подключитесь к серверу и выполните:
 
 ```bash
-# Обновите конфигурацию nginx
+# Откройте конфигурацию Nginx
 sudo nano /etc/nginx/sites-available/bgalin
 ```
 
-Найдите секцию `location /api/` и убедитесь, что она выглядит так:
+Найдите секцию `location /api/` и замените её на следующую:
 
 ```nginx
 # Backend API
 location /api/ {
-    proxy_pass http://localhost:3001/api/;
+    # Проксим запросы к Bun‑серверу, который слушает 8000‑й порт
+    proxy_pass http://localhost:8000/api/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -26,29 +27,30 @@ location /api/ {
 }
 ```
 
-**ВАЖНО:** НЕ должно быть строки `rewrite ^/api/(.*) /$1 break;`
+**Важно:**  
+- **Не** добавляйте строку `rewrite ^/api/(.*) /$1 break;` – она ломает путь.  
+- Убедитесь, что порт в `proxy_pass` совпадает с тем, что указано в unit‑файле `bgalin-backend.service` (`Environment="PORT=8000"`).
 
-Затем проверьте конфигурацию и перезагрузите nginx:
+После правки проверьте конфигурацию и перезапустите Nginx:
 
 ```bash
-# Проверка конфигурации
+# Проверка синтаксиса
 sudo nginx -t
 
-# Перезагрузка nginx
+# Перезапуск Nginx
 sudo systemctl reload nginx
 ```
 
-Проверьте что API работает:
+## Проверка работоспособности API
 
 ```bash
-curl -X POST https://bgalin.ru/api/auth/request-otp \
-  -H "Content-Type: application/json" \
-  -d '{}'
+curl -X GET "https://bgalin.ru/api/jobs/activity?limit=30" \
+  -H "Accept: application/json"
 ```
 
-Должен вернуться ответ от backend, а не 404.
+Ожидается корректный JSON‑ответ от бекенда, а не `404 Not Found`.
 
 ## Автоматическое обновление
 
-При следующем деплое через GitHub Actions конфигурация обновится автоматически.
-Но для немедленного исправления нужно обновить вручную как описано выше.
+При следующем деплое через GitHub Actions конфигурация будет обновлена автоматически,
+но для мгновенного исправления необходимо выполнить указанные выше шаги вручную.
