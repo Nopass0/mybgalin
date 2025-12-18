@@ -55,14 +55,15 @@ export const useAuth = create<AuthState>((set) => ({
   verifyOtp: async (code: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await api.post<ApiResponse<VerifyOtpResponse>>('/auth/verify-otp', { code });
-      if (response.data.success && response.data.data?.token) {
-        const token = response.data.data.token;
-        localStorage.setItem('auth_token', token);
-        set({ token, isAuthenticated: true, isLoading: false });
+      const response = await api.post<VerifyOtpResponse>('/auth/verify-otp', { code });
+      // API returns { success, token, message } directly
+      const data = response.data as any;
+      if (data.success && data.token) {
+        localStorage.setItem('auth_token', data.token);
+        set({ token: data.token, isAuthenticated: true, isLoading: false });
         return true;
       } else {
-        set({ isLoading: false, error: response.data.data?.message || 'Invalid OTP' });
+        set({ isLoading: false, error: data.message || 'Invalid OTP' });
         return false;
       }
     } catch (error: any) {
