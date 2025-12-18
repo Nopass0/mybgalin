@@ -50,8 +50,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
-          timeout: 900s
-          command_timeout: 900s
+          timeout: 1800s
+          command_timeout: 1800s
           envs: DATABASE_URL,TELEGRAM_BOT_TOKEN,ADMIN_TELEGRAM_ID
           script: |
             set -e
@@ -172,13 +172,17 @@ jobs:
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
             
-            # Build images (use cache for faster builds)
+            # Pull n8n image first (from registry, fast)
+            echo "Pulling n8n image..."
+            sudo docker pull n8nio/n8n:1.70.1 || true
+            
+            # Build images in parallel with cache
             echo "Building Docker images..."
-            sudo -E docker compose build 2>&1 | tail -50
+            sudo -E docker compose build --parallel 2>&1 | tail -100
             
             # Start services
             echo "Starting services..."
-            sudo docker compose up -d
+            sudo docker compose up -d --remove-orphans
             
             # Wait for services to start
             echo "Waiting for services to start..."

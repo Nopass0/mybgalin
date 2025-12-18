@@ -12,6 +12,12 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     mem_limit: 512m
 
   frontend:
@@ -24,7 +30,13 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=https://bgalin.ru/api
-    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    mem_limit: 1024m
 
   n8n:
     image: n8nio/n8n:1.70.1
@@ -43,6 +55,7 @@ services:
       - N8N_SECURE_COOKIE=true
     volumes:
       - n8n_data:/home/node/.n8n
+    mem_limit: 512m
 
 volumes:
   n8n_data:

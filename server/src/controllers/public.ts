@@ -1,10 +1,11 @@
 import { Elysia } from 'elysia';
 
 export const publicController = (app: Elysia) =>
-    app.group('/', (app) =>
+    app.group('/api', (app) =>
         app
             .get('/', () => ({
-                message: 'Bgalin Server (Bun) - public endpoint',
+                message: 'Bgalin API v2.0 - Running on Bun/Elysia',
+                docs: '/swagger',
             }))
             .get('/health', () => ({
                 status: 'ok',

@@ -48,25 +48,25 @@ const API_BASE = '/api';
 const getBackendUrl = (): string => {
   // Server-side: use env var or localhost
   if (typeof window === 'undefined') {
-    return process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+    return process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
   }
 
   // Client-side: determine based on current hostname
   const hostname = window.location.hostname;
 
-  // Production domains
+  // Production domains - use same origin (nginx proxies /api to backend)
   if (hostname === 'bgalin.ru' || hostname.endsWith('.bgalin.ru')) {
     return 'https://bgalin.ru';
   }
 
-  // Local development
+  // Local development - backend is on port 8000
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:3001';
+    return 'http://localhost:8000';
   }
 
-  // Other domains: try to use same origin with port 3001
+  // Other domains: try to use same origin with port 8000
   // or fallback to env var
-  return process.env.NEXT_PUBLIC_BACKEND_URL || `${window.location.protocol}//${hostname}:3001`;
+  return process.env.NEXT_PUBLIC_BACKEND_URL || `${window.location.protocol}//${hostname}:8000`;
 };
 
 export const useStudioAuth = create<StudioAuthState>()(
