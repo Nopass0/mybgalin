@@ -19,8 +19,10 @@ RUN bun install
 # Copy prisma schema
 COPY prisma ./prisma/
 
-# Generate Prisma client for current platform
-RUN bunx prisma generate
+# Generate Prisma client with optimized settings
+ENV PRISMA_GENERATE_SKIP_AUTOINSTALL=true
+ENV PRISMA_CLI_QUERY_ENGINE_TYPE=binary
+RUN bun run prisma:generate
 
 # Copy source code
 COPY . .

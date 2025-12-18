@@ -3,6 +3,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      network: host
     image: bgalin-backend
     restart: always
     ports:
