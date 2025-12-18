@@ -200,8 +200,8 @@ jobs:
             # Check if backend is healthy
             echo ""
             echo "Testing backend health..."
-            curl -s http://localhost:8000/ || echo "Backend not responding on port 8000"
-            curl -s http://localhost:8000/health || echo "Backend health check failed"
+            curl -s http://localhost:8000/api/ || echo "Backend not responding on /api/"
+            curl -s http://localhost:8000/api/health || echo "Backend health check failed"
             
             echo "[OK] Services started"
             
@@ -242,10 +242,12 @@ jobs:
             fi
             
             # Backend check  
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null | grep -qE "200|404"; then
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health 2>/dev/null | grep -qE "200|404"; then
               echo "[OK] Backend is responding"
             else
               echo "[WARN] Backend may not be responding"
+              echo "Backend logs (last 50 lines):"
+              sudo docker compose logs backend --tail 50 2>/dev/null || true
             fi
             
             # N8N check
