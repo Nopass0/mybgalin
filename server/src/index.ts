@@ -18,6 +18,7 @@ import { linksController } from "./controllers/links";
 import { animeController } from "./controllers/anime";
 import { englishController } from "./controllers/english";
 import { menuController } from "./controllers/menu";
+import { t2Controller } from "./controllers/t2";
 
 /**
  * Main server entry point.
@@ -74,6 +75,8 @@ const app = new Elysia()
   .use(englishController)
   // Menu routes (sidebar visibility)
   .use(menuController)
+  // T2 Sales System routes
+  .use(t2Controller)
   // Fallback root message
   .get("/", () => ({
     success: true,

@@ -137,6 +137,27 @@ jobs:
             pm2 start ecosystem.config.js
             pm2 save
             
+            # Start n8n via Docker (it's the easiest way)
+            echo "Starting n8n..."
+            sudo docker stop n8n 2>/dev/null || true
+            sudo docker rm n8n 2>/dev/null || true
+            sudo docker run -d \
+              --name n8n \
+              --restart always \
+              -p 5678:5678 \
+              -e N8N_HOST=bgalin.ru \
+              -e N8N_PORT=5678 \
+              -e N8N_PROTOCOL=https \
+              -e N8N_PATH=/n8n/ \
+              -e N8N_EDITOR_BASE_URL=https://bgalin.ru/n8n/ \
+              -e WEBHOOK_URL=https://bgalin.ru/n8n/ \
+              -e NODE_ENV=production \
+              -e GENERIC_TIMEZONE=Europe/Moscow \
+              -e N8N_SECURE_COOKIE=true \
+              -v n8n_data:/home/node/.n8n \
+              n8nio/n8n:1.70.1
+            echo "[OK] n8n started"
+            
             # Setup PM2 startup
             sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $(whoami) --hp $HOME 2>/dev/null || true
             
@@ -157,6 +178,7 @@ jobs:
             sleep 5
             curl -s http://localhost:8000/api/health || echo "[WARN] Backend not responding yet"
             curl -s -o /dev/null -w "Frontend: %{http_code}\n" http://localhost:3000 || echo "[WARN] Frontend not responding yet"
+            curl -s -o /dev/null -w "n8n: %{http_code}\n" http://localhost:5678/n8n/ || echo "[WARN] n8n not responding yet"
             
             echo ""
             echo "============================================"
