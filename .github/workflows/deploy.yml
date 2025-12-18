@@ -6,8 +6,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
+  IMAGE_NAME: ${{ github.repository }}
+  BACKEND_IMAGE: ghcr.io/nopass0/mybgalin/backend
+  FRONTEND_IMAGE: ghcr.io/nopass0/mybgalin/frontend
 
 jobs:
   # Build and push Docker images to GitHub Container Registry
@@ -88,8 +89,8 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
-          BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend:latest
-          FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend:latest
+          BACKEND_IMAGE: ghcr.io/nopass0/mybgalin/backend:latest
+          FRONTEND_IMAGE: ghcr.io/nopass0/mybgalin/frontend:latest
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
