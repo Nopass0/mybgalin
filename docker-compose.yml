@@ -1,9 +1,9 @@
 services:
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/nopass0/mybgalin/backend:latest}
     build:
       context: ./server
       dockerfile: Dockerfile
+    image: bgalin-backend
     restart: always
     ports:
       - "8000:8000"
@@ -18,13 +18,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
   frontend:
-    image: ${FRONTEND_IMAGE:-ghcr.io/nopass0/mybgalin/frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: bgalin-frontend
     restart: always
     ports:
       - "3000:3000"
@@ -36,7 +36,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
   n8n:
     image: n8nio/n8n:1.70.1

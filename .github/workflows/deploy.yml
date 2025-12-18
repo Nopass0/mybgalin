@@ -4,61 +4,10 @@ on:
   push:
     branches: [main]
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-  BACKEND_IMAGE: ghcr.io/nopass0/mybgalin/backend
-  FRONTEND_IMAGE: ghcr.io/nopass0/mybgalin/frontend
-
 jobs:
-  # Build and push Docker images to GitHub Container Registry
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build and push Backend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./server
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ env.BACKEND_IMAGE }}:latest,${{ env.BACKEND_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      
-      - name: Build and push Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ env.FRONTEND_IMAGE }}:latest,${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   # Run Prisma migrations
   migrate:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,10 +31,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bunx prisma db push --accept-data-loss
 
-  # Deploy to server
+  # Deploy to server - build directly on ARM64 server
   deploy:
     runs-on: ubuntu-latest
-    needs: [build, migrate]
+    needs: migrate
     
     steps:
       - name: Deploy via SSH
@@ -94,16 +43,14 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
-          BACKEND_IMAGE: ghcr.io/nopass0/mybgalin/backend:latest
-          FRONTEND_IMAGE: ghcr.io/nopass0/mybgalin/frontend:latest
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
-          timeout: 600s
-          command_timeout: 600s
-          envs: DATABASE_URL,TELEGRAM_BOT_TOKEN,ADMIN_TELEGRAM_ID,BACKEND_IMAGE,FRONTEND_IMAGE
+          timeout: 1800s
+          command_timeout: 1800s
+          envs: DATABASE_URL,TELEGRAM_BOT_TOKEN,ADMIN_TELEGRAM_ID
           script: |
             set -e
             
@@ -114,14 +61,11 @@ jobs:
             DEPLOY_DIR="/var/www/bgalin"
             
             # Ensure directory exists
-            if [ ! -d "$DEPLOY_DIR" ]; then
-              sudo mkdir -p "$DEPLOY_DIR"
-              sudo chown -R $(whoami):$(whoami) "$DEPLOY_DIR"
-            fi
-            
+            sudo mkdir -p "$DEPLOY_DIR"
+            sudo chown -R $(whoami):$(whoami) "$DEPLOY_DIR"
             cd "$DEPLOY_DIR"
             
-            # Update repository (for nginx config and docker-compose)
+            # Update repository
             if [ ! -d .git ]; then
               git clone https://github.com/Nopass0/mybgalin.git .
             else
@@ -136,19 +80,45 @@ jobs:
             TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
             ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
             NODE_ENV=production
-            BACKEND_IMAGE=${BACKEND_IMAGE}
-            FRONTEND_IMAGE=${FRONTEND_IMAGE}
             EOF
             echo "[OK] Environment configured"
             
-            # Note: Images are public, no login needed
+            # Start Docker
+            sudo systemctl start docker 2>/dev/null || true
             
-            # Pull new images
-            echo "Pulling images..."
-            sudo docker pull ${BACKEND_IMAGE} || true
-            sudo docker pull ${FRONTEND_IMAGE} || true
-            sudo docker pull n8nio/n8n:1.70.1 || true
-            echo "[OK] Images pulled"
+            # Check if images exist, only rebuild if needed
+            BACKEND_EXISTS=$(sudo docker images -q bgalin-backend 2>/dev/null)
+            FRONTEND_EXISTS=$(sudo docker images -q bgalin-frontend 2>/dev/null)
+            
+            # Get latest commit hash
+            CURRENT_COMMIT=$(git rev-parse --short HEAD)
+            BUILT_COMMIT=$(cat .built_commit 2>/dev/null || echo "none")
+            
+            echo "Current commit: $CURRENT_COMMIT"
+            echo "Built commit: $BUILT_COMMIT"
+            
+            # Rebuild only if commit changed or images don't exist
+            if [ "$CURRENT_COMMIT" != "$BUILT_COMMIT" ] || [ -z "$BACKEND_EXISTS" ] || [ -z "$FRONTEND_EXISTS" ]; then
+              echo "Building Docker images..."
+              
+              export DOCKER_BUILDKIT=1
+              export COMPOSE_DOCKER_CLI_BUILD=1
+              
+              # Pull n8n
+              sudo docker pull n8nio/n8n:1.70.1 || true
+              
+              # Build with cache
+              sudo -E docker compose build --parallel 2>&1 || {
+                echo "Parallel build failed, trying sequential..."
+                sudo -E docker compose build 2>&1
+              }
+              
+              # Save commit hash
+              echo "$CURRENT_COMMIT" > .built_commit
+              echo "[OK] Images built"
+            else
+              echo "[OK] Images already up to date, skipping build"
+            fi
             
             # Restart services
             echo "Restarting services..."
@@ -157,17 +127,17 @@ jobs:
             
             # Wait for services
             echo "Waiting for services to start..."
-            sleep 15
+            sleep 20
             
             # Show status
             echo ""
             echo "Service status:"
             sudo docker compose ps
             
-            # Show backend logs
+            # Show logs
             echo ""
             echo "Backend logs:"
-            sudo docker compose logs backend --tail 20 2>/dev/null || true
+            sudo docker compose logs backend --tail 30 2>/dev/null || true
             
             # Configure Nginx
             sudo cp nginx-bgalin.conf /etc/nginx/sites-available/bgalin
@@ -179,6 +149,7 @@ jobs:
             # Verify
             echo ""
             echo "Testing services..."
+            sleep 5
             curl -s http://localhost:8000/api/health || echo "[WARN] Backend not responding"
             curl -s -o /dev/null -w "Frontend: %{http_code}\n" http://localhost:3000 || true
             
