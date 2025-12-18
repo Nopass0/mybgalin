@@ -4,10 +4,55 @@ on:
   push:
     branches: [main]
 
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
+
 jobs:
-  # Run Prisma migrations to Neon database
+  # Build and push Docker images to GitHub Container Registry
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}:latest,${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE }}:latest,${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Run Prisma migrations
   migrate:
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,34 +70,34 @@ jobs:
         working-directory: ./server
         run: bunx prisma generate
       
-      - name: Push schema to Neon database
+      - name: Push schema to database
         working-directory: ./server
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bunx prisma db push --accept-data-loss
 
+  # Deploy to server
   deploy:
     runs-on: ubuntu-latest
-    needs: migrate
+    needs: [build, migrate]
     
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
+          BACKEND_IMAGE: ghcr.io/${{ github.repository }}/backend:latest
+          FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend:latest
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
-          timeout: 1800s
-          command_timeout: 1800s
-          envs: DATABASE_URL,TELEGRAM_BOT_TOKEN,ADMIN_TELEGRAM_ID
+          timeout: 300s
+          command_timeout: 300s
+          envs: DATABASE_URL,TELEGRAM_BOT_TOKEN,ADMIN_TELEGRAM_ID,BACKEND_IMAGE,FRONTEND_IMAGE
           script: |
             set -e
             
@@ -60,67 +105,17 @@ jobs:
             echo "    BGalin Deployment Started"
             echo "============================================"
             
-            # ============================================
-            # 1. SETUP PREREQUISITES
-            # ============================================
-            echo ""
-            echo "=== 1. Setup Prerequisites ==="
-            
-            # Install Bun
-            if ! [ -f "$HOME/.bun/bin/bun" ]; then
-              curl -fsSL https://bun.sh/install | bash
-              sleep 2
-            fi
-            export PATH="$HOME/.bun/bin:$PATH"
-            echo "[OK] Bun ready"
-            
-            # Install Docker if not present
-            if ! command -v docker &> /dev/null; then
-              curl -fsSL https://get.docker.com | sh
-              sudo usermod -aG docker $USER
-            fi
-            
-            # Start Docker daemon
-            sudo systemctl start docker 2>/dev/null || sudo service docker start || true
-            sudo systemctl enable docker 2>/dev/null || true
-            
-            # Wait for Docker daemon
-            echo "Waiting for Docker daemon..."
-            for i in {1..30}; do
-              if sudo docker ps &>/dev/null; then
-                echo "[OK] Docker ready"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "[WARN] Docker may not be ready"
-              fi
-              sleep 1
-            done
-            
-            # Install Nginx
-            if ! command -v nginx &> /dev/null; then
-              sudo apt-get update
-              sudo apt-get install -y nginx
-            fi
-            sudo systemctl enable nginx 2>/dev/null || true
-            echo "[OK] Nginx ready"
-            
-            # ============================================
-            # 2. UPDATE REPOSITORY
-            # ============================================
-            echo ""
-            echo "=== 2. Update Repository ==="
-            
             DEPLOY_DIR="/var/www/bgalin"
             
+            # Ensure directory exists
             if [ ! -d "$DEPLOY_DIR" ]; then
-              echo "Creating deployment directory: $DEPLOY_DIR"
               sudo mkdir -p "$DEPLOY_DIR"
               sudo chown -R $(whoami):$(whoami) "$DEPLOY_DIR"
             fi
             
             cd "$DEPLOY_DIR"
             
+            # Update repository (for nginx config and docker-compose)
             if [ ! -d .git ]; then
               git clone https://github.com/Nopass0/mybgalin.git .
             else
@@ -129,154 +124,60 @@ jobs:
             fi
             echo "[OK] Repository updated"
             
-            # ============================================
-            # 3. CREATE ENVIRONMENT FILE
-            # ============================================
-            echo ""
-            echo "=== 3. Configure Environment ==="
-            
-            cat > /var/www/bgalin/.env << ENVEOF
+            # Create .env file
+            cat > .env << EOF
             DATABASE_URL=${DATABASE_URL}
             TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
             ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
             NODE_ENV=production
-            ENVEOF
-            
+            BACKEND_IMAGE=${BACKEND_IMAGE}
+            FRONTEND_IMAGE=${FRONTEND_IMAGE}
+            EOF
             echo "[OK] Environment configured"
             
-            # ============================================
-            # 4. STOP EXISTING SERVICES
-            # ============================================
-            echo ""
-            echo "=== 4. Stop Existing Services ==="
+            # Note: Images are public, no login needed
             
-            cd /var/www/bgalin
-            
-            # Stop existing containers gracefully
-            sudo docker compose down --remove-orphans 2>/dev/null || true
-            
-            # Clean up old/dangling images only (keep cache)
-            sudo docker image prune -f 2>/dev/null || true
-            
-            echo "[OK] Old services stopped"
-            
-            # ============================================
-            # 5. BUILD AND START SERVICES
-            # ============================================
-            echo ""
-            echo "=== 5. Build and Start Services ==="
-            
-            cd /var/www/bgalin
-            
-            # Enable BuildKit for better builds with cache
-            export DOCKER_BUILDKIT=1
-            export COMPOSE_DOCKER_CLI_BUILD=1
-            
-            # Pull n8n image first (from registry, fast)
-            echo "Pulling n8n image..."
+            # Pull new images
+            echo "Pulling images..."
+            sudo docker pull ${BACKEND_IMAGE} || true
+            sudo docker pull ${FRONTEND_IMAGE} || true
             sudo docker pull n8nio/n8n:1.70.1 || true
+            echo "[OK] Images pulled"
             
-            # Build images in parallel with cache
-            echo "Building Docker images..."
-            sudo -E docker compose build --parallel 2>&1 | tail -100
+            # Restart services
+            echo "Restarting services..."
+            sudo docker compose down --remove-orphans 2>/dev/null || true
+            sudo docker compose up -d
             
-            # Start services
-            echo "Starting services..."
-            sudo docker compose up -d --remove-orphans
-            
-            # Wait for services to start
+            # Wait for services
             echo "Waiting for services to start..."
-            sleep 20
+            sleep 15
             
-            # Verify services
+            # Show status
+            echo ""
             echo "Service status:"
             sudo docker compose ps
             
-            # Always show backend logs for debugging
+            # Show backend logs
             echo ""
             echo "Backend logs:"
-            sudo docker compose logs backend --tail 30 2>/dev/null || true
+            sudo docker compose logs backend --tail 20 2>/dev/null || true
             
-            # Check if backend is healthy
-            echo ""
-            echo "Testing backend health..."
-            curl -s http://localhost:8000/api/ || echo "Backend not responding on /api/"
-            curl -s http://localhost:8000/api/health || echo "Backend health check failed"
-            
-            echo "[OK] Services started"
-            
-            # ============================================
-            # 6. CONFIGURE NGINX
-            # ============================================
-            echo ""
-            echo "=== 6. Configure Nginx ==="
-            
-            sudo cp /var/www/bgalin/nginx-bgalin.conf /etc/nginx/sites-available/bgalin
+            # Configure Nginx
+            sudo cp nginx-bgalin.conf /etc/nginx/sites-available/bgalin
             sudo ln -sf /etc/nginx/sites-available/bgalin /etc/nginx/sites-enabled/bgalin
             sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+            sudo nginx -t && sudo systemctl reload nginx
+            echo "[OK] Nginx configured"
             
-            # Test nginx config
-            if sudo nginx -t 2>&1 | grep -q "successful"; then
-              sudo systemctl reload nginx || sudo systemctl restart nginx
-              echo "[OK] Nginx configured and reloaded"
-            else
-              echo "[ERROR] Nginx config test failed:"
-              sudo nginx -t
-              sudo systemctl restart nginx || true
-            fi
-            
-            # ============================================
-            # 7. VERIFY DEPLOYMENT
-            # ============================================
+            # Verify
             echo ""
-            echo "=== 7. Verify Deployment ==="
+            echo "Testing services..."
+            curl -s http://localhost:8000/api/health || echo "[WARN] Backend not responding"
+            curl -s -o /dev/null -w "Frontend: %{http_code}\n" http://localhost:3000 || true
             
-            # Check each service
-            echo "Checking services..."
-            
-            # Frontend check
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|301\|302"; then
-              echo "[OK] Frontend is responding"
-            else
-              echo "[WARN] Frontend may not be responding"
-            fi
-            
-            # Backend check  
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health 2>/dev/null | grep -qE "200|404"; then
-              echo "[OK] Backend is responding"
-            else
-              echo "[WARN] Backend may not be responding"
-              echo "Backend logs (last 50 lines):"
-              sudo docker compose logs backend --tail 50 2>/dev/null || true
-            fi
-            
-            # N8N check
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:5678/n8n/ 2>/dev/null | grep -qE "200|301|302"; then
-              echo "[OK] N8N is responding"
-            else
-              echo "[WARN] N8N may not be responding"
-            fi
-            
-            # ============================================
-            # DEPLOYMENT COMPLETE
-            # ============================================
             echo ""
             echo "============================================"
             echo "    Deployment Complete!"
             echo "============================================"
-            echo ""
-            echo "Services:"
             sudo docker compose ps
-            echo ""
-            echo "Access URLs:"
-            echo "  Frontend:  https://bgalin.ru"
-            echo "  Backend:   https://bgalin.ru/api/health"
-            echo "  N8N:       https://bgalin.ru/n8n/"
-            echo ""
-            echo "Commands:"
-            echo "  cd /var/www/bgalin"
-            echo "  docker compose logs -f        # View all logs"
-            echo "  docker compose logs backend   # Backend logs"
-            echo "  docker compose logs frontend  # Frontend logs"
-            echo "  docker compose logs n8n       # N8N logs"
-            echo "  docker compose restart        # Restart all"
