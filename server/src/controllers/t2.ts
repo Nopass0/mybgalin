@@ -11,7 +11,7 @@
  */
 
 import { Elysia, t } from "elysia";
-import { prisma } from "../db/client";
+import { prisma } from "../db";
 import { createHash, randomBytes } from "crypto";
 
 // Helper functions
